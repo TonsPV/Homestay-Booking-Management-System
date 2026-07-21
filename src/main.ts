@@ -2,14 +2,14 @@ import { NestFactory } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
 
 import { AppModule } from './app.module';
+import { configureApp } from './common/http';
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
 
   const configService = app.get(ConfigService);
 
-  app.setGlobalPrefix('api');
-  app.enableShutdownHooks();
+  configureApp(app);
 
   const port = Number(configService.get<string>('APP_PORT') ?? 3000);
 
