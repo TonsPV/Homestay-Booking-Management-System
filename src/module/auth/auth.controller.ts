@@ -12,6 +12,8 @@ import {
   ApiResponse,
   ApiResponsePayload,
   CurrentAuth,
+  RateLimit,
+  RateLimitGuard,
   type AccessTokenPayload,
 } from '../../common/http';
 import { AccessTokenGuard } from './access-token.guard';
@@ -25,10 +27,12 @@ import type {
 } from './auth.service';
 
 @Controller('v1/auth')
+@UseGuards(RateLimitGuard)
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post('customers/register')
+  @RateLimit({ limit: 5, windowMs: 15 * 60 * 1000 })
   @HttpCode(HttpStatus.CREATED)
   registerCustomer(
     @Body() body: RegisterCustomerDto,
@@ -39,6 +43,7 @@ export class AuthController {
   }
 
   @Post('customers/login')
+  @RateLimit({ limit: 10, windowMs: 15 * 60 * 1000 })
   @HttpCode(HttpStatus.OK)
   loginCustomer(
     @Body() body: LoginDto,
@@ -49,6 +54,7 @@ export class AuthController {
   }
 
   @Post('users/login')
+  @RateLimit({ limit: 10, windowMs: 15 * 60 * 1000 })
   @HttpCode(HttpStatus.OK)
   loginUser(
     @Body() body: LoginDto,

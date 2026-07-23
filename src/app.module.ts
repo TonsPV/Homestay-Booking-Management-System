@@ -4,15 +4,19 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { validateEnvironment } from './config/environment';
 import { AuthModule } from './module/auth/auth.module';
 import { CustomerModule } from './module/customer/customer.module';
+import { RoomModule } from './module/room/room.module';
+import { RoomTypeModule } from './module/room-type/room-type.module';
 import { UserModule } from './module/user/user.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: '.env',
+      envFilePath: process.env.NODE_ENV === 'test' ? '.env.test' : '.env',
+      validate: validateEnvironment,
     }),
 
     TypeOrmModule.forRootAsync({
@@ -37,6 +41,8 @@ import { UserModule } from './module/user/user.module';
     }),
     AuthModule,
     CustomerModule,
+    RoomModule,
+    RoomTypeModule,
     UserModule,
   ],
 

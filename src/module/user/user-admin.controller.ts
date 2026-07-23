@@ -17,6 +17,7 @@ import {
   CurrentAuth,
   Roles,
   RolesGuard,
+  UpdateAccountStatusDto,
   type AccessTokenPayload,
 } from '../../common/http';
 import { AccessTokenGuard } from '../auth/access-token.guard';
@@ -26,7 +27,7 @@ import { UpdateUserDto } from './dto/update-user.dto';
 import { UserAdminService } from './user-admin.service';
 import type { AdminUserResponse } from './user-admin.service';
 
-@Controller('v1/admin/users')
+@Controller('v1/users')
 @UseGuards(AccessTokenGuard, RolesGuard)
 @Roles('ADMIN')
 export class UserAdminController {
@@ -61,28 +62,23 @@ export class UserAdminController {
   updateUser(
     @Param('id') id: string,
     @Body() body: UpdateUserDto,
-  ): Promise<ApiResponsePayload<AdminUserResponse>> {
-    return this.userAdminService
-      .updateUser(id, body)
-      .then((user) => ApiResponse.ok(user, 'Cap nhat user thanh cong.'));
-  }
-
-  @Patch(':id/lock')
-  lockUser(
-    @Param('id') id: string,
     @CurrentAuth() auth: AccessTokenPayload,
   ): Promise<ApiResponsePayload<AdminUserResponse>> {
     return this.userAdminService
-      .lockUser(id, auth.user_id)
-      .then((user) => ApiResponse.ok(user, 'Khoa user thanh cong.'));
+      .updateUser(id, body, auth.user_id)
+      .then((user) => ApiResponse.ok(user, 'Cap nhat user thanh cong.'));
   }
 
-  @Patch(':id/unlock')
-  unlockUser(
+  @Patch(':id/status')
+  updateStatus(
     @Param('id') id: string,
+    @Body() body: UpdateAccountStatusDto,
+    @CurrentAuth() auth: AccessTokenPayload,
   ): Promise<ApiResponsePayload<AdminUserResponse>> {
     return this.userAdminService
-      .unlockUser(id)
-      .then((user) => ApiResponse.ok(user, 'Mo khoa user thanh cong.'));
+      .updateStatus(id, body.status, auth.user_id)
+      .then((user) =>
+        ApiResponse.ok(user, 'Cap nhat trang thai user thanh cong.'),
+      );
   }
 }

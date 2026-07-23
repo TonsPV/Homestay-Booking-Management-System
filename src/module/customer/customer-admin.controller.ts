@@ -1,4 +1,5 @@
 import {
+  Body,
   Controller,
   Get,
   Param,
@@ -12,13 +13,14 @@ import {
   ApiResponsePayload,
   Roles,
   RolesGuard,
+  UpdateAccountStatusDto,
 } from '../../common/http';
 import { AccessTokenGuard } from '../auth/access-token.guard';
 import { CustomerAdminService } from './customer-admin.service';
 import type { AdminCustomerResponse } from './customer-admin.service';
 import { ListCustomersQueryDto } from './dto/list-customers-query.dto';
 
-@Controller('v1/admin/customers')
+@Controller('v1/customers')
 @UseGuards(AccessTokenGuard, RolesGuard)
 @Roles('ADMIN')
 export class CustomerAdminController {
@@ -39,25 +41,15 @@ export class CustomerAdminController {
       );
   }
 
-  @Patch(':id/lock')
-  lockCustomer(
+  @Patch(':id/status')
+  updateStatus(
     @Param('id') id: string,
+    @Body() body: UpdateAccountStatusDto,
   ): Promise<ApiResponsePayload<AdminCustomerResponse>> {
     return this.customerAdminService
-      .lockCustomer(id)
+      .updateStatus(id, body.status)
       .then((customer) =>
-        ApiResponse.ok(customer, 'Khoa customer thanh cong.'),
-      );
-  }
-
-  @Patch(':id/unlock')
-  unlockCustomer(
-    @Param('id') id: string,
-  ): Promise<ApiResponsePayload<AdminCustomerResponse>> {
-    return this.customerAdminService
-      .unlockCustomer(id)
-      .then((customer) =>
-        ApiResponse.ok(customer, 'Mo khoa customer thanh cong.'),
+        ApiResponse.ok(customer, 'Cap nhat trang thai customer thanh cong.'),
       );
   }
 }

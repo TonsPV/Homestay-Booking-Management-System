@@ -3,6 +3,7 @@ import {
   CreateDateColumn,
   DeleteDateColumn,
   Entity,
+  Index,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
@@ -10,6 +11,8 @@ import {
 export type CustomerStatus = 'ACTIVE' | 'LOCKED';
 
 @Entity('customers')
+@Index('uq_customers_email', ['email'], { unique: true })
+@Index('uq_customers_phone', ['phone'], { unique: true })
 export class Customer {
   @PrimaryGeneratedColumn({ type: 'bigint' })
   id: string;

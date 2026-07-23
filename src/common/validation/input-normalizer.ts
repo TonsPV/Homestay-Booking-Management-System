@@ -34,6 +34,22 @@ export function optionalTrimmedString(
   return requireTrimmedString(value, message, maxLength);
 }
 
+export function optionalNullableTrimmedString(
+  value: unknown,
+  message: string,
+  maxLength?: number,
+): string | null | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (value === null || value === '') {
+    return null;
+  }
+
+  return requireTrimmedString(value, message, maxLength);
+}
+
 export function requireEmail(value: unknown): string {
   const email = requireTrimmedString(
     value,
@@ -103,8 +119,20 @@ export function requirePassword(value: unknown): string {
     throw new BadRequestException('Mat khau la bat buoc.');
   }
 
-  if (value.trim().length === 0 || value.length < 5 || value.length > 72) {
-    throw new BadRequestException('Mat khau phai tu 5 den 72 ky tu.');
+  if (value.trim().length === 0 || value.length < 8 || value.length > 72) {
+    throw new BadRequestException('Mat khau phai tu 8 den 72 ky tu.');
+  }
+
+  return value;
+}
+
+export function requireLoginPassword(value: unknown): string {
+  if (
+    typeof value !== 'string' ||
+    value.length === 0 ||
+    value.trim().length === 0
+  ) {
+    throw new BadRequestException('Mat khau la bat buoc.');
   }
 
   return value;
@@ -179,16 +207,137 @@ export function parsePositiveInt(
   return numberValue;
 }
 
+export function requirePositiveInt(
+  value: unknown,
+  message: string,
+  max = 2147483647,
+): number {
+  if (value === undefined || value === null || value === '') {
+    throw new BadRequestException(message);
+  }
+
+  return parsePositiveInt(value, 1, 1, max, message);
+}
+
+export function requireDecimalAmount(value: unknown, message: string): string {
+  let rawValue: string;
+
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) {
+      throw new BadRequestException(message);
+    }
+
+    rawValue = String(value);
+  } else if (typeof value === 'string') {
+    rawValue = value.trim();
+  } else {
+    throw new BadRequestException(message);
+  }
+
+  const match = /^(0|[1-9][0-9]{0,9})(?:[.]([0-9]{1,2}))?$/.exec(rawValue);
+
+  if (match === null) {
+    throw new BadRequestException(message);
+  }
+
+  return `${match[1]}.${(match[2] ?? '').padEnd(2, '0')}`;
+}
+
+export function optionalDecimalAmount(
+  value: unknown,
+  message: string,
+): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  return requireDecimalAmount(value, message);
+}
+
+export function parseBoolean(
+  value: unknown,
+  defaultValue: boolean,
+  message: string,
+): boolean {
+  if (value === undefined || value === null || value === '') {
+    return defaultValue;
+  }
+
+  if (value === true || value === 'true' || value === '1') {
+    return true;
+  }
+
+  if (value === false || value === 'false' || value === '0') {
+    return false;
+  }
+
+  throw new BadRequestException(message);
+}
+
+export function optionalAccountStatus(
+  value: unknown,
+  message = 'Trang thai tai khoan khong hop le.',
+): 'ACTIVE' | 'LOCKED' | undefined {
+  if (value === undefined || value === null || value === '') {
+    return undefined;
+  }
+
+  if (value !== 'ACTIVE' && value !== 'LOCKED') {
+    throw new BadRequestException(message);
+  }
+
+  return value;
+}
+
+export function requireAccountStatus(
+  value: unknown,
+  message = 'Trang thai tai khoan khong hop le.',
+): 'ACTIVE' | 'LOCKED' {
+  const status = optionalAccountStatus(value, message);
+
+  if (status === undefined) {
+    throw new BadRequestException(message);
+  }
+
+  return status;
+}
+
 export function isEmail(value: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
 
-function normalizePhone(value: string): string | null {
-  const normalized = value.trim().replace(/[().\-\s]/g, '');
+export function normalizePhone(value: string): string | null {
+  const compact = value.trim().replace(/[().\-\s]/g, '');
 
-  if (!/^\+?[0-9]{7,20}$/.test(normalized)) {
+  if (!/^\+?[0-9]+$/.test(compact)) {
     return null;
   }
 
-  return normalized;
+  let subscriberNumber: string;
+
+  if (compact.startsWith('+84')) {
+    subscriberNumber = compact.slice(3);
+  } else if (compact.startsWith('84')) {
+    subscriberNumber = compact.slice(2);
+  } else if (compact.startsWith('0')) {
+    subscriberNumber = compact.slice(1);
+  } else {
+    return null;
+  }
+
+  if (!/^[35789][0-9]{8}$/.test(subscriberNumber)) {
+    return null;
+  }
+
+  return `+84${subscriberNumber}`;
+}
+
+export function getVietnamesePhoneLookupVariants(
+  normalizedPhone: string,
+): string[] {
+  if (!/^\+84[35789][0-9]{8}$/.test(normalizedPhone)) {
+    return [normalizedPhone];
+  }
+
+  return [normalizedPhone, `0${normalizedPhone.slice(3)}`];
 }

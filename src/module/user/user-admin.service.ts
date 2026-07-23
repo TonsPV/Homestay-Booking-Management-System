@@ -7,19 +7,23 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import type { Repository } from 'typeorm';
 
+import { getMysqlDuplicateKey } from '../../common/database';
 import type {
   AccountStatus,
   PaginationMeta,
   UserRole,
 } from '../../common/http';
 import {
+  getVietnamesePhoneLookupVariants,
   optionalEmail,
+  optionalAccountStatus,
   optionalNullablePhone,
   optionalPassword,
   optionalSearch,
   optionalTrimmedString,
   parsePagination,
   requireEmail,
+  requireAccountStatus,
   requirePassword,
   requireTrimmedString,
 } from '../../common/validation';
@@ -62,7 +66,11 @@ export class UserAdminService {
     const email = requireEmail(body.email);
     const phone = optionalNullablePhone(body.phone) ?? null;
     const password = requirePassword(body.password);
-    const role = this.optionalRole(body.role) ?? 'STAFF';
+    const requestedRole = this.optionalRole(body.role);
+
+    if (requestedRole === 'ADMIN') {
+      throw new BadRequestException('API nay chi dung de cap tai khoan STAFF.');
+    }
 
     await this.ensureEmailIsAvailable(email);
 
@@ -75,11 +83,15 @@ export class UserAdminService {
       email,
       phone,
       passwordHash: await this.passwordHasherService.hash(password),
-      role,
+      role: 'STAFF',
       status: 'ACTIVE',
     });
 
-    return this.toAdminUserResponse(await this.usersRepository.save(user));
+    try {
+      return this.toAdminUserResponse(await this.usersRepository.save(user));
+    } catch (error) {
+      this.throwUserDuplicateConflict(error);
+    }
   }
 
   async listUsers(query: ListUsersQueryDto): Promise<AdminUserListResponse> {
@@ -88,7 +100,7 @@ export class UserAdminService {
     );
     const search = optionalSearch(query.search);
     const role = this.optionalRole(query.role);
-    const status = this.optionalStatus(query.status);
+    const status = optionalAccountStatus(query.status);
     const usersQuery = this.usersRepository
       .createQueryBuilder('user')
       .where('user.deletedAt IS NULL')
@@ -125,6 +137,7 @@ export class UserAdminService {
   async updateUser(
     id: string,
     body: UpdateUserDto,
+    currentAdminId: string | undefined,
   ): Promise<AdminUserResponse> {
     const user = await this.getUser(id);
     const fullName = optionalTrimmedString(
@@ -155,36 +168,50 @@ export class UserAdminService {
     }
 
     if (role !== undefined) {
+      if (
+        currentAdminId !== undefined &&
+        user.id === currentAdminId &&
+        role !== 'ADMIN'
+      ) {
+        throw new BadRequestException(
+          'Admin khong the tu ha quyen tai khoan cua minh.',
+        );
+      }
+
       user.role = role;
     }
 
     if (password !== undefined) {
       user.passwordHash = await this.passwordHasherService.hash(password);
+      user.tokenVersion += 1;
     }
 
-    return this.toAdminUserResponse(await this.usersRepository.save(user));
+    try {
+      return this.toAdminUserResponse(await this.usersRepository.save(user));
+    } catch (error) {
+      this.throwUserDuplicateConflict(error);
+    }
   }
 
-  async lockUser(
+  async updateStatus(
     id: string,
+    statusValue: unknown,
     currentAdminId: string | undefined,
   ): Promise<AdminUserResponse> {
     const user = await this.getUser(id);
+    const status = requireAccountStatus(statusValue);
 
-    if (currentAdminId !== undefined && user.id === currentAdminId) {
+    if (
+      status === 'LOCKED' &&
+      currentAdminId !== undefined &&
+      user.id === currentAdminId
+    ) {
       throw new BadRequestException(
         'Admin khong the tu khoa tai khoan cua minh.',
       );
     }
 
-    user.status = 'LOCKED';
-
-    return this.toAdminUserResponse(await this.usersRepository.save(user));
-  }
-
-  async unlockUser(id: string): Promise<AdminUserResponse> {
-    const user = await this.getUser(id);
-    user.status = 'ACTIVE';
+    user.status = status;
 
     return this.toAdminUserResponse(await this.usersRepository.save(user));
   }
@@ -228,7 +255,9 @@ export class UserAdminService {
     const existingUserQuery = this.usersRepository
       .createQueryBuilder('user')
       .where('user.deletedAt IS NULL')
-      .andWhere('user.phone = :phone', { phone });
+      .andWhere('user.phone IN (:...phones)', {
+        phones: getVietnamesePhoneLookupVariants(phone),
+      });
 
     if (currentUserId !== undefined) {
       existingUserQuery.andWhere('user.id <> :currentUserId', {
@@ -241,6 +270,24 @@ export class UserAdminService {
     }
   }
 
+  private throwUserDuplicateConflict(error: unknown): never {
+    const duplicateKey = getMysqlDuplicateKey(error);
+
+    if (duplicateKey === undefined) {
+      throw error;
+    }
+
+    if (duplicateKey.includes('email')) {
+      throw new ConflictException('Email da duoc su dung.');
+    }
+
+    if (duplicateKey.includes('phone')) {
+      throw new ConflictException('So dien thoai da duoc su dung.');
+    }
+
+    throw new ConflictException('Thong tin user da ton tai.');
+  }
+
   private optionalRole(value: unknown): UserRole | undefined {
     if (value === undefined || value === null || value === '') {
       return undefined;
@@ -248,18 +295,6 @@ export class UserAdminService {
 
     if (value !== 'STAFF' && value !== 'ADMIN') {
       throw new BadRequestException('Role khong hop le.');
-    }
-
-    return value;
-  }
-
-  private optionalStatus(value: unknown): AccountStatus | undefined {
-    if (value === undefined || value === null || value === '') {
-      return undefined;
-    }
-
-    if (value !== 'ACTIVE' && value !== 'LOCKED') {
-      throw new BadRequestException('Trang thai khong hop le.');
     }
 
     return value;

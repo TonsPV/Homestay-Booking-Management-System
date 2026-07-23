@@ -7,7 +7,12 @@ import { InjectRepository } from '@nestjs/typeorm';
 import type { Repository } from 'typeorm';
 
 import type { AccountStatus, PaginationMeta } from '../../common/http';
-import { optionalSearch, parsePagination } from '../../common/validation';
+import {
+  optionalAccountStatus,
+  optionalSearch,
+  parsePagination,
+  requireAccountStatus,
+} from '../../common/validation';
 import { ListCustomersQueryDto } from './dto/list-customers-query.dto';
 import { Customer } from './schema/customer.entity';
 
@@ -40,7 +45,7 @@ export class CustomerAdminService {
       query as Record<string, unknown>,
     );
     const search = optionalSearch(query.search);
-    const status = this.optionalStatus(query.status);
+    const status = optionalAccountStatus(query.status);
     const customersQuery = this.customersRepository
       .createQueryBuilder('customer')
       .where('customer.deletedAt IS NULL')
@@ -72,18 +77,12 @@ export class CustomerAdminService {
     };
   }
 
-  async lockCustomer(id: string): Promise<AdminCustomerResponse> {
+  async updateStatus(
+    id: string,
+    statusValue: unknown,
+  ): Promise<AdminCustomerResponse> {
     const customer = await this.getCustomer(id);
-    customer.status = 'LOCKED';
-
-    return this.toAdminCustomerResponse(
-      await this.customersRepository.save(customer),
-    );
-  }
-
-  async unlockCustomer(id: string): Promise<AdminCustomerResponse> {
-    const customer = await this.getCustomer(id);
-    customer.status = 'ACTIVE';
+    customer.status = requireAccountStatus(statusValue);
 
     return this.toAdminCustomerResponse(
       await this.customersRepository.save(customer),
@@ -100,18 +99,6 @@ export class CustomerAdminService {
     }
 
     return customer;
-  }
-
-  private optionalStatus(value: unknown): AccountStatus | undefined {
-    if (value === undefined || value === null || value === '') {
-      return undefined;
-    }
-
-    if (value !== 'ACTIVE' && value !== 'LOCKED') {
-      throw new BadRequestException('Trang thai khong hop le.');
-    }
-
-    return value;
   }
 
   private validateId(id: string): void {

@@ -5,6 +5,7 @@ import { HttpExceptionFilter } from './http-exception.filter';
 
 export function configureApp(app: INestApplication): void {
   app.setGlobalPrefix('api');
+  app.enableCors();
   app.useGlobalInterceptors(new ApiResponseInterceptor());
   app.useGlobalFilters(new HttpExceptionFilter());
   app.enableShutdownHooks();

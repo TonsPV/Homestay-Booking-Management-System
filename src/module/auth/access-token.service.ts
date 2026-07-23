@@ -12,8 +12,9 @@ export class AccessTokenService {
   constructor(private readonly configService: ConfigService) {}
 
   getExpiresInSeconds(): number {
-    const value =
-      this.configService.get<string>('JWT_ACCESS_TOKEN_EXPIRES_IN') ?? '1h';
+    const value = this.configService.getOrThrow<string>(
+      'JWT_ACCESS_TOKEN_EXPIRES_IN',
+    );
 
     return this.parseDuration(value);
   }
@@ -34,6 +35,7 @@ export class AccessTokenService {
 
     if (subject.actorType === 'user') {
       payload.user_id = this.requireId(subject.userId);
+      payload.token_version = this.requireTokenVersion(subject.tokenVersion);
 
       if (subject.role !== undefined) {
         payload.role = subject.role;
@@ -83,11 +85,7 @@ export class AccessTokenService {
   }
 
   private getSecret(): string {
-    return (
-      this.configService.get<string>('JWT_ACCESS_TOKEN_SECRET') ??
-      this.configService.get<string>('JWT_SECRET') ??
-      'change-this-development-access-token-secret'
-    );
+    return this.configService.getOrThrow<string>('JWT_ACCESS_TOKEN_SECRET');
   }
 
   private getSubject(subject: AccessTokenSubject): string {
@@ -176,12 +174,14 @@ export class AccessTokenService {
 
     const userId = this.readString(payload, 'user_id');
     const role = this.readOptionalRole(payload, 'role');
+    const tokenVersion = this.readTokenVersion(payload, 'token_version');
 
     return {
       sub,
       actor_type: actorType,
       user_id: userId,
       role,
+      token_version: tokenVersion,
       iat,
       exp,
     };
@@ -241,11 +241,32 @@ export class AccessTokenService {
     return value;
   }
 
+  private requireTokenVersion(value: number | undefined): number {
+    if (value === undefined || !Number.isInteger(value) || value < 0) {
+      throw new Error('User token version is required.');
+    }
+
+    return value;
+  }
+
+  private readTokenVersion(
+    payload: Record<string, unknown>,
+    key: string,
+  ): number {
+    const value = this.readNumber(payload, key);
+
+    if (value < 0) {
+      throw new UnauthorizedException('Invalid access token.');
+    }
+
+    return value;
+  }
+
   private parseDuration(value: string): number {
     const match = /^(\d+)([smhd])?$/.exec(value.trim());
 
-    if (match === null) {
-      return 3600;
+    if (match === null || Number(match[1]) <= 0) {
+      throw new Error('JWT access token duration is invalid.');
     }
 
     const amount = Number(match[1]);

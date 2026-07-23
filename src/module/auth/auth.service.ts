@@ -8,7 +8,18 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import type { Repository } from 'typeorm';
 
+import { getMysqlDuplicateKey } from '../../common/database';
 import type { AccessTokenPayload } from '../../common/http';
+import {
+  getVietnamesePhoneLookupVariants,
+  isEmail,
+  normalizePhone,
+  optionalNullableEmail,
+  requiredPhone,
+  requireLoginPassword,
+  requirePassword,
+  requireTrimmedString,
+} from '../../common/validation';
 import { AccessTokenService } from './access-token.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterCustomerDto } from './dto/register-customer.dto';
@@ -92,9 +103,12 @@ export class AuthService {
       }
     }
 
-    const existingPhone = await this.customersRepository.findOneBy({
-      phone: input.phone,
-    });
+    const existingPhone = await this.customersRepository
+      .createQueryBuilder('customer')
+      .where('customer.phone IN (:...phones)', {
+        phones: getVietnamesePhoneLookupVariants(input.phone),
+      })
+      .getOne();
 
     if (existingPhone !== null) {
       throw new ConflictException('So dien thoai da duoc su dung.');
@@ -108,7 +122,13 @@ export class AuthService {
       passwordHash,
       status: 'ACTIVE',
     });
-    const savedCustomer = await this.customersRepository.save(customer);
+    let savedCustomer: Customer;
+
+    try {
+      savedCustomer = await this.customersRepository.save(customer);
+    } catch (error) {
+      this.throwCustomerDuplicateConflict(error);
+    }
 
     return this.toCustomerResponse(savedCustomer);
   }
@@ -180,6 +200,7 @@ export class AuthService {
         actorType: 'user',
         userId: user.id,
         role: user.role,
+        tokenVersion: user.tokenVersion,
       }),
       tokenType: 'Bearer',
       expiresIn: this.accessTokenService.getExpiresInSeconds(),
@@ -231,35 +252,35 @@ export class AuthService {
   private async findCustomerForLogin(
     identifier: string,
   ): Promise<Customer | null> {
-    const email = this.looksLikeEmail(identifier)
-      ? identifier.toLowerCase()
-      : identifier;
-    const phone = this.tryNormalizePhone(identifier) ?? identifier;
+    const email = isEmail(identifier) ? identifier.toLowerCase() : identifier;
+    const phone = normalizePhone(identifier);
+    const phones =
+      phone === null ? [identifier] : getVietnamesePhoneLookupVariants(phone);
 
     return this.customersRepository
       .createQueryBuilder('customer')
       .addSelect('customer.passwordHash')
       .where('customer.deletedAt IS NULL')
-      .andWhere('(LOWER(customer.email) = :email OR customer.phone = :phone)', {
-        email,
-        phone,
-      })
+      .andWhere(
+        '(LOWER(customer.email) = :email OR customer.phone IN (:...phones))',
+        { email, phones },
+      )
       .getOne();
   }
 
   private async findUserForLogin(identifier: string): Promise<User | null> {
-    const email = this.looksLikeEmail(identifier)
-      ? identifier.toLowerCase()
-      : identifier;
-    const phone = this.tryNormalizePhone(identifier) ?? identifier;
+    const email = isEmail(identifier) ? identifier.toLowerCase() : identifier;
+    const phone = normalizePhone(identifier);
+    const phones =
+      phone === null ? [identifier] : getVietnamesePhoneLookupVariants(phone);
 
     return this.usersRepository
       .createQueryBuilder('user')
       .addSelect('user.passwordHash')
       .where('user.deletedAt IS NULL')
-      .andWhere('(LOWER(user.email) = :email OR user.phone = :phone)', {
+      .andWhere('(LOWER(user.email) = :email OR user.phone IN (:...phones))', {
         email,
-        phone,
+        phones,
       })
       .getOne();
   }
@@ -267,13 +288,14 @@ export class AuthService {
   private normalizeRegisterCustomerInput(
     body: RegisterCustomerDto,
   ): NormalizedRegisterCustomerInput {
-    const fullName = this.requireTrimmedString(
+    const fullName = requireTrimmedString(
       body.fullName,
       'Ho ten la bat buoc.',
+      120,
     );
-    const email = this.optionalEmail(body.email);
-    const phone = this.requiredPhone(body.phone);
-    const password = this.requirePassword(body.password, true);
+    const email = optionalNullableEmail(body.email) ?? null;
+    const phone = requiredPhone(body.phone);
+    const password = requirePassword(body.password);
 
     return {
       fullName,
@@ -297,7 +319,7 @@ export class AuthService {
 
     return {
       identifier,
-      password: this.requirePassword(body.password, false),
+      password: requireLoginPassword(body.password),
     };
   }
 
@@ -317,87 +339,30 @@ export class AuthService {
     return null;
   }
 
-  private requireTrimmedString(value: unknown, message: string): string {
-    if (typeof value !== 'string') {
-      throw new BadRequestException(message);
-    }
-
-    const trimmed = value.trim();
-
-    if (trimmed.length === 0) {
-      throw new BadRequestException(message);
-    }
-
-    return trimmed;
-  }
-
-  private optionalEmail(value: unknown): string | null {
-    if (value === undefined || value === null || value === '') {
-      return null;
-    }
-
-    const email = this.requireTrimmedString(
-      value,
-      'Email khong hop le.',
-    ).toLowerCase();
-
-    if (!this.looksLikeEmail(email)) {
-      throw new BadRequestException('Email khong hop le.');
-    }
-
-    return email;
-  }
-
-  private requiredPhone(value: unknown): string {
-    if (typeof value !== 'string') {
-      throw new BadRequestException('So dien thoai la bat buoc.');
-    }
-
-    const phone = this.tryNormalizePhone(value);
-
-    if (phone === null) {
-      throw new BadRequestException('So dien thoai khong hop le.');
-    }
-
-    return phone;
-  }
-
   private normalizeIdentifier(identifier: string): string {
-    if (this.looksLikeEmail(identifier)) {
+    if (isEmail(identifier)) {
       return identifier.toLowerCase();
     }
 
-    return this.tryNormalizePhone(identifier) ?? identifier;
+    return normalizePhone(identifier) ?? identifier;
   }
 
-  private tryNormalizePhone(value: string): string | null {
-    const normalized = value.trim().replace(/[().\-\s]/g, '');
+  private throwCustomerDuplicateConflict(error: unknown): never {
+    const duplicateKey = getMysqlDuplicateKey(error);
 
-    if (!/^\+?[0-9]{7,20}$/.test(normalized)) {
-      return null;
+    if (duplicateKey === undefined) {
+      throw error;
     }
 
-    return normalized;
-  }
-
-  private requirePassword(value: unknown, enforcePolicy: boolean): string {
-    if (typeof value !== 'string' || value.length === 0) {
-      throw new BadRequestException('Mat khau la bat buoc.');
+    if (duplicateKey.includes('email')) {
+      throw new ConflictException('Email da duoc su dung.');
     }
 
-    if (value.trim().length === 0) {
-      throw new BadRequestException('Mat khau khong hop le.');
+    if (duplicateKey.includes('phone')) {
+      throw new ConflictException('So dien thoai da duoc su dung.');
     }
 
-    if (enforcePolicy && (value.length < 8 || value.length > 72)) {
-      throw new BadRequestException('Mat khau phai tu 8 den 72 ky tu.');
-    }
-
-    return value;
-  }
-
-  private looksLikeEmail(value: string): boolean {
-    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+    throw new ConflictException('Thong tin customer da ton tai.');
   }
 
   private toCustomerResponse(customer: Customer): CustomerResponse {

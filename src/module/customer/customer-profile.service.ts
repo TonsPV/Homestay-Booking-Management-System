@@ -7,7 +7,9 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import type { Repository } from 'typeorm';
 
+import { getMysqlDuplicateKey } from '../../common/database';
 import {
+  getVietnamesePhoneLookupVariants,
   optionalNullableEmail,
   optionalTrimmedString,
   requiredPhone,
@@ -72,7 +74,13 @@ export class CustomerProfileService {
       customer.fullName = fullName;
     }
 
-    const savedCustomer = await this.customersRepository.save(customer);
+    let savedCustomer: Customer;
+
+    try {
+      savedCustomer = await this.customersRepository.save(customer);
+    } catch (error) {
+      this.throwCustomerDuplicateConflict(error);
+    }
 
     return this.toCustomerProfileResponse(savedCustomer);
   }
@@ -123,12 +131,32 @@ export class CustomerProfileService {
       .createQueryBuilder('customer')
       .where('customer.deletedAt IS NULL')
       .andWhere('customer.id <> :currentCustomerId', { currentCustomerId })
-      .andWhere('customer.phone = :phone', { phone })
+      .andWhere('customer.phone IN (:...phones)', {
+        phones: getVietnamesePhoneLookupVariants(phone),
+      })
       .getOne();
 
     if (existingCustomer !== null) {
       throw new ConflictException('So dien thoai da duoc su dung.');
     }
+  }
+
+  private throwCustomerDuplicateConflict(error: unknown): never {
+    const duplicateKey = getMysqlDuplicateKey(error);
+
+    if (duplicateKey === undefined) {
+      throw error;
+    }
+
+    if (duplicateKey.includes('email')) {
+      throw new ConflictException('Email da duoc su dung.');
+    }
+
+    if (duplicateKey.includes('phone')) {
+      throw new ConflictException('So dien thoai da duoc su dung.');
+    }
+
+    throw new ConflictException('Thong tin customer da ton tai.');
   }
 
   private toCustomerProfileResponse(

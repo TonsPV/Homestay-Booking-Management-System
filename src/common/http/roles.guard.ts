@@ -6,19 +6,16 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { InjectRepository } from '@nestjs/typeorm';
-import type { Repository } from 'typeorm';
 
-import { User } from '../../module/user/schema/user.entity';
 import { ROLES_KEY } from './roles.decorator';
 import type { AuthenticatedRequest, UserRole } from './auth.types';
+import { UserAuthorizationReader } from './user-authorization-reader';
 
 @Injectable()
 export class RolesGuard implements CanActivate {
   constructor(
     private readonly reflector: Reflector,
-    @InjectRepository(User)
-    private readonly usersRepository: Repository<User>,
+    private readonly userAuthorizationReader: UserAuthorizationReader,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -44,9 +41,9 @@ export class RolesGuard implements CanActivate {
       throw new ForbiddenException('Ban khong co quyen truy cap.');
     }
 
-    const user = await this.usersRepository.findOneBy({
-      id: request.auth.user_id,
-    });
+    const user = await this.userAuthorizationReader.findById(
+      request.auth.user_id,
+    );
 
     if (user === null) {
       throw new UnauthorizedException('Access token is invalid.');

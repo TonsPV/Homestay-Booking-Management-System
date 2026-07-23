@@ -3,6 +3,7 @@ import {
   CreateDateColumn,
   DeleteDateColumn,
   Entity,
+  Index,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
@@ -11,6 +12,8 @@ export type UserRole = 'STAFF' | 'ADMIN';
 export type UserStatus = 'ACTIVE' | 'LOCKED';
 
 @Entity('users')
+@Index('uq_users_email', ['email'], { unique: true })
+@Index('uq_users_phone', ['phone'], { unique: true })
 export class User {
   @PrimaryGeneratedColumn({ type: 'bigint' })
   id: string;
@@ -31,6 +34,9 @@ export class User {
     select: false,
   })
   passwordHash: string;
+
+  @Column({ name: 'token_version', type: 'int', default: 0 })
+  tokenVersion: number;
 
   @Column({
     type: 'enum',

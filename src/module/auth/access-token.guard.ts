@@ -1,18 +1,25 @@
 import {
   CanActivate,
   ExecutionContext,
+  ForbiddenException,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
 
 import { AccessTokenService } from './access-token.service';
-import type { AuthenticatedRequest } from '../../common/http';
+import {
+  type AuthenticatedRequest,
+  UserAuthorizationReader,
+} from '../../common/http';
 
 @Injectable()
 export class AccessTokenGuard implements CanActivate {
-  constructor(private readonly accessTokenService: AccessTokenService) {}
+  constructor(
+    private readonly accessTokenService: AccessTokenService,
+    private readonly userAuthorizationReader: UserAuthorizationReader,
+  ) {}
 
-  canActivate(context: ExecutionContext): boolean {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
     const authorization = request.headers.authorization;
 
@@ -30,7 +37,30 @@ export class AccessTokenGuard implements CanActivate {
       );
     }
 
-    request.auth = this.accessTokenService.verify(token);
+    const auth = this.accessTokenService.verify(token);
+
+    if (auth.actor_type === 'user') {
+      const userId = auth.user_id;
+      const tokenVersion = auth.token_version;
+
+      if (userId === undefined || tokenVersion === undefined) {
+        throw new UnauthorizedException('Invalid access token.');
+      }
+
+      const user = await this.userAuthorizationReader.findById(userId);
+
+      if (user === null || user.tokenVersion !== tokenVersion) {
+        throw new UnauthorizedException('Invalid access token.');
+      }
+
+      if (user.status === 'LOCKED') {
+        throw new ForbiddenException('Tai khoan bi khoa.');
+      }
+
+      auth.role = user.role;
+    }
+
+    request.auth = auth;
 
     return true;
   }

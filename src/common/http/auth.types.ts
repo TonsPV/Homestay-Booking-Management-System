@@ -10,6 +10,7 @@ export interface AccessTokenPayload {
   customer_id?: string;
   user_id?: string;
   role?: UserRole;
+  token_version?: number;
   iat: number;
   exp: number;
 }
@@ -19,6 +20,7 @@ export interface AccessTokenSubject {
   customerId?: string;
   userId?: string;
   role?: UserRole;
+  tokenVersion?: number;
 }
 
 export interface AppRequest<TAuth = unknown> extends Request {
