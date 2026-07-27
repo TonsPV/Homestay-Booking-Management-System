@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 
 import {
   ActorsGuard,
+  CustomerAuthorizationReader,
   RateLimitGuard,
   RolesGuard,
   UserAuthorizationReader,
@@ -13,6 +14,7 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { Customer } from '../customer/schema/customer.entity';
 import { User } from '../user/schema/user.entity';
+import { CustomerAuthorizationService } from './customer-authorization.service';
 import { PasswordHasherService } from './password-hasher.service';
 import { UserAuthorizationService } from './user-authorization.service';
 
@@ -28,6 +30,10 @@ import { UserAuthorizationService } from './user-authorization.service';
     RateLimitGuard,
     RolesGuard,
     {
+      provide: CustomerAuthorizationReader,
+      useClass: CustomerAuthorizationService,
+    },
+    {
       provide: UserAuthorizationReader,
       useClass: UserAuthorizationService,
     },
@@ -39,6 +45,7 @@ import { UserAuthorizationService } from './user-authorization.service';
     PasswordHasherService,
     RateLimitGuard,
     RolesGuard,
+    CustomerAuthorizationReader,
     UserAuthorizationReader,
   ],
 })

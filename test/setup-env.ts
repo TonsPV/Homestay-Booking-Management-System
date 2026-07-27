@@ -23,4 +23,6 @@ if (result.error !== undefined) {
   throw result.error;
 }
 
+process.env.ROOM_IMAGE_UPLOAD_DIR ||= '.data/test-uploads/room-images';
+
 assertSafeE2eEnvironment(process.env);

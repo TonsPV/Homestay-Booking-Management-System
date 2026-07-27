@@ -3,31 +3,51 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { DataSource, type EntityManager } from 'typeorm';
+import { DataSource, type EntityManager, type QueryRunner } from 'typeorm';
 
-import { parseBoolean, requireTrimmedString } from '../../common/validation';
+import { parseBoolean } from '../../common/validation';
 import { CreateRoomImageDto } from './dto/create-room-image.dto';
+import {
+  RoomImageStorageService,
+  type UploadedRoomImageFile,
+} from './room-image-storage.service';
 import { RoomImage } from './schema/room-image.entity';
 import { Room } from './schema/room.entity';
 import type { RoomImageResponse } from './room.service';
 
 @Injectable()
 export class RoomImageService {
-  constructor(private readonly dataSource: DataSource) {}
+  constructor(
+    private readonly dataSource: DataSource,
+    private readonly roomImageStorage: RoomImageStorageService,
+  ) {}
 
   async create(
     roomId: string,
     body: CreateRoomImageDto,
+    file?: UploadedRoomImageFile,
   ): Promise<RoomImageResponse> {
     this.validateId(roomId, 'Room id khong hop le.');
-    const imageUrl = this.requireImageUrl(body.imageUrl);
     const sortOrder = this.parseSortOrder(body.sortOrder);
     const requestedCover = parseBoolean(
       body.isCover,
       false,
       'Gia tri anh bia khong hop le.',
     );
-    const queryRunner = this.dataSource.createQueryRunner();
+
+    if (file === undefined) {
+      throw new BadRequestException('Vui long chon tep anh.');
+    }
+
+    const imageUrl = await this.roomImageStorage.store(roomId, file);
+    let queryRunner: QueryRunner;
+
+    try {
+      queryRunner = this.dataSource.createQueryRunner();
+    } catch (error) {
+      await this.roomImageStorage.deleteManaged(imageUrl);
+      throw error;
+    }
 
     try {
       await queryRunner.connect();
@@ -58,22 +78,20 @@ export class RoomImageService {
         await queryRunner.rollbackTransaction();
       }
 
+      await this.roomImageStorage.deleteManaged(imageUrl);
+
       throw error;
     } finally {
       await queryRunner.release();
     }
   }
 
-  delete(imageId: string): Promise<RoomImageResponse> {
+  async delete(imageId: string): Promise<RoomImageResponse> {
     this.validateId(imageId, 'Image id khong hop le.');
 
-    return this.dataSource.transaction(async (manager) => {
+    const response = await this.dataSource.transaction(async (manager) => {
       const imagesRepository = manager.getRepository(RoomImage);
-      const image = await imagesRepository.findOneBy({ id: imageId });
-
-      if (image === null) {
-        throw new NotFoundException('Khong tim thay anh phong.');
-      }
+      const image = await this.getLockedRoomImage(manager, imageId);
 
       const response = this.toResponse(image);
       await imagesRepository.remove(image);
@@ -92,6 +110,10 @@ export class RoomImageService {
 
       return response;
     });
+
+    await this.roomImageStorage.deleteManaged(response.imageUrl);
+
+    return response;
   }
 
   setCover(imageId: string): Promise<RoomImageResponse> {
@@ -99,11 +121,7 @@ export class RoomImageService {
 
     return this.dataSource.transaction(async (manager) => {
       const imagesRepository = manager.getRepository(RoomImage);
-      const image = await imagesRepository.findOneBy({ id: imageId });
-
-      if (image === null) {
-        throw new NotFoundException('Khong tim thay anh phong.');
-      }
+      const image = await this.getLockedRoomImage(manager, imageId);
 
       await imagesRepository.update(
         { roomId: image.roomId },
@@ -134,20 +152,32 @@ export class RoomImageService {
     return room;
   }
 
-  private requireImageUrl(value: unknown): string {
-    const imageUrl = requireTrimmedString(value, 'URL anh khong hop le.', 500);
+  private async getLockedRoomImage(
+    manager: EntityManager,
+    imageId: string,
+  ): Promise<RoomImage> {
+    const imagesRepository = manager.getRepository(RoomImage);
+    const imageSnapshot = await imagesRepository.findOne({
+      select: { id: true, roomId: true },
+      where: { id: imageId },
+    });
 
-    try {
-      const url = new URL(imageUrl);
-
-      if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-        throw new Error('Unsupported protocol');
-      }
-    } catch {
-      throw new BadRequestException('URL anh khong hop le.');
+    if (imageSnapshot === null) {
+      throw new NotFoundException('Khong tim thay anh phong.');
     }
 
-    return imageUrl;
+    await this.getLockedActiveRoom(manager, imageSnapshot.roomId);
+
+    const image = await imagesRepository.findOneBy({
+      id: imageId,
+      roomId: imageSnapshot.roomId,
+    });
+
+    if (image === null) {
+      throw new NotFoundException('Khong tim thay anh phong.');
+    }
+
+    return image;
   }
 
   private parseSortOrder(value: unknown): number {

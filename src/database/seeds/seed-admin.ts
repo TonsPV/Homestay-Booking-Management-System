@@ -30,6 +30,7 @@ async function main(): Promise<void> {
     username: getRequiredEnv('DB_USERNAME'),
     password: getRequiredEnv('DB_PASSWORD'),
     database: getRequiredEnv('DB_DATABASE'),
+    timezone: 'Z',
     entities: [User],
     synchronize: false,
   });

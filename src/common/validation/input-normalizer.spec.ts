@@ -74,6 +74,7 @@ describe('input normalizer', () => {
     expect(getVietnamesePhoneLookupVariants('+84705840355')).toEqual([
       '+84705840355',
       '0705840355',
+      '84705840355',
     ]);
   });
 });

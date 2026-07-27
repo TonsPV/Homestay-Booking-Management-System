@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import type { Repository } from 'typeorm';
+import { In, type Repository } from 'typeorm';
 
 import { getMysqlDuplicateKey } from '../../common/database';
 import type { PaginationMeta } from '../../common/http';
@@ -21,12 +21,20 @@ import {
   requireTrimmedString,
 } from '../../common/validation';
 import { CreateRoomTypeDto } from './dto/create-room-type.dto';
+import { SetRoomTypeAmenitiesDto } from './dto/set-room-type-amenities.dto';
 import {
   AdminListRoomTypesQueryDto,
   ListRoomTypesQueryDto,
 } from './dto/list-room-types-query.dto';
 import { UpdateRoomTypeDto } from './dto/update-room-type.dto';
 import { RoomType } from './schema/room-type.entity';
+import { Amenity } from '../amenity/schema/amenity.entity';
+
+export interface RoomTypeAmenityResponse {
+  id: string;
+  name: string;
+  description: string | null;
+}
 
 export interface RoomTypeResponse {
   id: string;
@@ -34,6 +42,7 @@ export interface RoomTypeResponse {
   description: string | null;
   maxGuests: number;
   basePrice: string;
+  amenities: RoomTypeAmenityResponse[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -219,6 +228,48 @@ export class RoomTypeService {
     }
   }
 
+  async setAmenities(
+    id: string,
+    body: SetRoomTypeAmenitiesDto,
+  ): Promise<AdminRoomTypeResponse> {
+    this.validateId(id);
+    const amenityIds = this.requireAmenityIds(body.amenityIds);
+
+    await this.roomTypesRepository.manager.transaction(async (manager) => {
+      const roomType = await manager
+        .getRepository(RoomType)
+        .createQueryBuilder('roomType')
+        .where('roomType.id = :id', { id })
+        .andWhere('roomType.deletedAt IS NULL')
+        .setLock('pessimistic_write')
+        .getOne();
+
+      if (roomType === null) {
+        throw new NotFoundException('Khong tim thay loai phong.');
+      }
+
+      const amenities =
+        amenityIds.length === 0
+          ? []
+          : await manager.getRepository(Amenity).findBy({
+              id: In(amenityIds),
+            });
+
+      if (amenities.length !== amenityIds.length) {
+        throw new BadRequestException(
+          'Danh sach tien nghi chua id khong ton tai hoac da bi xoa.',
+        );
+      }
+
+      roomType.amenities = amenities.sort((left, right) =>
+        left.name.localeCompare(right.name),
+      );
+      await manager.getRepository(RoomType).save(roomType);
+    });
+
+    return this.getAdmin(id);
+  }
+
   private async list(
     query: ListRoomTypesQueryDto,
     includeDeleted: boolean,
@@ -229,8 +280,14 @@ export class RoomTypeService {
     const search = optionalSearch(query.search);
     const roomTypesQuery = this.roomTypesRepository
       .createQueryBuilder('roomType')
+      .leftJoinAndSelect(
+        'roomType.amenities',
+        'amenity',
+        'amenity.deletedAt IS NULL',
+      )
       .orderBy('roomType.createdAt', 'DESC')
       .addOrderBy('roomType.id', 'DESC')
+      .addOrderBy('amenity.name', 'ASC')
       .skip(skip)
       .take(limit);
 
@@ -256,7 +313,16 @@ export class RoomTypeService {
   private async getActiveRoomType(id: string): Promise<RoomType> {
     this.validateId(id);
 
-    const roomType = await this.roomTypesRepository.findOneBy({ id });
+    const roomType = await this.roomTypesRepository
+      .createQueryBuilder('roomType')
+      .leftJoinAndSelect(
+        'roomType.amenities',
+        'amenity',
+        'amenity.deletedAt IS NULL',
+      )
+      .where('roomType.id = :id', { id })
+      .orderBy('amenity.name', 'ASC')
+      .getOne();
 
     if (roomType === null) {
       throw new NotFoundException('Khong tim thay loai phong.');
@@ -271,7 +337,13 @@ export class RoomTypeService {
     const roomType = await this.roomTypesRepository
       .createQueryBuilder('roomType')
       .withDeleted()
+      .leftJoinAndSelect(
+        'roomType.amenities',
+        'amenity',
+        'amenity.deletedAt IS NULL',
+      )
       .where('roomType.id = :id', { id })
+      .orderBy('amenity.name', 'ASC')
       .getOne();
 
     if (roomType === null) {
@@ -332,6 +404,26 @@ export class RoomTypeService {
     }
   }
 
+  private requireAmenityIds(value: unknown): string[] {
+    if (!Array.isArray(value) || value.length > 50) {
+      throw new BadRequestException(
+        'Danh sach amenityIds phai la mang toi da 50 phan tu.',
+      );
+    }
+
+    const ids = value.map((item) => String(item));
+
+    if (ids.some((id) => !/^[1-9][0-9]*$/.test(id))) {
+      throw new BadRequestException('Amenity id khong hop le.');
+    }
+
+    if (new Set(ids).size !== ids.length) {
+      throw new BadRequestException('Amenity id khong duoc trung lap.');
+    }
+
+    return ids;
+  }
+
   private toPublicResponse(roomType: RoomType): RoomTypeResponse {
     return {
       id: roomType.id,
@@ -339,6 +431,11 @@ export class RoomTypeService {
       description: roomType.description,
       maxGuests: roomType.maxGuests,
       basePrice: roomType.basePrice,
+      amenities: (roomType.amenities ?? []).map((amenity) => ({
+        id: amenity.id,
+        name: amenity.name,
+        description: amenity.description,
+      })),
       createdAt: roomType.createdAt,
       updatedAt: roomType.updatedAt,
     };

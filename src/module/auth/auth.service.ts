@@ -165,6 +165,7 @@ export class AuthService {
       accessToken: this.accessTokenService.sign({
         actorType: 'customer',
         customerId: customer.id,
+        tokenVersion: customer.tokenVersion,
       }),
       tokenType: 'Bearer',
       expiresIn: this.accessTokenService.getExpiresInSeconds(),

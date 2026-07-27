@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import type { SelectQueryBuilder } from 'typeorm';
+import type { EntityManager, SelectQueryBuilder } from 'typeorm';
 import { Repository } from 'typeorm';
 
 import { getMysqlDuplicateKey } from '../../common/database';
@@ -27,6 +27,7 @@ import { ListRoomsQueryDto } from './dto/list-rooms-query.dto';
 import { SearchRoomsQueryDto } from './dto/search-rooms-query.dto';
 import { UpdateRoomStatusDto } from './dto/update-room-status.dto';
 import { UpdateRoomDto } from './dto/update-room.dto';
+import { RoomImageStorageService } from './room-image-storage.service';
 import { RoomImage } from './schema/room-image.entity';
 import { Room, RoomStatus } from './schema/room.entity';
 
@@ -50,6 +51,11 @@ export interface RoomResponse {
     description: string | null;
     maxGuests: number;
     basePrice: string;
+    amenities: {
+      id: string;
+      name: string;
+      description: string | null;
+    }[];
   };
   images: RoomImageResponse[];
   createdAt: Date;
@@ -68,6 +74,7 @@ export class RoomService {
     private readonly roomsRepository: Repository<Room>,
     @InjectRepository(RoomType)
     private readonly roomTypesRepository: Repository<RoomType>,
+    private readonly roomImageStorage: RoomImageStorageService,
   ) {}
 
   async list(query: ListRoomsQueryDto): Promise<RoomListResult> {
@@ -169,6 +176,10 @@ export class RoomService {
       query.maxPrice,
       'Gia toi da khong hop le.',
     );
+    const amenityIds = this.optionalIdList(
+      query.amenityIds,
+      'Danh sach tien nghi khong hop le.',
+    );
     const { page, limit, skip } = parsePagination(
       query as Record<string, unknown>,
     );
@@ -213,6 +224,25 @@ export class RoomService {
 
     if (maxPrice !== undefined) {
       roomsQuery.andWhere('roomType.basePrice <= :maxPrice', { maxPrice });
+    }
+
+    if (amenityIds.length > 0) {
+      roomsQuery.andWhere(
+        `room.room_type_id IN (
+          SELECT roomTypeAmenity.room_type_id
+          FROM room_type_amenities roomTypeAmenity
+          INNER JOIN amenities amenityFilter
+            ON amenityFilter.id = roomTypeAmenity.amenity_id
+            AND amenityFilter.deleted_at IS NULL
+          WHERE roomTypeAmenity.amenity_id IN (:...amenityIds)
+          GROUP BY roomTypeAmenity.room_type_id
+          HAVING COUNT(DISTINCT roomTypeAmenity.amenity_id) = :amenityCount
+        )`,
+        {
+          amenityIds,
+          amenityCount: amenityIds.length,
+        },
+      );
     }
 
     return this.toListResult(roomsQuery, page, limit);
@@ -352,18 +382,32 @@ export class RoomService {
   }
 
   async delete(id: string): Promise<RoomResponse> {
-    const room = await this.getAdminRoomEntity(id);
+    this.validateId(id);
+    const result = await this.roomsRepository.manager.transaction(
+      async (manager) => {
+        const room = await this.getLockedAdminRoomEntity(manager, id);
 
-    if (await this.hasHistory(room.id)) {
-      throw new ConflictException(
-        'Phong da co lich su dat phong. Hay chuyen trang thai sang HIDDEN.',
-      );
-    }
+        if (await this.hasHistory(room.id, manager)) {
+          throw new ConflictException(
+            'Phong da co lich su dat phong. Hay chuyen trang thai sang HIDDEN.',
+          );
+        }
 
-    const response = this.toResponse(room);
-    await this.roomsRepository.remove(room);
+        const response = this.toResponse(room);
+        const imageUrls = room.images.map((image) => image.imageUrl);
 
-    return response;
+        await manager.getRepository(Room).remove(room);
+
+        return { imageUrls, response };
+      },
+    );
+    await Promise.all(
+      result.imageUrls.map((imageUrl) =>
+        this.roomImageStorage.deleteManaged(imageUrl),
+      ),
+    );
+
+    return result.response;
   }
 
   async updateStatus(
@@ -386,6 +430,11 @@ export class RoomService {
     return this.roomsRepository
       .createQueryBuilder('room')
       .innerJoinAndSelect('room.roomType', 'roomType')
+      .leftJoinAndSelect(
+        'roomType.amenities',
+        'amenity',
+        'amenity.deletedAt IS NULL',
+      )
       .leftJoinAndSelect('room.images', 'image')
       .where('room.deletedAt IS NULL')
       .andWhere('roomType.deletedAt IS NULL')
@@ -398,6 +447,11 @@ export class RoomService {
     return this.roomsRepository
       .createQueryBuilder('room')
       .innerJoinAndSelect('room.roomType', 'roomType')
+      .leftJoinAndSelect(
+        'roomType.amenities',
+        'amenity',
+        'amenity.deletedAt IS NULL',
+      )
       .leftJoinAndSelect('room.images', 'image')
       .where('room.deletedAt IS NULL')
       .andWhere('roomType.deletedAt IS NULL');
@@ -413,7 +467,41 @@ export class RoomService {
     const room = await this.roomsRepository
       .createQueryBuilder('room')
       .innerJoinAndSelect('room.roomType', 'roomType')
+      .leftJoinAndSelect(
+        'roomType.amenities',
+        'amenity',
+        'amenity.deletedAt IS NULL',
+      )
       .leftJoinAndSelect('room.images', 'image')
+      .where('room.id = :id', { id })
+      .andWhere('room.deletedAt IS NULL')
+      .orderBy('image.isCover', 'DESC')
+      .addOrderBy('image.sortOrder', 'ASC')
+      .addOrderBy('image.id', 'ASC')
+      .getOne();
+
+    if (room === null) {
+      throw new NotFoundException('Khong tim thay phong.');
+    }
+
+    return room;
+  }
+
+  private async getLockedAdminRoomEntity(
+    manager: EntityManager,
+    id: string,
+  ): Promise<Room> {
+    const room = await manager
+      .getRepository(Room)
+      .createQueryBuilder('room')
+      .innerJoinAndSelect('room.roomType', 'roomType')
+      .leftJoinAndSelect(
+        'roomType.amenities',
+        'amenity',
+        'amenity.deletedAt IS NULL',
+      )
+      .leftJoinAndSelect('room.images', 'image')
+      .setLock('pessimistic_write')
       .where('room.id = :id', { id })
       .andWhere('room.deletedAt IS NULL')
       .orderBy('image.isCover', 'DESC')
@@ -470,16 +558,19 @@ export class RoomService {
     }
   }
 
-  private async hasHistory(roomId: string): Promise<boolean> {
+  private async hasHistory(
+    roomId: string,
+    manager: EntityManager = this.roomsRepository.manager,
+  ): Promise<boolean> {
     const [booking, calendarEntry] = await Promise.all([
-      this.roomsRepository.manager
+      manager
         .createQueryBuilder()
         .select('booking.id', 'id')
         .from('bookings', 'booking')
         .where('booking.room_id = :roomId', { roomId })
         .limit(1)
         .getRawOne<{ id: string }>(),
-      this.roomsRepository.manager
+      manager
         .createQueryBuilder()
         .select('roomCalendar.id', 'id')
         .from('room_calendar', 'roomCalendar')
@@ -525,6 +616,11 @@ export class RoomService {
         description: room.roomType.description,
         maxGuests: room.roomType.maxGuests,
         basePrice: room.roomType.basePrice,
+        amenities: (room.roomType.amenities ?? []).map((amenity) => ({
+          id: amenity.id,
+          name: amenity.name,
+          description: amenity.description,
+        })),
       },
       images: (room.images ?? []).map((image) => this.toImageResponse(image)),
       createdAt: room.createdAt,
@@ -587,6 +683,27 @@ export class RoomService {
     }
 
     return this.requireId(value, message);
+  }
+
+  private optionalIdList(value: unknown, message: string): string[] {
+    if (value === undefined || value === null || value === '') {
+      return [];
+    }
+
+    const values = Array.isArray(value) ? value : [value];
+    const ids = values.flatMap((item) =>
+      typeof item === 'string' ? item.split(',') : [],
+    );
+
+    if (
+      ids.length === 0 ||
+      ids.length > 20 ||
+      ids.some((id) => !/^[1-9][0-9]*$/.test(id))
+    ) {
+      throw new BadRequestException(message);
+    }
+
+    return [...new Set(ids)];
   }
 
   private validateId(id: string): void {

@@ -8,6 +8,7 @@ import {
 
 import { AccessTokenService } from './access-token.service';
 import {
+  CustomerAuthorizationReader,
   type AuthenticatedRequest,
   UserAuthorizationReader,
 } from '../../common/http';
@@ -17,6 +18,7 @@ export class AccessTokenGuard implements CanActivate {
   constructor(
     private readonly accessTokenService: AccessTokenService,
     private readonly userAuthorizationReader: UserAuthorizationReader,
+    private readonly customerAuthorizationReader: CustomerAuthorizationReader,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -38,6 +40,26 @@ export class AccessTokenGuard implements CanActivate {
     }
 
     const auth = this.accessTokenService.verify(token);
+
+    if (auth.actor_type === 'customer') {
+      const customerId = auth.customer_id;
+      const tokenVersion = auth.token_version;
+
+      if (customerId === undefined || tokenVersion === undefined) {
+        throw new UnauthorizedException('Invalid access token.');
+      }
+
+      const customer =
+        await this.customerAuthorizationReader.findById(customerId);
+
+      if (customer === null || customer.tokenVersion !== tokenVersion) {
+        throw new UnauthorizedException('Invalid access token.');
+      }
+
+      if (customer.status === 'LOCKED') {
+        throw new ForbiddenException('Tai khoan bi khoa.');
+      }
+    }
 
     if (auth.actor_type === 'user') {
       const userId = auth.user_id;

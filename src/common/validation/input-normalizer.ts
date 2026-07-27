@@ -339,5 +339,9 @@ export function getVietnamesePhoneLookupVariants(
     return [normalizedPhone];
   }
 
-  return [normalizedPhone, `0${normalizedPhone.slice(3)}`];
+  return [
+    normalizedPhone,
+    `0${normalizedPhone.slice(3)}`,
+    normalizedPhone.slice(1),
+  ];
 }

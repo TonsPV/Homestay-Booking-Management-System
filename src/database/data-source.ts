@@ -4,11 +4,23 @@ import { config } from 'dotenv';
 import { DataSource } from 'typeorm';
 
 import { assertSafeE2eEnvironment } from '../config/e2e-environment';
+import { Booking } from '../module/booking/schema/booking.entity';
+import { Amenity } from '../module/amenity/schema/amenity.entity';
+import { RoomCalendar } from '../module/booking/schema/room-calendar.entity';
 import { Customer } from '../module/customer/schema/customer.entity';
+import { Payment } from '../module/payment/schema/payment.entity';
 import { RoomImage } from '../module/room/schema/room-image.entity';
 import { Room } from '../module/room/schema/room.entity';
 import { RoomType } from '../module/room-type/schema/room-type.entity';
 import { User } from '../module/user/schema/user.entity';
+import { AlignBookingMetadata1784774000000 } from './migrations/1784774000000-AlignBookingMetadata';
+import { AddPaymentManagement1784775000000 } from './migrations/1784775000000-AddPaymentManagement';
+import { AddVnpayPaymentFields1784776000000 } from './migrations/1784776000000-AddVnpayPaymentFields';
+import { AddPaymentReviewStatus1784777000000 } from './migrations/1784777000000-AddPaymentReviewStatus';
+import { AddVnpayRefundManagement1784778000000 } from './migrations/1784778000000-AddVnpayRefundManagement';
+import { HardenRoomCalendarOwnership1784779000000 } from './migrations/1784779000000-HardenRoomCalendarOwnership';
+import { AddCustomerTokenVersion1784780000000 } from './migrations/1784780000000-AddCustomerTokenVersion';
+import { AddAmenities1784781000000 } from './migrations/1784781000000-AddAmenities';
 import { AlignRoomMetadata1784772000000 } from './migrations/1784772000000-AlignRoomMetadata';
 import { AddUserTokenVersion1784773000000 } from './migrations/1784773000000-AddUserTokenVersion';
 import { AlignEntityMetadata1784771000000 } from './migrations/1784771000000-AlignEntityMetadata';
@@ -30,12 +42,31 @@ const AppDataSource = new DataSource({
   username: getRequiredEnv('DB_USERNAME'),
   password: getRequiredEnv('DB_PASSWORD'),
   database: getRequiredEnv('DB_DATABASE'),
-  entities: [Customer, Room, RoomImage, RoomType, User],
+  timezone: 'Z',
+  entities: [
+    Booking,
+    Amenity,
+    Customer,
+    Payment,
+    Room,
+    RoomCalendar,
+    RoomImage,
+    RoomType,
+    User,
+  ],
   migrations: [
     InitialSchemaBaseline1784770000000,
     AlignEntityMetadata1784771000000,
     AlignRoomMetadata1784772000000,
     AddUserTokenVersion1784773000000,
+    AlignBookingMetadata1784774000000,
+    AddPaymentManagement1784775000000,
+    AddVnpayPaymentFields1784776000000,
+    AddPaymentReviewStatus1784777000000,
+    AddVnpayRefundManagement1784778000000,
+    HardenRoomCalendarOwnership1784779000000,
+    AddCustomerTokenVersion1784780000000,
+    AddAmenities1784781000000,
   ],
   migrationsTableName: 'typeorm_migrations',
   synchronize: false,

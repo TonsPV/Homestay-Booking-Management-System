@@ -8,6 +8,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Query,
   UseGuards,
 } from '@nestjs/common';
@@ -22,6 +23,7 @@ import { AccessTokenGuard } from '../auth/access-token.guard';
 import { CreateRoomTypeDto } from './dto/create-room-type.dto';
 import { AdminListRoomTypesQueryDto } from './dto/list-room-types-query.dto';
 import { UpdateRoomTypeDto } from './dto/update-room-type.dto';
+import { SetRoomTypeAmenitiesDto } from './dto/set-room-type-amenities.dto';
 import {
   type AdminRoomTypeResponse,
   RoomTypeService,
@@ -103,6 +105,18 @@ export class RoomTypeAdminController {
       .restore(id)
       .then((roomType) =>
         ApiResponse.ok(roomType, 'Khoi phuc loai phong thanh cong.'),
+      );
+  }
+
+  @Put(':id/amenities')
+  setAmenities(
+    @Param('id') id: string,
+    @Body() body: SetRoomTypeAmenitiesDto,
+  ): Promise<ApiResponsePayload<AdminRoomTypeResponse>> {
+    return this.roomTypeService
+      .setAmenities(id, body)
+      .then((roomType) =>
+        ApiResponse.ok(roomType, 'Gan tien nghi cho loai phong thanh cong.'),
       );
   }
 }

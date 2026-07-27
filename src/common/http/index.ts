@@ -5,6 +5,7 @@ export * from './api-response.interceptor';
 export * from './auth.types';
 export * from './configure-app';
 export * from './current-auth.decorator';
+export * from './customer-authorization-reader';
 export * from './http-exception.filter';
 export * from './pagination.types';
 export * from './rate-limit.decorator';

@@ -1,12 +1,16 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { validateEnvironment } from './config/environment';
 import { AuthModule } from './module/auth/auth.module';
+import { AmenityModule } from './module/amenity/amenity.module';
+import { BookingModule } from './module/booking/booking.module';
 import { CustomerModule } from './module/customer/customer.module';
+import { PaymentModule } from './module/payment/payment.module';
 import { RoomModule } from './module/room/room.module';
 import { RoomTypeModule } from './module/room-type/room-type.module';
 import { UserModule } from './module/user/user.module';
@@ -18,6 +22,7 @@ import { UserModule } from './module/user/user.module';
       envFilePath: process.env.NODE_ENV === 'test' ? '.env.test' : '.env',
       validate: validateEnvironment,
     }),
+    ScheduleModule.forRoot(),
 
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
@@ -32,6 +37,7 @@ import { UserModule } from './module/user/user.module';
         username: configService.getOrThrow<string>('DB_USERNAME'),
         password: configService.getOrThrow<string>('DB_PASSWORD'),
         database: configService.getOrThrow<string>('DB_DATABASE'),
+        timezone: 'Z',
 
         autoLoadEntities: true,
 
@@ -40,7 +46,10 @@ import { UserModule } from './module/user/user.module';
       }),
     }),
     AuthModule,
+    AmenityModule,
+    BookingModule,
     CustomerModule,
+    PaymentModule,
     RoomModule,
     RoomTypeModule,
     UserModule,

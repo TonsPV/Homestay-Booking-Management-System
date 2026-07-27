@@ -1,0 +1,3256 @@
+{
+  "openapi": "3.0.0",
+  "paths": {
+    "/api": {
+      "get": {
+        "operationId": "App_getHello",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "App"
+        ]
+      }
+    },
+    "/api/v1/auth/customers/register": {
+      "post": {
+        "operationId": "Auth_registerCustomer",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterCustomerDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/api/v1/auth/customers/login": {
+      "post": {
+        "operationId": "Auth_loginCustomer",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/api/v1/auth/users/login": {
+      "post": {
+        "operationId": "Auth_loginUser",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/api/v1/auth/me": {
+      "get": {
+        "operationId": "Auth_me",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/api/v1/amenities": {
+      "get": {
+        "operationId": "Amenity_list",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "example": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "example": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "search",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": "wifi",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Amenities"
+        ]
+      }
+    },
+    "/api/v1/amenities/{id}": {
+      "get": {
+        "operationId": "Amenity_getById",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Amenities"
+        ]
+      }
+    },
+    "/api/v1/admin/amenities": {
+      "post": {
+        "operationId": "AmenityAdmin_create",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAmenityDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Admin Amenities"
+        ]
+      },
+      "get": {
+        "operationId": "AmenityAdmin_list",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "example": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "example": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "search",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": "wifi",
+              "type": "string"
+            }
+          },
+          {
+            "name": "includeDeleted",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": false,
+              "example": true,
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Admin Amenities"
+        ]
+      }
+    },
+    "/api/v1/admin/amenities/{id}": {
+      "get": {
+        "operationId": "AmenityAdmin_getById",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Admin Amenities"
+        ]
+      },
+      "patch": {
+        "operationId": "AmenityAdmin_update",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAmenityDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Admin Amenities"
+        ]
+      },
+      "delete": {
+        "operationId": "AmenityAdmin_softDelete",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Admin Amenities"
+        ]
+      }
+    },
+    "/api/v1/admin/amenities/{id}/restore": {
+      "patch": {
+        "operationId": "AmenityAdmin_restore",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Admin Amenities"
+        ]
+      }
+    },
+    "/api/v1/bookings": {
+      "post": {
+        "operationId": "Booking_create",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateBookingDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Booking"
+        ]
+      },
+      "get": {
+        "operationId": "Booking_list",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "example": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "example": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": "CONFIRMED",
+              "type": "string",
+              "enum": [
+                "PENDING_PAYMENT",
+                "CONFIRMED",
+                "CHECKED_IN",
+                "CHECKED_OUT",
+                "CANCELLED"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Booking"
+        ]
+      }
+    },
+    "/api/v1/bookings/{id}": {
+      "get": {
+        "operationId": "Booking_getById",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Booking"
+        ]
+      }
+    },
+    "/api/v1/bookings/{id}/cancel": {
+      "patch": {
+        "operationId": "Booking_cancel",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CancelBookingDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Booking"
+        ]
+      }
+    },
+    "/api/v1/management/bookings": {
+      "post": {
+        "operationId": "BookingManagement_create",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateManagementBookingDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "BookingManagement"
+        ]
+      },
+      "get": {
+        "operationId": "BookingManagement_list",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "example": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "example": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": "CONFIRMED",
+              "type": "string",
+              "enum": [
+                "PENDING_PAYMENT",
+                "CONFIRMED",
+                "CHECKED_IN",
+                "CHECKED_OUT",
+                "CANCELLED"
+              ]
+            }
+          },
+          {
+            "name": "search",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": "BKMR",
+              "type": "string"
+            }
+          },
+          {
+            "name": "customerId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "pattern": "^[1-9][0-9]*$",
+              "example": "2",
+              "type": "string"
+            }
+          },
+          {
+            "name": "roomId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "pattern": "^[1-9][0-9]*$",
+              "example": "21",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "BookingManagement"
+        ]
+      }
+    },
+    "/api/v1/management/bookings/{id}": {
+      "get": {
+        "operationId": "BookingManagement_getById",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "BookingManagement"
+        ]
+      }
+    },
+    "/api/v1/management/bookings/{id}/status": {
+      "patch": {
+        "operationId": "BookingManagement_updateStatus",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateBookingStatusDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "BookingManagement"
+        ]
+      }
+    },
+    "/api/v1/customers/me": {
+      "get": {
+        "operationId": "CustomerProfile_me",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Customer Profile"
+        ]
+      },
+      "patch": {
+        "operationId": "CustomerProfile_updateMe",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateCustomerProfileDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Customer Profile"
+        ]
+      }
+    },
+    "/api/v1/customers/me/password": {
+      "patch": {
+        "operationId": "CustomerProfile_changePassword",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangeCustomerPasswordDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerCredentialEnvelopeDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Current password or new password is invalid."
+          },
+          "401": {
+            "description": "Customer token is invalid."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Change the authenticated Customer password and revoke old tokens",
+        "tags": [
+          "Customer Profile"
+        ]
+      }
+    },
+    "/api/v1/customers": {
+      "get": {
+        "operationId": "CustomerAdmin_listCustomers",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "example": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "example": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "search",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": "0705840355",
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": "ACTIVE",
+              "type": "string",
+              "enum": [
+                "ACTIVE",
+                "LOCKED"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "CustomerAdmin"
+        ]
+      }
+    },
+    "/api/v1/customers/{id}/status": {
+      "patch": {
+        "operationId": "CustomerAdmin_updateStatus",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAccountStatusDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "CustomerAdmin"
+        ]
+      }
+    },
+    "/api/v1/management/customers/{id}/initial-password": {
+      "patch": {
+        "operationId": "CustomerCredentialManagement_setInitialPassword",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetInitialCustomerPasswordDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerCredentialEnvelopeDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Customer id or password is invalid."
+          },
+          "401": {
+            "description": "Authentication is required."
+          },
+          "403": {
+            "description": "ADMIN or STAFF role is required."
+          },
+          "404": {
+            "description": "Customer does not exist."
+          },
+          "409": {
+            "description": "Customer already has a password."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Set the first password for a counter-created Customer",
+        "tags": [
+          "Management Customers"
+        ]
+      }
+    },
+    "/api/v1/bookings/{bookingId}/payments": {
+      "post": {
+        "operationId": "Payment_createVnPayPayment",
+        "parameters": [
+          {
+            "name": "bookingId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateVnpayPaymentDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Payment"
+        ]
+      },
+      "get": {
+        "operationId": "Payment_list",
+        "parameters": [
+          {
+            "name": "bookingId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "example": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "example": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": "SUCCESS",
+              "type": "string",
+              "enum": [
+                "PENDING",
+                "SUCCESS",
+                "FAILED",
+                "REQUIRES_REVIEW",
+                "REFUND_PENDING",
+                "REFUNDED"
+              ]
+            }
+          },
+          {
+            "name": "method",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": "VNPAY",
+              "type": "string",
+              "enum": [
+                "CASH",
+                "BANK_TRANSFER",
+                "VNPAY"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Payment"
+        ]
+      }
+    },
+    "/api/v1/management/payments": {
+      "get": {
+        "operationId": "PaymentManagement_listAll",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "example": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "example": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": "SUCCESS",
+              "type": "string",
+              "enum": [
+                "PENDING",
+                "SUCCESS",
+                "FAILED",
+                "REQUIRES_REVIEW",
+                "REFUND_PENDING",
+                "REFUNDED"
+              ]
+            }
+          },
+          {
+            "name": "method",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": "VNPAY",
+              "type": "string",
+              "enum": [
+                "CASH",
+                "BANK_TRANSFER",
+                "VNPAY"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "PaymentManagement"
+        ]
+      }
+    },
+    "/api/v1/management/bookings/{bookingId}/payments": {
+      "get": {
+        "operationId": "PaymentManagement_list",
+        "parameters": [
+          {
+            "name": "bookingId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "example": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "example": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": "SUCCESS",
+              "type": "string",
+              "enum": [
+                "PENDING",
+                "SUCCESS",
+                "FAILED",
+                "REQUIRES_REVIEW",
+                "REFUND_PENDING",
+                "REFUNDED"
+              ]
+            }
+          },
+          {
+            "name": "method",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": "VNPAY",
+              "type": "string",
+              "enum": [
+                "CASH",
+                "BANK_TRANSFER",
+                "VNPAY"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "PaymentManagement"
+        ]
+      },
+      "post": {
+        "operationId": "PaymentManagement_create",
+        "parameters": [
+          {
+            "name": "bookingId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateManualPaymentDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "PaymentManagement"
+        ]
+      }
+    },
+    "/api/v1/management/payments/{id}/refund": {
+      "post": {
+        "operationId": "PaymentManagement_refund",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefundPaymentDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "PaymentManagement"
+        ]
+      }
+    },
+    "/api/v1/management/payments/{id}/reconcile-refund": {
+      "post": {
+        "operationId": "PaymentManagement_reconcileRefund",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "PaymentManagement"
+        ]
+      }
+    },
+    "/api/v1/payments/vnpay/ipn": {
+      "get": {
+        "operationId": "VnPay_ipn",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "VnPay"
+        ]
+      }
+    },
+    "/api/v1/payments/vnpay/return": {
+      "get": {
+        "operationId": "VnPay_getReturn",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "VnPay"
+        ]
+      }
+    },
+    "/api/v1/rooms/search": {
+      "get": {
+        "operationId": "Room_search",
+        "parameters": [
+          {
+            "name": "checkIn",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "format": "date",
+              "example": "2026-08-01",
+              "type": "string"
+            }
+          },
+          {
+            "name": "checkOut",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "format": "date",
+              "example": "2026-08-03",
+              "type": "string"
+            }
+          },
+          {
+            "name": "guests",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "example": 2,
+              "type": "number"
+            }
+          },
+          {
+            "name": "roomTypeId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "pattern": "^[1-9][0-9]*$",
+              "example": "5",
+              "type": "string"
+            }
+          },
+          {
+            "name": "amenityIds",
+            "required": false,
+            "in": "query",
+            "description": "Repeat this query parameter to require all selected amenities.",
+            "schema": {
+              "example": [
+                "1",
+                "2"
+              ],
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "name": "minPrice",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": "500000.00",
+              "type": "string"
+            }
+          },
+          {
+            "name": "maxPrice",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": "1500000.00",
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "example": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "example": 20,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Room"
+        ]
+      }
+    },
+    "/api/v1/rooms": {
+      "get": {
+        "operationId": "Room_list",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "example": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "example": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "search",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": "101",
+              "type": "string"
+            }
+          },
+          {
+            "name": "roomTypeId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "pattern": "^[1-9][0-9]*$",
+              "example": "5",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Room"
+        ]
+      },
+      "post": {
+        "operationId": "Room_create",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRoomDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Room"
+        ]
+      }
+    },
+    "/api/v1/rooms/{id}": {
+      "get": {
+        "operationId": "Room_getById",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Room"
+        ]
+      },
+      "patch": {
+        "operationId": "Room_update",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateRoomDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Room"
+        ]
+      },
+      "delete": {
+        "operationId": "Room_delete",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Room"
+        ]
+      }
+    },
+    "/api/v1/rooms/{id}/status": {
+      "patch": {
+        "operationId": "Room_updateStatus",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateRoomStatusDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Room"
+        ]
+      }
+    },
+    "/api/v1/rooms/{roomId}/images": {
+      "post": {
+        "operationId": "Room_createImage",
+        "parameters": [
+          {
+            "name": "roomId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "file"
+                ],
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  },
+                  "isCover": {
+                    "type": "boolean",
+                    "example": true
+                  },
+                  "sortOrder": {
+                    "type": "integer",
+                    "example": 0,
+                    "minimum": 0
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Room"
+        ]
+      }
+    },
+    "/api/v1/management/rooms": {
+      "get": {
+        "operationId": "RoomManagement_list",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "example": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "example": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "search",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": "101",
+              "type": "string"
+            }
+          },
+          {
+            "name": "roomTypeId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "pattern": "^[1-9][0-9]*$",
+              "example": "5",
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": "MAINTENANCE",
+              "type": "string",
+              "enum": [
+                "READY",
+                "OCCUPIED",
+                "CLEANING",
+                "MAINTENANCE",
+                "HIDDEN"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "401": {
+            "description": "Authentication is required."
+          },
+          "403": {
+            "description": "ADMIN or STAFF role is required."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Management Rooms"
+        ]
+      }
+    },
+    "/api/v1/management/rooms/{roomId}/calendar": {
+      "get": {
+        "operationId": "RoomManagement_calendar",
+        "parameters": [
+          {
+            "name": "roomId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "format": "date",
+              "example": "2030-08-01",
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "format": "date",
+              "example": "2030-09-01",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoomCalendarEntriesEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required."
+          },
+          "403": {
+            "description": "ADMIN or STAFF role is required."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List reserved and blocked room nights",
+        "tags": [
+          "Management Rooms"
+        ]
+      }
+    },
+    "/api/v1/management/rooms/{roomId}/blocks": {
+      "post": {
+        "operationId": "RoomManagement_block",
+        "parameters": [
+          {
+            "name": "roomId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BlockRoomDatesDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoomCalendarEntriesEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required."
+          },
+          "403": {
+            "description": "ADMIN or STAFF role is required."
+          },
+          "409": {
+            "description": "At least one requested night is reserved or already blocked."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Block a room date range",
+        "tags": [
+          "Management Rooms"
+        ]
+      },
+      "delete": {
+        "operationId": "RoomManagement_unblock",
+        "parameters": [
+          {
+            "name": "roomId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "format": "date",
+              "example": "2030-08-01",
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "format": "date",
+              "example": "2030-09-01",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnblockRoomDatesEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required."
+          },
+          "403": {
+            "description": "ADMIN or STAFF role is required."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Remove blocked nights from a room date range",
+        "tags": [
+          "Management Rooms"
+        ]
+      }
+    },
+    "/api/v1/management/rooms/{id}": {
+      "get": {
+        "operationId": "RoomManagement_getById",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "401": {
+            "description": "Authentication is required."
+          },
+          "403": {
+            "description": "ADMIN or STAFF role is required."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Management Rooms"
+        ]
+      }
+    },
+    "/api/v1/room-images/{imageId}": {
+      "delete": {
+        "operationId": "RoomImage_delete",
+        "parameters": [
+          {
+            "name": "imageId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "RoomImage"
+        ]
+      }
+    },
+    "/api/v1/room-images/{imageId}/set-cover": {
+      "patch": {
+        "operationId": "RoomImage_setCover",
+        "parameters": [
+          {
+            "name": "imageId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "RoomImage"
+        ]
+      }
+    },
+    "/api/v1/room-types": {
+      "get": {
+        "operationId": "RoomType_list",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "example": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "example": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "search",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": "phòng đôi",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "RoomType"
+        ]
+      }
+    },
+    "/api/v1/room-types/{id}": {
+      "get": {
+        "operationId": "RoomType_getById",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "RoomType"
+        ]
+      }
+    },
+    "/api/v1/admin/room-types": {
+      "post": {
+        "operationId": "RoomTypeAdmin_create",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRoomTypeDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "RoomTypeAdmin"
+        ]
+      },
+      "get": {
+        "operationId": "RoomTypeAdmin_list",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "example": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "example": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "search",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": "phòng đôi",
+              "type": "string"
+            }
+          },
+          {
+            "name": "includeDeleted",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": false,
+              "example": true,
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "RoomTypeAdmin"
+        ]
+      }
+    },
+    "/api/v1/admin/room-types/{id}": {
+      "get": {
+        "operationId": "RoomTypeAdmin_getById",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "RoomTypeAdmin"
+        ]
+      },
+      "patch": {
+        "operationId": "RoomTypeAdmin_update",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateRoomTypeDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "RoomTypeAdmin"
+        ]
+      },
+      "delete": {
+        "operationId": "RoomTypeAdmin_softDelete",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "RoomTypeAdmin"
+        ]
+      }
+    },
+    "/api/v1/admin/room-types/{id}/restore": {
+      "patch": {
+        "operationId": "RoomTypeAdmin_restore",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "RoomTypeAdmin"
+        ]
+      }
+    },
+    "/api/v1/admin/room-types/{id}/amenities": {
+      "put": {
+        "operationId": "RoomTypeAdmin_setAmenities",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetRoomTypeAmenitiesDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "RoomTypeAdmin"
+        ]
+      }
+    },
+    "/api/v1/users": {
+      "post": {
+        "operationId": "UserAdmin_createUser",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateUserDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "UserAdmin"
+        ]
+      },
+      "get": {
+        "operationId": "UserAdmin_listUsers",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "example": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "example": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "search",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": "staff@example.com",
+              "type": "string"
+            }
+          },
+          {
+            "name": "role",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": "STAFF",
+              "type": "string",
+              "enum": [
+                "STAFF",
+                "ADMIN"
+              ]
+            }
+          },
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": "ACTIVE",
+              "type": "string",
+              "enum": [
+                "ACTIVE",
+                "LOCKED"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "UserAdmin"
+        ]
+      }
+    },
+    "/api/v1/users/{id}": {
+      "patch": {
+        "operationId": "UserAdmin_updateUser",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateUserDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "UserAdmin"
+        ]
+      }
+    },
+    "/api/v1/users/{id}/status": {
+      "patch": {
+        "operationId": "UserAdmin_updateStatus",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAccountStatusDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "UserAdmin"
+        ]
+      }
+    }
+  },
+  "info": {
+    "title": "Homestay Booking Management System API",
+    "description": "HTTP contract for the HBMS customer and management applications.",
+    "version": "1.0.0",
+    "contact": {}
+  },
+  "tags": [],
+  "servers": [],
+  "components": {
+    "securitySchemes": {
+      "bearer": {
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "type": "http"
+      }
+    },
+    "schemas": {
+      "RegisterCustomerDto": {
+        "type": "object",
+        "properties": {
+          "fullName": {
+            "type": "string",
+            "example": "Pham Van Tan",
+            "maxLength": 120
+          },
+          "email": {
+            "type": "string",
+            "example": "tan@example.com",
+            "maxLength": 160,
+            "nullable": true
+          },
+          "phone": {
+            "type": "string",
+            "example": "0705840355"
+          },
+          "password": {
+            "type": "string",
+            "example": "StrongPassword123!",
+            "maxLength": 72,
+            "minLength": 8,
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "fullName",
+          "phone",
+          "password"
+        ]
+      },
+      "LoginDto": {
+        "type": "object",
+        "properties": {
+          "identifier": {
+            "type": "string",
+            "description": "Email or Vietnamese phone number.",
+            "example": "tan@example.com"
+          },
+          "password": {
+            "type": "string",
+            "example": "StrongPassword123!",
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "identifier",
+          "password"
+        ]
+      },
+      "CreateAmenityDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "Wi-Fi",
+            "maxLength": 120
+          },
+          "description": {
+            "type": "string",
+            "example": "Internet không dây miễn phí trong phòng.",
+            "maxLength": 500,
+            "nullable": true
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "UpdateAmenityDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "Wi-Fi tốc độ cao",
+            "maxLength": 120
+          },
+          "description": {
+            "type": "string",
+            "example": "Internet không dây miễn phí trong phòng.",
+            "maxLength": 500,
+            "nullable": true
+          }
+        }
+      },
+      "CreateBookingDto": {
+        "type": "object",
+        "properties": {
+          "roomId": {
+            "type": "string",
+            "example": "21",
+            "pattern": "^[1-9][0-9]*$"
+          },
+          "checkInDate": {
+            "type": "string",
+            "example": "2026-08-01",
+            "format": "date"
+          },
+          "checkOutDate": {
+            "type": "string",
+            "example": "2026-08-03",
+            "format": "date"
+          },
+          "guestCount": {
+            "type": "number",
+            "example": 2,
+            "minimum": 1
+          },
+          "contactName": {
+            "type": "string",
+            "description": "Overrides the authenticated Customer profile contact.",
+            "example": "Nguyen Van A",
+            "maxLength": 120
+          },
+          "contactPhone": {
+            "type": "string",
+            "example": "0901234567"
+          },
+          "contactEmail": {
+            "type": "string",
+            "example": "guest@example.com",
+            "maxLength": 160,
+            "nullable": true
+          },
+          "customerNote": {
+            "type": "string",
+            "example": "Vui lòng chuẩn bị phòng yên tĩnh.",
+            "nullable": true
+          }
+        },
+        "required": [
+          "roomId",
+          "checkInDate",
+          "checkOutDate",
+          "guestCount"
+        ]
+      },
+      "CancelBookingDto": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "example": "Khách thay đổi kế hoạch.",
+            "maxLength": 500
+          }
+        },
+        "required": [
+          "reason"
+        ]
+      },
+      "CreateManagementBookingDto": {
+        "type": "object",
+        "properties": {
+          "roomId": {
+            "type": "string",
+            "example": "21",
+            "pattern": "^[1-9][0-9]*$"
+          },
+          "checkInDate": {
+            "type": "string",
+            "example": "2026-08-01",
+            "format": "date"
+          },
+          "checkOutDate": {
+            "type": "string",
+            "example": "2026-08-03",
+            "format": "date"
+          },
+          "guestCount": {
+            "type": "number",
+            "example": 2,
+            "minimum": 1
+          },
+          "contactName": {
+            "type": "string",
+            "description": "Overrides the authenticated Customer profile contact.",
+            "example": "Nguyen Van A",
+            "maxLength": 120
+          },
+          "contactPhone": {
+            "type": "string",
+            "example": "0901234567"
+          },
+          "contactEmail": {
+            "type": "string",
+            "example": "guest@example.com",
+            "maxLength": 160,
+            "nullable": true
+          },
+          "customerNote": {
+            "type": "string",
+            "example": "Vui lòng chuẩn bị phòng yên tĩnh.",
+            "nullable": true
+          },
+          "customerId": {
+            "type": "string",
+            "description": "Existing Customer id. Omit it to create or match a counter Customer from contact data.",
+            "example": "2",
+            "pattern": "^[1-9][0-9]*$"
+          }
+        },
+        "required": [
+          "roomId",
+          "checkInDate",
+          "checkOutDate",
+          "guestCount"
+        ]
+      },
+      "UpdateBookingStatusDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "PENDING_PAYMENT",
+              "CONFIRMED",
+              "CHECKED_IN",
+              "CHECKED_OUT",
+              "CANCELLED"
+            ],
+            "example": "CONFIRMED"
+          },
+          "cancellationReason": {
+            "type": "string",
+            "description": "Required when the target status is CANCELLED.",
+            "example": "Khách yêu cầu hủy tại quầy.",
+            "maxLength": 500
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "UpdateCustomerProfileDto": {
+        "type": "object",
+        "properties": {
+          "fullName": {
+            "type": "string",
+            "example": "Pham Van Tan",
+            "maxLength": 120
+          },
+          "email": {
+            "type": "string",
+            "example": "tan@example.com",
+            "maxLength": 160,
+            "nullable": true
+          },
+          "phone": {
+            "type": "string",
+            "example": "0705840355"
+          }
+        }
+      },
+      "ChangeCustomerPasswordDto": {
+        "type": "object",
+        "properties": {
+          "currentPassword": {
+            "type": "string",
+            "example": "CurrentPassword123!",
+            "minLength": 1,
+            "writeOnly": true
+          },
+          "newPassword": {
+            "type": "string",
+            "example": "NewPassword456!",
+            "minLength": 8,
+            "maxLength": 72,
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "currentPassword",
+          "newPassword"
+        ]
+      },
+      "CustomerCredentialResultDto": {
+        "type": "object",
+        "properties": {
+          "passwordConfigured": {
+            "type": "boolean",
+            "example": true
+          }
+        },
+        "required": [
+          "passwordConfigured"
+        ]
+      },
+      "CustomerCredentialEnvelopeDto": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": true
+          },
+          "statusCode": {
+            "type": "number",
+            "example": 200
+          },
+          "message": {
+            "type": "string",
+            "example": "Cap nhat mat khau customer thanh cong."
+          },
+          "data": {
+            "$ref": "#/components/schemas/CustomerCredentialResultDto"
+          },
+          "path": {
+            "type": "string",
+            "example": "/api/v1/customers/me/password"
+          },
+          "timestamp": {
+            "type": "string",
+            "example": "2026-07-27T05:00:00.000Z",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "success",
+          "statusCode",
+          "message",
+          "data",
+          "path",
+          "timestamp"
+        ]
+      },
+      "UpdateAccountStatusDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ACTIVE",
+              "LOCKED"
+            ],
+            "example": "LOCKED"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "SetInitialCustomerPasswordDto": {
+        "type": "object",
+        "properties": {
+          "password": {
+            "type": "string",
+            "example": "TemporaryPassword123!",
+            "minLength": 8,
+            "maxLength": 72,
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "password"
+        ]
+      },
+      "CreateVnpayPaymentDto": {
+        "type": "object",
+        "properties": {
+          "bankCode": {
+            "type": "string",
+            "enum": [
+              "VNPAYQR",
+              "VNBANK",
+              "INTCARD"
+            ],
+            "example": "VNBANK"
+          },
+          "locale": {
+            "type": "string",
+            "default": "vn",
+            "enum": [
+              "vn",
+              "en"
+            ],
+            "example": "vn"
+          }
+        }
+      },
+      "CreateManualPaymentDto": {
+        "type": "object",
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "CASH",
+              "BANK_TRANSFER"
+            ],
+            "example": "CASH"
+          }
+        },
+        "required": [
+          "method"
+        ]
+      },
+      "RefundPaymentDto": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "example": "Customer requested a refund.",
+            "maxLength": 500
+          }
+        },
+        "required": [
+          "reason"
+        ]
+      },
+      "CreateRoomDto": {
+        "type": "object",
+        "properties": {
+          "roomTypeId": {
+            "type": "string",
+            "example": "5",
+            "pattern": "^[1-9][0-9]*$"
+          },
+          "roomNumber": {
+            "type": "string",
+            "example": "101",
+            "maxLength": 50
+          },
+          "name": {
+            "type": "string",
+            "example": "Phòng 101",
+            "maxLength": 120
+          },
+          "description": {
+            "type": "string",
+            "example": "Phòng tầng một, gần khu vườn.",
+            "nullable": true
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "READY",
+              "OCCUPIED",
+              "CLEANING",
+              "MAINTENANCE",
+              "HIDDEN"
+            ],
+            "example": "READY"
+          }
+        },
+        "required": [
+          "roomTypeId",
+          "roomNumber",
+          "name"
+        ]
+      },
+      "UpdateRoomDto": {
+        "type": "object",
+        "properties": {
+          "roomTypeId": {
+            "type": "string",
+            "example": "5",
+            "pattern": "^[1-9][0-9]*$"
+          },
+          "roomNumber": {
+            "type": "string",
+            "example": "101",
+            "maxLength": 50
+          },
+          "name": {
+            "type": "string",
+            "example": "Phòng 101 hướng vườn",
+            "maxLength": 120
+          },
+          "description": {
+            "type": "string",
+            "example": "Phòng tầng một, gần khu vườn.",
+            "nullable": true
+          }
+        }
+      },
+      "UpdateRoomStatusDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "READY",
+              "OCCUPIED",
+              "CLEANING",
+              "MAINTENANCE",
+              "HIDDEN"
+            ],
+            "example": "MAINTENANCE"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "RoomCalendarBookingDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "28"
+          },
+          "bookingCode": {
+            "type": "string",
+            "example": "BKMRZ123ABC"
+          }
+        },
+        "required": [
+          "id",
+          "bookingCode"
+        ]
+      },
+      "RoomCalendarEntryDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "101"
+          },
+          "stayDate": {
+            "type": "string",
+            "example": "2030-08-01",
+            "format": "date"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "RESERVED",
+              "BLOCKED"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "example": "Bao tri may lanh",
+            "nullable": true
+          },
+          "booking": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RoomCalendarBookingDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "stayDate",
+          "status",
+          "reason",
+          "booking"
+        ]
+      },
+      "RoomCalendarEntriesEnvelopeDto": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": true
+          },
+          "statusCode": {
+            "type": "number",
+            "example": 200
+          },
+          "message": {
+            "type": "string",
+            "example": "Lay lich phong quan ly thanh cong."
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RoomCalendarEntryDto"
+            }
+          },
+          "path": {
+            "type": "string",
+            "example": "/api/v1/management/rooms/21/calendar"
+          },
+          "timestamp": {
+            "type": "string",
+            "example": "2026-07-27T04:00:00.000Z",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "success",
+          "statusCode",
+          "message",
+          "data",
+          "path",
+          "timestamp"
+        ]
+      },
+      "BlockRoomDatesDto": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "example": "2030-08-01",
+            "format": "date"
+          },
+          "to": {
+            "type": "string",
+            "example": "2030-08-04",
+            "format": "date"
+          },
+          "reason": {
+            "type": "string",
+            "example": "Bao tri may lanh",
+            "maxLength": 500
+          }
+        },
+        "required": [
+          "from",
+          "to",
+          "reason"
+        ]
+      },
+      "UnblockRoomDatesDto": {
+        "type": "object",
+        "properties": {
+          "removedCount": {
+            "type": "number",
+            "example": 3,
+            "minimum": 0
+          }
+        },
+        "required": [
+          "removedCount"
+        ]
+      },
+      "UnblockRoomDatesEnvelopeDto": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": true
+          },
+          "statusCode": {
+            "type": "number",
+            "example": 200
+          },
+          "message": {
+            "type": "string",
+            "example": "Mo khoa lich phong thanh cong."
+          },
+          "data": {
+            "$ref": "#/components/schemas/UnblockRoomDatesDto"
+          },
+          "path": {
+            "type": "string",
+            "example": "/api/v1/management/rooms/21/blocks"
+          },
+          "timestamp": {
+            "type": "string",
+            "example": "2026-07-27T04:00:00.000Z",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "success",
+          "statusCode",
+          "message",
+          "data",
+          "path",
+          "timestamp"
+        ]
+      },
+      "CreateRoomTypeDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "Phòng đôi",
+            "maxLength": 120
+          },
+          "description": {
+            "type": "string",
+            "example": "Phòng dành cho hai khách.",
+            "nullable": true
+          },
+          "maxGuests": {
+            "type": "number",
+            "example": 2,
+            "maximum": 100,
+            "minimum": 1
+          },
+          "basePrice": {
+            "type": "string",
+            "example": "900000.00",
+            "pattern": "^\\d+(?:\\.\\d{1,2})?$"
+          }
+        },
+        "required": [
+          "name",
+          "maxGuests",
+          "basePrice"
+        ]
+      },
+      "UpdateRoomTypeDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "Phòng đôi hướng vườn",
+            "maxLength": 120
+          },
+          "description": {
+            "type": "string",
+            "example": "Phòng dành cho hai khách.",
+            "nullable": true
+          },
+          "maxGuests": {
+            "type": "number",
+            "example": 2,
+            "maximum": 100,
+            "minimum": 1
+          },
+          "basePrice": {
+            "type": "string",
+            "example": "950000.00",
+            "pattern": "^\\d+(?:\\.\\d{1,2})?$"
+          }
+        }
+      },
+      "SetRoomTypeAmenitiesDto": {
+        "type": "object",
+        "properties": {
+          "amenityIds": {
+            "description": "Complete active Amenity id set for this RoomType.",
+            "example": [
+              "1",
+              "2"
+            ],
+            "items": {
+              "pattern": "^[1-9][0-9]*$",
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "amenityIds"
+        ]
+      },
+      "CreateUserDto": {
+        "type": "object",
+        "properties": {
+          "fullName": {
+            "type": "string",
+            "example": "Nguyen Van Staff",
+            "maxLength": 120
+          },
+          "email": {
+            "type": "string",
+            "example": "staff@example.com",
+            "maxLength": 160
+          },
+          "phone": {
+            "type": "string",
+            "example": "0901234567",
+            "nullable": true
+          },
+          "password": {
+            "type": "string",
+            "example": "StrongPassword123!",
+            "maxLength": 72,
+            "minLength": 8,
+            "writeOnly": true
+          },
+          "role": {
+            "type": "string",
+            "description": "Only STAFF accounts can be issued through this endpoint.",
+            "enum": [
+              "STAFF"
+            ],
+            "example": "STAFF"
+          }
+        },
+        "required": [
+          "fullName",
+          "email",
+          "password"
+        ]
+      },
+      "UpdateUserDto": {
+        "type": "object",
+        "properties": {
+          "fullName": {
+            "type": "string",
+            "example": "Nguyen Van Staff",
+            "maxLength": 120
+          },
+          "email": {
+            "type": "string",
+            "example": "staff@example.com",
+            "maxLength": 160
+          },
+          "phone": {
+            "type": "string",
+            "example": "0901234567",
+            "nullable": true
+          },
+          "password": {
+            "type": "string",
+            "example": "UpdatedPassword456!",
+            "maxLength": 72,
+            "minLength": 8,
+            "writeOnly": true
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "STAFF"
+            ],
+            "example": "STAFF"
+          }
+        }
+      }
+    }
+  }
+}

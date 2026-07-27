@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 
 import { AppModule } from './app.module';
 import { configureApp } from './common/http';
+import { configureOpenApi } from './openapi/openapi';
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
@@ -10,6 +11,7 @@ async function bootstrap(): Promise<void> {
   const configService = app.get(ConfigService);
 
   configureApp(app);
+  configureOpenApi(app);
 
   const port = Number(configService.get<string>('APP_PORT') ?? 3000);
 

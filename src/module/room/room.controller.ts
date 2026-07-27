@@ -9,8 +9,12 @@ import {
   Patch,
   Post,
   Query,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { ApiBody, ApiConsumes } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
 
 import {
   ApiResponse,
@@ -20,6 +24,7 @@ import {
   RolesGuard,
   type AccessTokenPayload,
 } from '../../common/http';
+import { ROOM_IMAGE_MAX_FILE_SIZE } from '../../config/room-image-storage';
 import { AccessTokenGuard } from '../auth/access-token.guard';
 import { CreateRoomImageDto } from './dto/create-room-image.dto';
 import { CreateRoomDto } from './dto/create-room.dto';
@@ -28,6 +33,7 @@ import { SearchRoomsQueryDto } from './dto/search-rooms-query.dto';
 import { UpdateRoomStatusDto } from './dto/update-room-status.dto';
 import { UpdateRoomDto } from './dto/update-room.dto';
 import { RoomImageService } from './room-image.service';
+import type { UploadedRoomImageFile } from './room-image-storage.service';
 import {
   type RoomImageResponse,
   type RoomResponse,
@@ -128,15 +134,48 @@ export class RoomController {
   }
 
   @Post(':roomId/images')
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['file'],
+      properties: {
+        file: {
+          type: 'string',
+          format: 'binary',
+        },
+        isCover: {
+          type: 'boolean',
+          example: true,
+        },
+        sortOrder: {
+          type: 'integer',
+          example: 0,
+          minimum: 0,
+        },
+      },
+    },
+  })
   @UseGuards(AccessTokenGuard, RolesGuard)
   @Roles('ADMIN')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: {
+        fields: 2,
+        files: 1,
+        fileSize: ROOM_IMAGE_MAX_FILE_SIZE,
+        parts: 4,
+      },
+    }),
+  )
   @HttpCode(HttpStatus.CREATED)
   createImage(
     @Param('roomId') roomId: string,
     @Body() body: CreateRoomImageDto,
+    @UploadedFile() file?: UploadedRoomImageFile,
   ): Promise<ApiResponsePayload<RoomImageResponse>> {
     return this.roomImageService
-      .create(roomId, body)
+      .create(roomId, body, file)
       .then((image) =>
         ApiResponse.created(image, 'Them anh phong thanh cong.'),
       );

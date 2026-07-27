@@ -35,6 +35,9 @@ export class Customer {
   })
   passwordHash: string | null;
 
+  @Column({ name: 'token_version', type: 'int', default: 0 })
+  tokenVersion: number;
+
   @Column({
     type: 'enum',
     enum: ['ACTIVE', 'LOCKED'],

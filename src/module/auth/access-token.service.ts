@@ -31,6 +31,7 @@ export class AccessTokenService {
 
     if (subject.actorType === 'customer') {
       payload.customer_id = this.requireId(subject.customerId);
+      payload.token_version = this.requireTokenVersion(subject.tokenVersion);
     }
 
     if (subject.actorType === 'user') {
@@ -162,11 +163,13 @@ export class AccessTokenService {
 
     if (actorType === 'customer') {
       const customerId = this.readString(payload, 'customer_id');
+      const tokenVersion = this.readTokenVersion(payload, 'token_version');
 
       return {
         sub,
         actor_type: actorType,
         customer_id: customerId,
+        token_version: tokenVersion,
         iat,
         exp,
       };

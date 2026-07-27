@@ -1,12 +1,37 @@
+import { BadRequestException } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 
 import { RoomImageService } from './room-image.service';
+import {
+  RoomImageStorageService,
+  type UploadedRoomImageFile,
+} from './room-image-storage.service';
 import { RoomImage } from './schema/room-image.entity';
 import { Room } from './schema/room.entity';
 
 describe('RoomImageService', () => {
+  it('requires an uploaded file', async () => {
+    const createQueryRunner = jest.fn();
+    const dataSource = {
+      createQueryRunner,
+    } as unknown as DataSource;
+    const roomImageStorage = createRoomImageStorage();
+    const service = new RoomImageService(
+      dataSource,
+      roomImageStorage as unknown as RoomImageStorageService,
+    );
+
+    await expect(service.create('1', {})).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(roomImageStorage.store).not.toHaveBeenCalled();
+    expect(createQueryRunner).not.toHaveBeenCalled();
+  });
+
   it('rolls back and releases the query runner when saving fails', async () => {
     const saveError = new Error('save failed');
+    const storedImageUrl =
+      '/media/room-images/1/11111111-1111-4111-8111-111111111111.webp';
     const roomQuery = {
       setLock: jest.fn().mockReturnThis(),
       where: jest.fn().mockReturnThis(),
@@ -50,18 +75,161 @@ describe('RoomImageService', () => {
     const dataSource = {
       createQueryRunner: jest.fn().mockReturnValue(queryRunner),
     } as unknown as DataSource;
-    const service = new RoomImageService(dataSource);
+    const roomImageStorage = createRoomImageStorage(storedImageUrl);
+    const service = new RoomImageService(
+      dataSource,
+      roomImageStorage as unknown as RoomImageStorageService,
+    );
 
     await expect(
-      service.create('1', {
-        imageUrl: 'https://example.com/room.jpg',
-        isCover: true,
-      }),
+      service.create(
+        '1',
+        { isCover: true },
+        createUpload(Buffer.from('image'), 'image/png'),
+      ),
     ).rejects.toBe(saveError);
 
     expect(roomQuery.setLock).toHaveBeenCalledWith('pessimistic_write');
     expect(queryRunner.rollbackTransaction).toHaveBeenCalledTimes(1);
     expect(queryRunner.commitTransaction).not.toHaveBeenCalled();
     expect(queryRunner.release).toHaveBeenCalledTimes(1);
+    expect(roomImageStorage.deleteManaged).toHaveBeenCalledWith(storedImageUrl);
+  });
+
+  it('locks the Room before changing the cover image', async () => {
+    const image = {
+      id: '2',
+      roomId: '1',
+      imageUrl: 'https://example.com/room-2.jpg',
+      sortOrder: 1,
+      isCover: false,
+    };
+    const roomQuery = {
+      setLock: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      getOne: jest.fn().mockResolvedValue({ id: '1' }),
+    };
+    const roomRepository = {
+      createQueryBuilder: jest.fn().mockReturnValue(roomQuery),
+    };
+    const imagesRepository = {
+      findOne: jest.fn().mockResolvedValue({ id: '2', roomId: '1' }),
+      findOneBy: jest.fn().mockResolvedValue(image),
+      update: jest.fn().mockResolvedValue({ affected: 1 }),
+      save: jest.fn().mockImplementation((value: unknown) => value),
+    };
+    const manager = {
+      getRepository: jest.fn((entity: unknown) => {
+        if (entity === Room) {
+          return roomRepository;
+        }
+
+        if (entity === RoomImage) {
+          return imagesRepository;
+        }
+
+        throw new Error('Unexpected repository.');
+      }),
+    };
+    const dataSource = {
+      transaction: jest.fn(
+        (callback: (value: typeof manager) => Promise<unknown>) =>
+          callback(manager),
+      ),
+    } as unknown as DataSource;
+    const roomImageStorage = createRoomImageStorage();
+    const service = new RoomImageService(
+      dataSource,
+      roomImageStorage as unknown as RoomImageStorageService,
+    );
+
+    await expect(service.setCover('2')).resolves.toMatchObject({
+      id: '2',
+      isCover: true,
+    });
+
+    expect(roomQuery.setLock).toHaveBeenCalledWith('pessimistic_write');
+    expect(imagesRepository.update).toHaveBeenCalledWith(
+      { roomId: '1' },
+      { isCover: false },
+    );
+  });
+
+  it('locks the Room before deleting an image', async () => {
+    const image = {
+      id: '2',
+      roomId: '1',
+      imageUrl: 'https://example.com/room-2.jpg',
+      sortOrder: 1,
+      isCover: false,
+    };
+    const roomQuery = {
+      setLock: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      getOne: jest.fn().mockResolvedValue({ id: '1' }),
+    };
+    const roomRepository = {
+      createQueryBuilder: jest.fn().mockReturnValue(roomQuery),
+    };
+    const imagesRepository = {
+      findOne: jest.fn().mockResolvedValue({ id: '2', roomId: '1' }),
+      findOneBy: jest.fn().mockResolvedValue(image),
+      remove: jest.fn().mockResolvedValue(image),
+    };
+    const manager = {
+      getRepository: jest.fn((entity: unknown) => {
+        if (entity === Room) {
+          return roomRepository;
+        }
+
+        if (entity === RoomImage) {
+          return imagesRepository;
+        }
+
+        throw new Error('Unexpected repository.');
+      }),
+    };
+    const dataSource = {
+      transaction: jest.fn(
+        (callback: (value: typeof manager) => Promise<unknown>) =>
+          callback(manager),
+      ),
+    } as unknown as DataSource;
+    const roomImageStorage = createRoomImageStorage();
+    const service = new RoomImageService(
+      dataSource,
+      roomImageStorage as unknown as RoomImageStorageService,
+    );
+
+    await expect(service.delete('2')).resolves.toMatchObject({ id: '2' });
+
+    expect(roomQuery.setLock).toHaveBeenCalledWith('pessimistic_write');
+    expect(imagesRepository.remove).toHaveBeenCalledWith(image);
+    expect(roomImageStorage.deleteManaged).toHaveBeenCalledWith(image.imageUrl);
   });
 });
+
+interface RoomImageStorageMock {
+  deleteManaged: jest.Mock;
+  store: jest.Mock;
+}
+
+function createRoomImageStorage(
+  storedImageUrl = '/media/room-images/1/11111111-1111-4111-8111-111111111111.webp',
+): RoomImageStorageMock {
+  return {
+    deleteManaged: jest.fn().mockResolvedValue(undefined),
+    store: jest.fn().mockResolvedValue(storedImageUrl),
+  };
+}
+
+function createUpload(buffer: Buffer, mimetype: string): UploadedRoomImageFile {
+  return {
+    buffer,
+    mimetype,
+    originalname: 'room.png',
+    size: buffer.length,
+  };
+}
