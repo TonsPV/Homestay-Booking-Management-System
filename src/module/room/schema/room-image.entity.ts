@@ -7,7 +7,7 @@ import {
   PrimaryGeneratedColumn,
 } from 'typeorm';
 
-import { Room } from './room.entity';
+import type { Room } from './room.entity';
 
 @Entity('room_images')
 @Index('idx_room_images_room', ['roomId'])
@@ -19,7 +19,7 @@ export class RoomImage {
   @Column({ name: 'room_id', type: 'bigint' })
   roomId: string;
 
-  @ManyToOne(() => Room, (room) => room.images, {
+  @ManyToOne('Room', (room: Room) => room.images, {
     nullable: false,
     onDelete: 'CASCADE',
   })

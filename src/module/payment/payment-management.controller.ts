@@ -21,25 +21,48 @@ import {
   Roles,
   RolesGuard,
 } from '../../common/http';
+import {
+  ApiCommonAuthErrors,
+  ApiCommonMutationErrors,
+  ApiCreatedEnvelope,
+  ApiOkEnvelope,
+} from '../../openapi/api-response.decorators';
 import { AccessTokenGuard } from '../auth/access-token.guard';
 import { CreateManualPaymentDto } from './dto/create-manual-payment.dto';
 import { ListPaymentsQueryDto } from './dto/list-payments-query.dto';
 import { RefundPaymentDto } from './dto/refund-payment.dto';
+import {
+  PaymentDto,
+  PaymentManagementMetaDto,
+} from './dto/payment-response.dto';
 import { PaymentService, type PaymentResponse } from './payment.service';
 import { PaymentStatus } from './schema/payment.entity';
+import { PaymentMethod } from './schema/payment.entity';
 
 @Controller('v1/management')
 @UseGuards(AccessTokenGuard, RolesGuard)
 @Roles('ADMIN', 'STAFF')
+@ApiCommonAuthErrors()
 export class PaymentManagementController {
   constructor(private readonly paymentService: PaymentService) {}
 
   @Get('payments')
+  @ApiOkEnvelope(PaymentDto, {
+    isArray: true,
+    metaModel: PaymentManagementMetaDto,
+    paginated: true,
+  })
   listAll(
+    @CurrentAuth() auth: AccessTokenPayload,
     @Query() query: ListPaymentsQueryDto,
   ): Promise<ApiResponsePayload<PaymentResponse[]>> {
     return this.paymentService
-      .listAllManagement(query)
+      .listAllManagement(
+        query,
+        auth.role === 'STAFF'
+          ? [PaymentMethod.CASH, PaymentMethod.BANK_TRANSFER]
+          : undefined,
+      )
       .then((result) =>
         ApiResponse.ok(
           result.items,
@@ -50,6 +73,7 @@ export class PaymentManagementController {
   }
 
   @Get('bookings/:bookingId/payments')
+  @ApiOkEnvelope(PaymentDto, { isArray: true, paginated: true })
   list(
     @Param('bookingId') bookingId: string,
     @Query() query: ListPaymentsQueryDto,
@@ -67,6 +91,8 @@ export class PaymentManagementController {
 
   @Post('bookings/:bookingId/payments')
   @HttpCode(HttpStatus.CREATED)
+  @ApiCreatedEnvelope(PaymentDto)
+  @ApiCommonMutationErrors()
   create(
     @CurrentAuth() auth: AccessTokenPayload,
     @Param('bookingId') bookingId: string,
@@ -83,6 +109,8 @@ export class PaymentManagementController {
   @Post('payments/:id/refund')
   @HttpCode(HttpStatus.OK)
   @Roles('ADMIN')
+  @ApiOkEnvelope(PaymentDto)
+  @ApiCommonMutationErrors()
   refund(
     @CurrentAuth() auth: AccessTokenPayload,
     @Param('id') id: string,
@@ -105,6 +133,8 @@ export class PaymentManagementController {
   @Post('payments/:id/reconcile-refund')
   @HttpCode(HttpStatus.OK)
   @Roles('ADMIN')
+  @ApiOkEnvelope(PaymentDto)
+  @ApiCommonMutationErrors()
   reconcileRefund(
     @CurrentAuth() auth: AccessTokenPayload,
     @Param('id') id: string,

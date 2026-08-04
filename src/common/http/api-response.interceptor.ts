@@ -38,6 +38,7 @@ export class ApiResponseInterceptor implements NestInterceptor {
           data: payload.data ?? null,
           path: request.originalUrl,
           timestamp: new Date().toISOString(),
+          requestId: request.requestId ?? 'unknown',
         };
 
         if (payload.meta !== undefined) {

@@ -20,7 +20,14 @@ import {
   UpdateAccountStatusDto,
   type AccessTokenPayload,
 } from '../../common/http';
+import {
+  ApiCommonAuthErrors,
+  ApiCommonMutationErrors,
+  ApiCreatedEnvelope,
+  ApiOkEnvelope,
+} from '../../openapi/api-response.decorators';
 import { AccessTokenGuard } from '../auth/access-token.guard';
+import { AuthUserDto } from '../auth/dto/auth-response.dto';
 import { CreateUserDto } from './dto/create-user.dto';
 import { ListUsersQueryDto } from './dto/list-users-query.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -30,11 +37,14 @@ import type { AdminUserResponse } from './user-admin.service';
 @Controller('v1/users')
 @UseGuards(AccessTokenGuard, RolesGuard)
 @Roles('ADMIN')
+@ApiCommonAuthErrors()
 export class UserAdminController {
   constructor(private readonly userAdminService: UserAdminService) {}
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
+  @ApiCreatedEnvelope(AuthUserDto)
+  @ApiCommonMutationErrors()
   createUser(
     @Body() body: CreateUserDto,
   ): Promise<ApiResponsePayload<AdminUserResponse>> {
@@ -44,6 +54,7 @@ export class UserAdminController {
   }
 
   @Get()
+  @ApiOkEnvelope(AuthUserDto, { isArray: true, paginated: true })
   listUsers(
     @Query() query: ListUsersQueryDto,
   ): Promise<ApiResponsePayload<AdminUserResponse[]>> {
@@ -59,6 +70,8 @@ export class UserAdminController {
   }
 
   @Patch(':id')
+  @ApiOkEnvelope(AuthUserDto)
+  @ApiCommonMutationErrors()
   updateUser(
     @Param('id') id: string,
     @Body() body: UpdateUserDto,
@@ -70,6 +83,8 @@ export class UserAdminController {
   }
 
   @Patch(':id/status')
+  @ApiOkEnvelope(AuthUserDto)
+  @ApiCommonMutationErrors()
   updateStatus(
     @Param('id') id: string,
     @Body() body: UpdateAccountStatusDto,

@@ -7,6 +7,8 @@ import {
 
 @Injectable()
 export class PasswordHasherService {
+  private readonly dummyHash =
+    'scrypt$16384$8$1$SEJNUy1hdXRoLWR1bW15IQ$_-cDjSE1nYyTfvIKM9gSGFGerSpFS2RsjyMfZHMW-iuuqq-Ir5WYnUk6PWkPFJHVXP3vWvWhbdhUXRRCp2yZuQ';
   private readonly keyLength = 64;
   private readonly cost = 16384;
   private readonly blockSize = 8;
@@ -51,25 +53,65 @@ export class PasswordHasherService {
     const hash = Buffer.from(parts[5], 'base64url');
 
     if (
-      !Number.isInteger(cost) ||
-      !Number.isInteger(blockSize) ||
-      !Number.isInteger(parallelization) ||
-      hash.length === 0
+      cost !== this.cost ||
+      blockSize !== this.blockSize ||
+      parallelization !== this.parallelization ||
+      salt.length !== 16 ||
+      hash.length !== this.keyLength
     ) {
       return false;
     }
 
-    const derivedKey = await this.deriveKey(
-      password,
-      salt,
-      hash.length,
-      cost,
-      blockSize,
-      parallelization,
-    );
+    let derivedKey: Buffer;
+
+    try {
+      derivedKey = await this.deriveKey(
+        password,
+        salt,
+        hash.length,
+        cost,
+        blockSize,
+        parallelization,
+      );
+    } catch {
+      return false;
+    }
 
     return (
       hash.length === derivedKey.length && timingSafeEqual(hash, derivedKey)
+    );
+  }
+
+  async verifyOrDummy(
+    password: string,
+    storedHash: string | null,
+  ): Promise<boolean> {
+    const usableStoredHash = this.isUsableHash(storedHash);
+    const passwordMatches = await this.verify(
+      password,
+      usableStoredHash ? storedHash : this.dummyHash,
+    );
+
+    return usableStoredHash && passwordMatches;
+  }
+
+  private isUsableHash(storedHash: string | null): storedHash is string {
+    if (storedHash === null || storedHash.length === 0) {
+      return false;
+    }
+
+    const parts = storedHash.split('$');
+
+    if (parts.length !== 6 || parts[0] !== 'scrypt') {
+      return false;
+    }
+
+    return (
+      Number(parts[1]) === this.cost &&
+      Number(parts[2]) === this.blockSize &&
+      Number(parts[3]) === this.parallelization &&
+      Buffer.from(parts[4], 'base64url').length === 16 &&
+      Buffer.from(parts[5], 'base64url').length === this.keyLength
     );
   }
 

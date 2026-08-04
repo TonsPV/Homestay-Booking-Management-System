@@ -40,6 +40,7 @@ export interface RoomTypeResponse {
   id: string;
   name: string;
   description: string | null;
+  bedType: string | null;
   maxGuests: number;
   basePrice: string;
   amenities: RoomTypeAmenityResponse[];
@@ -110,9 +111,16 @@ export class RoomTypeService {
         'Mo ta khong hop le.',
         10000,
       ) ?? null;
+    const bedType =
+      optionalNullableTrimmedString(
+        body.bedType,
+        'Loai giuong khong hop le.',
+        120,
+      ) ?? null;
     const maxGuests = requirePositiveInt(
       body.maxGuests,
       'So khach toi da khong hop le.',
+      100,
     );
     const basePrice = requireDecimalAmount(
       body.basePrice,
@@ -124,6 +132,7 @@ export class RoomTypeService {
     const roomType = this.roomTypesRepository.create({
       name,
       description,
+      bedType,
       maxGuests,
       basePrice,
     });
@@ -152,10 +161,19 @@ export class RoomTypeService {
       'Mo ta khong hop le.',
       10000,
     );
+    const bedType = optionalNullableTrimmedString(
+      body.bedType,
+      'Loai giuong khong hop le.',
+      120,
+    );
     const maxGuests =
       body.maxGuests === undefined
         ? undefined
-        : requirePositiveInt(body.maxGuests, 'So khach toi da khong hop le.');
+        : requirePositiveInt(
+            body.maxGuests,
+            'So khach toi da khong hop le.',
+            100,
+          );
     const basePrice = optionalDecimalAmount(
       body.basePrice,
       'Gia co ban khong hop le.',
@@ -164,6 +182,7 @@ export class RoomTypeService {
     if (
       name === undefined &&
       description === undefined &&
+      bedType === undefined &&
       maxGuests === undefined &&
       basePrice === undefined
     ) {
@@ -177,6 +196,10 @@ export class RoomTypeService {
 
     if (description !== undefined) {
       roomType.description = description;
+    }
+
+    if (bedType !== undefined) {
+      roomType.bedType = bedType;
     }
 
     if (maxGuests !== undefined) {
@@ -429,6 +452,7 @@ export class RoomTypeService {
       id: roomType.id,
       name: roomType.name,
       description: roomType.description,
+      bedType: roomType.bedType,
       maxGuests: roomType.maxGuests,
       basePrice: roomType.basePrice,
       amenities: (roomType.amenities ?? []).map((amenity) => ({

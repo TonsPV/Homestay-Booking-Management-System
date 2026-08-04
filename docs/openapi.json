@@ -1,17 +1,97 @@
 {
   "openapi": "3.0.0",
   "paths": {
-    "/api": {
+    "/api/health/live": {
       "get": {
-        "operationId": "App_getHello",
+        "operationId": "Health_getLiveness",
         "parameters": [],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 200
+                        },
+                        "data": {
+                          "$ref": "#/components/schemas/HealthResponseDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
           }
         },
         "tags": [
-          "App"
+          "Health"
+        ]
+      }
+    },
+    "/api/health/ready": {
+      "get": {
+        "operationId": "Health_getReadiness",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 200
+                        },
+                        "data": {
+                          "$ref": "#/components/schemas/HealthResponseDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "The request rate limit was exceeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is unavailable or did not respond in time.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Health"
         ]
       }
     },
@@ -31,7 +111,60 @@
         },
         "responses": {
           "201": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 201
+                        },
+                        "data": {
+                          "$ref": "#/components/schemas/AuthRegistrationAcceptedDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request data is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A customer account cannot be created with the supplied email or phone number.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "The request rate limit was exceeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
           }
         },
         "tags": [
@@ -55,7 +188,50 @@
         },
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 200
+                        },
+                        "data": {
+                          "$ref": "#/components/schemas/AuthLoginResponseDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The login credentials are invalid. Missing, locked, passwordless, and password-mismatch states use the same response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "The request rate limit was exceeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
           }
         },
         "tags": [
@@ -79,7 +255,50 @@
         },
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 200
+                        },
+                        "data": {
+                          "$ref": "#/components/schemas/AuthLoginResponseDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The login credentials are invalid. Missing, locked, passwordless, and password-mismatch states use the same response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "The request rate limit was exceeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
           }
         },
         "tags": [
@@ -93,7 +312,67 @@
         "parameters": [],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 200
+                        },
+                        "data": {
+                          "oneOf": [
+                            {
+                              "$ref": "#/components/schemas/AuthMeCustomerResponseDto"
+                            },
+                            {
+                              "$ref": "#/components/schemas/AuthMeUserResponseDto"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The authenticated actor does not have access.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "The request rate limit was exceeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
           }
         },
         "tags": [
@@ -140,7 +419,36 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 200
+                        },
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/AmenityDto"
+                          }
+                        },
+                        "meta": {
+                          "$ref": "#/components/schemas/PaginationMetaDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
           }
         },
         "tags": [
@@ -163,7 +471,30 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 200
+                        },
+                        "data": {
+                          "$ref": "#/components/schemas/AmenityDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
           }
         },
         "tags": [
@@ -187,7 +518,80 @@
         },
         "responses": {
           "201": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 201
+                        },
+                        "data": {
+                          "$ref": "#/components/schemas/AdminAmenityDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request data is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The authenticated actor does not have access.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The requested resource does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The request conflicts with the current resource state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -247,7 +651,56 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 200
+                        },
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/AdminAmenityDto"
+                          }
+                        },
+                        "meta": {
+                          "$ref": "#/components/schemas/PaginationMetaDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The authenticated actor does not have access.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -275,7 +728,50 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 200
+                        },
+                        "data": {
+                          "$ref": "#/components/schemas/AdminAmenityDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The authenticated actor does not have access.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -311,7 +807,80 @@
         },
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 200
+                        },
+                        "data": {
+                          "$ref": "#/components/schemas/AdminAmenityDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request data is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The authenticated actor does not have access.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The requested resource does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The request conflicts with the current resource state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -337,7 +906,80 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 200
+                        },
+                        "data": {
+                          "$ref": "#/components/schemas/AdminAmenityDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request data is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The authenticated actor does not have access.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The requested resource does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The request conflicts with the current resource state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -365,7 +1007,80 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 200
+                        },
+                        "data": {
+                          "$ref": "#/components/schemas/AdminAmenityDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request data is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The authenticated actor does not have access.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The requested resource does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The request conflicts with the current resource state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -394,7 +1109,80 @@
         },
         "responses": {
           "201": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 201
+                        },
+                        "data": {
+                          "$ref": "#/components/schemas/BookingDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request data is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The authenticated actor does not have access.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The requested resource does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The request conflicts with the current resource state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
           }
         },
         "tags": [
@@ -446,7 +1234,56 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 200
+                        },
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/BookingDto"
+                          }
+                        },
+                        "meta": {
+                          "$ref": "#/components/schemas/PaginationMetaDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The authenticated actor does not have access.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
           }
         },
         "tags": [
@@ -469,7 +1306,50 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 200
+                        },
+                        "data": {
+                          "$ref": "#/components/schemas/BookingDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The authenticated actor does not have access.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
           }
         },
         "tags": [
@@ -502,7 +1382,80 @@
         },
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 200
+                        },
+                        "data": {
+                          "$ref": "#/components/schemas/BookingDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request data is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The authenticated actor does not have access.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The requested resource does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The request conflicts with the current resource state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
           }
         },
         "tags": [
@@ -526,7 +1479,80 @@
         },
         "responses": {
           "201": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 201
+                        },
+                        "data": {
+                          "$ref": "#/components/schemas/ManagementBookingDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request data is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The authenticated actor does not have access.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The requested resource does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The request conflicts with the current resource state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
           }
         },
         "tags": [
@@ -607,7 +1633,56 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 200
+                        },
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/BookingDto"
+                          }
+                        },
+                        "meta": {
+                          "$ref": "#/components/schemas/PaginationMetaDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The authenticated actor does not have access.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
           }
         },
         "tags": [
@@ -630,7 +1705,50 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 200
+                        },
+                        "data": {
+                          "$ref": "#/components/schemas/ManagementBookingDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The authenticated actor does not have access.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
           }
         },
         "tags": [
@@ -663,7 +1781,80 @@
         },
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 200
+                        },
+                        "data": {
+                          "$ref": "#/components/schemas/ManagementBookingDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request data is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The authenticated actor does not have access.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The requested resource does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The request conflicts with the current resource state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
           }
         },
         "tags": [
@@ -677,7 +1868,50 @@
         "parameters": [],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 200
+                        },
+                        "data": {
+                          "$ref": "#/components/schemas/AuthCustomerDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The authenticated actor does not have access.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -704,7 +1938,80 @@
         },
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 200
+                        },
+                        "data": {
+                          "$ref": "#/components/schemas/AuthCustomerDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request data is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The authenticated actor does not have access.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The requested resource does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The request conflicts with the current resource state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -737,16 +2044,76 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CustomerCredentialEnvelopeDto"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 200
+                        },
+                        "data": {
+                          "$ref": "#/components/schemas/CustomerCredentialResultDto"
+                        }
+                      }
+                    }
+                  ]
                 }
               }
             }
           },
           "400": {
-            "description": "Current password or new password is invalid."
+            "description": "The request data is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
           },
           "401": {
-            "description": "Customer token is invalid."
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The authenticated actor does not have access.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The requested resource does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The request conflicts with the current resource state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -812,7 +2179,56 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 200
+                        },
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/AdminCustomerDto"
+                          }
+                        },
+                        "meta": {
+                          "$ref": "#/components/schemas/PaginationMetaDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The authenticated actor does not have access.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
           }
         },
         "tags": [
@@ -845,7 +2261,80 @@
         },
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 200
+                        },
+                        "data": {
+                          "$ref": "#/components/schemas/AdminCustomerDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request data is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The authenticated actor does not have access.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The requested resource does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The request conflicts with the current resource state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
           }
         },
         "tags": [
@@ -882,25 +2371,76 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CustomerCredentialEnvelopeDto"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 200
+                        },
+                        "data": {
+                          "$ref": "#/components/schemas/CustomerCredentialResultDto"
+                        }
+                      }
+                    }
+                  ]
                 }
               }
             }
           },
           "400": {
-            "description": "Customer id or password is invalid."
+            "description": "The request data is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
           },
           "401": {
-            "description": "Authentication is required."
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
           },
           "403": {
-            "description": "ADMIN or STAFF role is required."
+            "description": "The authenticated actor does not have access.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
           },
           "404": {
-            "description": "Customer does not exist."
+            "description": "The requested resource does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
           },
           "409": {
-            "description": "Customer already has a password."
+            "description": "The request conflicts with the current resource state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -908,9 +2448,102 @@
             "bearer": []
           }
         ],
-        "summary": "Set the first password for a counter-created Customer",
+        "summary": "Set the first password for an eligible Customer",
         "tags": [
           "Management Customers"
+        ]
+      }
+    },
+    "/api/v1/management/dashboard/summary": {
+      "get": {
+        "operationId": "Dashboard_getSummary",
+        "parameters": [
+          {
+            "name": "from",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "format": "date",
+              "example": "2026-07-01",
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "format": "date",
+              "example": "2026-07-27",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 200
+                        },
+                        "data": {
+                          "$ref": "#/components/schemas/DashboardSummaryResponse"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The dashboard date range is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The authenticated actor does not have access.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Management Dashboard"
         ]
       }
     },
@@ -939,7 +2572,80 @@
         },
         "responses": {
           "201": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 201
+                        },
+                        "data": {
+                          "$ref": "#/components/schemas/OnlinePaymentDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request data is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The authenticated actor does not have access.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The requested resource does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The request conflicts with the current resource state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
           }
         },
         "tags": [
@@ -1014,7 +2720,56 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 200
+                        },
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/CustomerPaymentDto"
+                          }
+                        },
+                        "meta": {
+                          "$ref": "#/components/schemas/PaginationMetaDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The authenticated actor does not have access.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
           }
         },
         "tags": [
@@ -1083,7 +2838,56 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 200
+                        },
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/PaymentDto"
+                          }
+                        },
+                        "meta": {
+                          "$ref": "#/components/schemas/PaymentManagementMetaDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The authenticated actor does not have access.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
           }
         },
         "tags": [
@@ -1160,7 +2964,56 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 200
+                        },
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/PaymentDto"
+                          }
+                        },
+                        "meta": {
+                          "$ref": "#/components/schemas/PaginationMetaDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The authenticated actor does not have access.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
           }
         },
         "tags": [
@@ -1191,7 +3044,80 @@
         },
         "responses": {
           "201": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 201
+                        },
+                        "data": {
+                          "$ref": "#/components/schemas/PaymentDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request data is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The authenticated actor does not have access.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The requested resource does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The request conflicts with the current resource state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
           }
         },
         "tags": [
@@ -1224,7 +3150,80 @@
         },
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 200
+                        },
+                        "data": {
+                          "$ref": "#/components/schemas/PaymentDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request data is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The authenticated actor does not have access.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The requested resource does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The request conflicts with the current resource state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
           }
         },
         "tags": [
@@ -1247,7 +3246,80 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 200
+                        },
+                        "data": {
+                          "$ref": "#/components/schemas/PaymentDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request data is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The authenticated actor does not have access.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The requested resource does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The request conflicts with the current resource state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
           }
         },
         "tags": [
@@ -1261,7 +3333,14 @@
         "parameters": [],
         "responses": {
           "200": {
-            "description": ""
+            "description": "Raw VNPay IPN acknowledgement (not wrapped).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VnPayIpnDto"
+                }
+              }
+            }
           }
         },
         "tags": [
@@ -1275,7 +3354,30 @@
         "parameters": [],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 200
+                        },
+                        "data": {
+                          "$ref": "#/components/schemas/VnPayReturnDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
           }
         },
         "tags": [
@@ -1373,6 +3475,14 @@
             }
           },
           {
+            "name": "sort",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/RoomSearchSort"
+            }
+          },
+          {
             "name": "limit",
             "required": false,
             "in": "query",
@@ -1387,7 +3497,36 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 200
+                        },
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/PublicRoomDto"
+                          }
+                        },
+                        "meta": {
+                          "$ref": "#/components/schemas/PaginationMetaDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
           }
         },
         "tags": [
@@ -1444,7 +3583,36 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 200
+                        },
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/PublicRoomDto"
+                          }
+                        },
+                        "meta": {
+                          "$ref": "#/components/schemas/PaginationMetaDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
           }
         },
         "tags": [
@@ -1466,7 +3634,80 @@
         },
         "responses": {
           "201": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 201
+                        },
+                        "data": {
+                          "$ref": "#/components/schemas/RoomDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request data is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The authenticated actor does not have access.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The requested resource does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The request conflicts with the current resource state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
           }
         },
         "tags": [
@@ -1489,7 +3730,30 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 200
+                        },
+                        "data": {
+                          "$ref": "#/components/schemas/PublicRoomDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
           }
         },
         "tags": [
@@ -1520,7 +3784,80 @@
         },
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 200
+                        },
+                        "data": {
+                          "$ref": "#/components/schemas/RoomDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request data is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The authenticated actor does not have access.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The requested resource does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The request conflicts with the current resource state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
           }
         },
         "tags": [
@@ -1541,7 +3878,50 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 200
+                        },
+                        "data": {
+                          "$ref": "#/components/schemas/RoomDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The authenticated actor does not have access.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
           }
         },
         "tags": [
@@ -1574,7 +3954,80 @@
         },
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 200
+                        },
+                        "data": {
+                          "$ref": "#/components/schemas/RoomDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request data is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The authenticated actor does not have access.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The requested resource does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The request conflicts with the current resource state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
           }
         },
         "tags": [
@@ -1625,7 +4078,80 @@
         },
         "responses": {
           "201": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 201
+                        },
+                        "data": {
+                          "$ref": "#/components/schemas/RoomImageDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request data is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The authenticated actor does not have access.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The requested resource does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The request conflicts with the current resource state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
           }
         },
         "tags": [
@@ -1698,13 +4224,56 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 200
+                        },
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/ManagementRoomDto"
+                          }
+                        },
+                        "meta": {
+                          "$ref": "#/components/schemas/PaginationMetaDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
           },
           "401": {
-            "description": "Authentication is required."
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
           },
           "403": {
-            "description": "ADMIN or STAFF role is required."
+            "description": "The authenticated actor does not have access.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1712,6 +4281,139 @@
             "bearer": []
           }
         ],
+        "tags": [
+          "Management Rooms"
+        ]
+      }
+    },
+    "/api/v1/management/rooms/available": {
+      "get": {
+        "operationId": "RoomManagement_available",
+        "parameters": [
+          {
+            "name": "checkIn",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "format": "date",
+              "example": "2026-08-01",
+              "type": "string"
+            }
+          },
+          {
+            "name": "checkOut",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "format": "date",
+              "example": "2026-08-03",
+              "type": "string"
+            }
+          },
+          {
+            "name": "guests",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "example": 2,
+              "type": "number"
+            }
+          },
+          {
+            "name": "roomTypeId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "pattern": "^[1-9][0-9]*$",
+              "example": "5",
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "example": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "example": 20,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 200
+                        },
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/RoomDto"
+                          }
+                        },
+                        "meta": {
+                          "$ref": "#/components/schemas/PaginationMetaDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The authenticated actor does not have access.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List bookable physical rooms for a stay range",
         "tags": [
           "Management Rooms"
         ]
@@ -1756,16 +4458,49 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RoomCalendarEntriesEnvelopeDto"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 200
+                        },
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/RoomCalendarEntryDto"
+                          }
+                        }
+                      }
+                    }
+                  ]
                 }
               }
             }
           },
           "401": {
-            "description": "Authentication is required."
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
           },
           "403": {
-            "description": "ADMIN or STAFF role is required."
+            "description": "The authenticated actor does not have access.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1808,19 +4543,79 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RoomCalendarEntriesEnvelopeDto"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 201
+                        },
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/RoomCalendarEntryDto"
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request data is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
                 }
               }
             }
           },
           "401": {
-            "description": "Authentication is required."
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
           },
           "403": {
-            "description": "ADMIN or STAFF role is required."
+            "description": "The authenticated actor does not have access.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The requested resource does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
           },
           "409": {
-            "description": "At least one requested night is reserved or already blocked."
+            "description": "The request conflicts with the current resource state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1871,16 +4666,46 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/UnblockRoomDatesEnvelopeDto"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 200
+                        },
+                        "data": {
+                          "$ref": "#/components/schemas/UnblockRoomDatesDto"
+                        }
+                      }
+                    }
+                  ]
                 }
               }
             }
           },
           "401": {
-            "description": "Authentication is required."
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
           },
           "403": {
-            "description": "ADMIN or STAFF role is required."
+            "description": "The authenticated actor does not have access.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1909,13 +4734,50 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 200
+                        },
+                        "data": {
+                          "$ref": "#/components/schemas/RoomDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
           },
           "401": {
-            "description": "Authentication is required."
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
           },
           "403": {
-            "description": "ADMIN or STAFF role is required."
+            "description": "The authenticated actor does not have access.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1943,7 +4805,50 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 200
+                        },
+                        "data": {
+                          "$ref": "#/components/schemas/RoomImageDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The authenticated actor does not have access.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
           }
         },
         "tags": [
@@ -1966,7 +4871,50 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 200
+                        },
+                        "data": {
+                          "$ref": "#/components/schemas/RoomImageDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The authenticated actor does not have access.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
           }
         },
         "tags": [
@@ -2013,7 +4961,36 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 200
+                        },
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/RoomTypeDto"
+                          }
+                        },
+                        "meta": {
+                          "$ref": "#/components/schemas/PaginationMetaDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
           }
         },
         "tags": [
@@ -2036,7 +5013,30 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 200
+                        },
+                        "data": {
+                          "$ref": "#/components/schemas/RoomTypeDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
           }
         },
         "tags": [
@@ -2060,7 +5060,80 @@
         },
         "responses": {
           "201": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 201
+                        },
+                        "data": {
+                          "$ref": "#/components/schemas/AdminRoomTypeDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request data is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The authenticated actor does not have access.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The requested resource does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The request conflicts with the current resource state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
           }
         },
         "tags": [
@@ -2115,7 +5188,56 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 200
+                        },
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/AdminRoomTypeDto"
+                          }
+                        },
+                        "meta": {
+                          "$ref": "#/components/schemas/PaginationMetaDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The authenticated actor does not have access.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
           }
         },
         "tags": [
@@ -2138,7 +5260,50 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 200
+                        },
+                        "data": {
+                          "$ref": "#/components/schemas/AdminRoomTypeDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The authenticated actor does not have access.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
           }
         },
         "tags": [
@@ -2169,7 +5334,80 @@
         },
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 200
+                        },
+                        "data": {
+                          "$ref": "#/components/schemas/AdminRoomTypeDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request data is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The authenticated actor does not have access.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The requested resource does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The request conflicts with the current resource state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
           }
         },
         "tags": [
@@ -2190,7 +5428,50 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 200
+                        },
+                        "data": {
+                          "$ref": "#/components/schemas/AdminRoomTypeDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The authenticated actor does not have access.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
           }
         },
         "tags": [
@@ -2213,7 +5494,80 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 200
+                        },
+                        "data": {
+                          "$ref": "#/components/schemas/AdminRoomTypeDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request data is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The authenticated actor does not have access.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The requested resource does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The request conflicts with the current resource state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
           }
         },
         "tags": [
@@ -2246,7 +5600,80 @@
         },
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 200
+                        },
+                        "data": {
+                          "$ref": "#/components/schemas/AdminRoomTypeDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request data is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The authenticated actor does not have access.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The requested resource does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The request conflicts with the current resource state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
           }
         },
         "tags": [
@@ -2270,7 +5697,80 @@
         },
         "responses": {
           "201": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 201
+                        },
+                        "data": {
+                          "$ref": "#/components/schemas/AuthUserDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request data is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The authenticated actor does not have access.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The requested resource does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The request conflicts with the current resource state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
           }
         },
         "tags": [
@@ -2341,7 +5841,56 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 200
+                        },
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/AuthUserDto"
+                          }
+                        },
+                        "meta": {
+                          "$ref": "#/components/schemas/PaginationMetaDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The authenticated actor does not have access.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
           }
         },
         "tags": [
@@ -2374,7 +5923,80 @@
         },
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 200
+                        },
+                        "data": {
+                          "$ref": "#/components/schemas/AuthUserDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request data is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The authenticated actor does not have access.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The requested resource does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The request conflicts with the current resource state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
           }
         },
         "tags": [
@@ -2407,7 +6029,80 @@
         },
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 200
+                        },
+                        "data": {
+                          "$ref": "#/components/schemas/AuthUserDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request data is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The authenticated actor does not have access.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The requested resource does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The request conflicts with the current resource state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
           }
         },
         "tags": [
@@ -2433,6 +6128,327 @@
       }
     },
     "schemas": {
+      "SuccessEnvelopeDto": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": true
+          },
+          "statusCode": {
+            "type": "number",
+            "example": 200
+          },
+          "message": {
+            "type": "string",
+            "example": "Thanh cong."
+          },
+          "data": {
+            "type": "object",
+            "nullable": true,
+            "description": "Response payload. The concrete schema is defined per route."
+          },
+          "path": {
+            "type": "string",
+            "example": "/api/v1/resource"
+          },
+          "timestamp": {
+            "type": "string",
+            "example": "2026-07-27T04:00:00.000Z",
+            "format": "date-time"
+          },
+          "requestId": {
+            "type": "string",
+            "example": "f75cf4ac-6958-4d59-8a4f-183abfeaed15"
+          }
+        },
+        "required": [
+          "success",
+          "statusCode",
+          "message",
+          "data",
+          "path",
+          "timestamp",
+          "requestId"
+        ]
+      },
+      "ErrorCode": {
+        "type": "string",
+        "enum": [
+          "COMMON_VALIDATION_FAILED",
+          "COMMON_UNAUTHORIZED",
+          "COMMON_FORBIDDEN",
+          "COMMON_NOT_FOUND",
+          "COMMON_CONFLICT",
+          "COMMON_RATE_LIMITED",
+          "COMMON_PAYLOAD_TOO_LARGE",
+          "COMMON_UNSUPPORTED_MEDIA_TYPE",
+          "COMMON_SERVICE_UNAVAILABLE",
+          "COMMON_INTERNAL_ERROR",
+          "CUSTOMER_INITIAL_PASSWORD_ALREADY_CONFIGURED",
+          "CUSTOMER_EMAIL_IN_USE",
+          "CUSTOMER_PHONE_IN_USE",
+          "CUSTOMER_CURRENT_PASSWORD_INVALID",
+          "CUSTOMER_PASSWORD_REUSE_NOT_ALLOWED",
+          "AMENITY_NAME_ALREADY_EXISTS",
+          "AMENITY_IN_USE",
+          "BOOKING_GUEST_CAPACITY_EXCEEDED",
+          "BOOKING_CUSTOMER_CONTACT_REQUIRED",
+          "BOOKING_ACTIVE_UNPAID_LIMIT_REACHED",
+          "BOOKING_HELD_NIGHTS_LIMIT_REACHED",
+          "BOOKING_ROOM_NOT_BOOKABLE",
+          "BOOKING_CHECKIN_IN_PAST",
+          "BOOKING_CHECKIN_TOO_FAR",
+          "BOOKING_DATE_RANGE_INVALID",
+          "BOOKING_STAY_TOO_LONG",
+          "BOOKING_TOTAL_LIMIT_EXCEEDED",
+          "BOOKING_ROOM_UNAVAILABLE",
+          "BOOKING_CREATE_CONFLICT",
+          "BOOKING_CANCELLATION_REASON_REQUIRED",
+          "BOOKING_REFUND_PENDING",
+          "BOOKING_TRANSITION_NOT_ALLOWED",
+          "BOOKING_CONFIRMATION_REQUIRES_PAYMENT",
+          "BOOKING_CHECKIN_REQUIRES_PAYMENT",
+          "BOOKING_CHECKIN_OUTSIDE_STAY_WINDOW",
+          "BOOKING_ROOM_NOT_FOUND",
+          "BOOKING_ROOM_NOT_READY",
+          "BOOKING_CANCELLATION_ALREADY_PAID",
+          "BOOKING_CANCELLATION_NOT_ALLOWED",
+          "PAYMENT_REFUND_REJECTED",
+          "PAYMENT_REFUND_NOT_ALLOWED",
+          "PAYMENT_REFUND_OUTCOME_UNKNOWN",
+          "PAYMENT_IDEMPOTENCY_KEY_CONFLICT"
+        ]
+      },
+      "ErrorEnvelopeDto": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": false
+          },
+          "statusCode": {
+            "type": "number",
+            "example": 400
+          },
+          "errorCode": {
+            "example": "COMMON_VALIDATION_FAILED",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ErrorCode"
+              }
+            ]
+          },
+          "message": {
+            "example": "Du lieu khong hop le.",
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            ]
+          },
+          "fieldErrors": {
+            "type": "object",
+            "description": "Validation errors keyed by request field.",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "errorCode"
+                ],
+                "properties": {
+                  "errorCode": {
+                    "type": "string",
+                    "enum": [
+                      "COMMON_VALIDATION_FAILED",
+                      "COMMON_UNAUTHORIZED",
+                      "COMMON_FORBIDDEN",
+                      "COMMON_NOT_FOUND",
+                      "COMMON_CONFLICT",
+                      "COMMON_RATE_LIMITED",
+                      "COMMON_PAYLOAD_TOO_LARGE",
+                      "COMMON_UNSUPPORTED_MEDIA_TYPE",
+                      "COMMON_SERVICE_UNAVAILABLE",
+                      "COMMON_INTERNAL_ERROR",
+                      "CUSTOMER_INITIAL_PASSWORD_ALREADY_CONFIGURED",
+                      "CUSTOMER_EMAIL_IN_USE",
+                      "CUSTOMER_PHONE_IN_USE",
+                      "CUSTOMER_CURRENT_PASSWORD_INVALID",
+                      "CUSTOMER_PASSWORD_REUSE_NOT_ALLOWED",
+                      "AMENITY_NAME_ALREADY_EXISTS",
+                      "AMENITY_IN_USE",
+                      "BOOKING_GUEST_CAPACITY_EXCEEDED",
+                      "BOOKING_CUSTOMER_CONTACT_REQUIRED",
+                      "BOOKING_ACTIVE_UNPAID_LIMIT_REACHED",
+                      "BOOKING_HELD_NIGHTS_LIMIT_REACHED",
+                      "BOOKING_ROOM_NOT_BOOKABLE",
+                      "BOOKING_CHECKIN_IN_PAST",
+                      "BOOKING_CHECKIN_TOO_FAR",
+                      "BOOKING_DATE_RANGE_INVALID",
+                      "BOOKING_STAY_TOO_LONG",
+                      "BOOKING_TOTAL_LIMIT_EXCEEDED",
+                      "BOOKING_ROOM_UNAVAILABLE",
+                      "BOOKING_CREATE_CONFLICT",
+                      "BOOKING_CANCELLATION_REASON_REQUIRED",
+                      "BOOKING_REFUND_PENDING",
+                      "BOOKING_TRANSITION_NOT_ALLOWED",
+                      "BOOKING_CONFIRMATION_REQUIRES_PAYMENT",
+                      "BOOKING_CHECKIN_REQUIRES_PAYMENT",
+                      "BOOKING_CHECKIN_OUTSIDE_STAY_WINDOW",
+                      "BOOKING_ROOM_NOT_FOUND",
+                      "BOOKING_ROOM_NOT_READY",
+                      "BOOKING_CANCELLATION_ALREADY_PAID",
+                      "BOOKING_CANCELLATION_NOT_ALLOWED",
+                      "PAYMENT_REFUND_REJECTED",
+                      "PAYMENT_REFUND_NOT_ALLOWED",
+                      "PAYMENT_REFUND_OUTCOME_UNKNOWN",
+                      "PAYMENT_IDEMPOTENCY_KEY_CONFLICT"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "details": {
+            "type": "object",
+            "description": "Safe structured context that can help a client recover.",
+            "additionalProperties": false,
+            "properties": {
+              "retryable": {
+                "type": "boolean",
+                "example": false
+              },
+              "limit": {
+                "type": "integer",
+                "example": 3,
+                "minimum": 0
+              },
+              "maxAdvanceDays": {
+                "type": "integer",
+                "example": 365,
+                "minimum": 0
+              },
+              "maxStayNights": {
+                "type": "integer",
+                "example": 30,
+                "minimum": 0
+              }
+            }
+          },
+          "error": {
+            "type": "string",
+            "example": "Bad Request"
+          },
+          "path": {
+            "type": "string",
+            "example": "/api/v1/resource"
+          },
+          "timestamp": {
+            "type": "string",
+            "example": "2026-07-27T04:00:00.000Z",
+            "format": "date-time"
+          },
+          "requestId": {
+            "type": "string",
+            "example": "f75cf4ac-6958-4d59-8a4f-183abfeaed15"
+          }
+        },
+        "required": [
+          "success",
+          "statusCode",
+          "errorCode",
+          "message",
+          "error",
+          "path",
+          "timestamp",
+          "requestId"
+        ]
+      },
+      "PaginationDto": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "number",
+            "example": 1,
+            "minimum": 1
+          },
+          "limit": {
+            "type": "number",
+            "example": 20,
+            "minimum": 1
+          },
+          "total": {
+            "type": "number",
+            "example": 150,
+            "minimum": 0
+          },
+          "totalPages": {
+            "type": "number",
+            "example": 8,
+            "minimum": 0
+          }
+        },
+        "required": [
+          "page",
+          "limit",
+          "total",
+          "totalPages"
+        ]
+      },
+      "PaginationMetaDto": {
+        "type": "object",
+        "properties": {
+          "pagination": {
+            "$ref": "#/components/schemas/PaginationDto"
+          }
+        },
+        "required": [
+          "pagination"
+        ]
+      },
+      "HealthResponseDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "example": "ok",
+            "enum": [
+              "ok"
+            ]
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "status",
+          "timestamp"
+        ]
+      },
+      "AuthRegistrationAcceptedDto": {
+        "type": "object",
+        "properties": {
+          "accepted": {
+            "type": "boolean",
+            "example": true,
+            "description": "The customer account was created successfully."
+          }
+        },
+        "required": [
+          "accepted"
+        ]
+      },
       "RegisterCustomerDto": {
         "type": "object",
         "properties": {
@@ -2465,6 +6481,171 @@
           "password"
         ]
       },
+      "AuthCustomerDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "123e4567-e89b-12d3-a456-426614174000",
+            "format": "uuid"
+          },
+          "fullName": {
+            "type": "string",
+            "example": "Nguyen Van A"
+          },
+          "email": {
+            "type": "string",
+            "example": "user@example.com",
+            "nullable": true
+          },
+          "phone": {
+            "type": "string",
+            "example": "+84912345678"
+          },
+          "status": {
+            "type": "string",
+            "example": "ACTIVE",
+            "enum": [
+              "ACTIVE",
+              "LOCKED"
+            ]
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string",
+            "example": "2026-07-27T04:00:00.000Z"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string",
+            "example": "2026-07-27T04:00:00.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "fullName",
+          "email",
+          "phone",
+          "status",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "AuthUserDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "123e4567-e89b-12d3-a456-426614174000",
+            "format": "uuid"
+          },
+          "fullName": {
+            "type": "string",
+            "example": "Tran Thi B"
+          },
+          "email": {
+            "type": "string",
+            "example": "admin@example.com"
+          },
+          "phone": {
+            "type": "string",
+            "example": "+84987654321",
+            "nullable": true
+          },
+          "role": {
+            "type": "string",
+            "example": "ADMIN",
+            "enum": [
+              "STAFF",
+              "ADMIN"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "example": "ACTIVE",
+            "enum": [
+              "ACTIVE",
+              "LOCKED"
+            ]
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string",
+            "example": "2026-07-27T04:00:00.000Z"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string",
+            "example": "2026-07-27T04:00:00.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "fullName",
+          "email",
+          "phone",
+          "role",
+          "status",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "AuthLoginResponseDto": {
+        "type": "object",
+        "properties": {
+          "accessToken": {
+            "type": "string",
+            "example": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+            "description": "JWT access token"
+          },
+          "tokenType": {
+            "type": "string",
+            "enum": [
+              "Bearer"
+            ],
+            "example": "Bearer"
+          },
+          "expiresIn": {
+            "type": "number",
+            "example": 3600,
+            "description": "Token expiration time in seconds"
+          },
+          "actorType": {
+            "type": "string",
+            "example": "customer",
+            "enum": [
+              "customer",
+              "user"
+            ]
+          },
+          "customer": {
+            "nullable": true,
+            "description": "Customer profile if actorType is customer",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AuthCustomerDto"
+              }
+            ]
+          },
+          "user": {
+            "nullable": true,
+            "description": "User profile if actorType is user",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AuthUserDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "accessToken",
+          "tokenType",
+          "expiresIn",
+          "actorType"
+        ]
+      },
       "LoginDto": {
         "type": "object",
         "properties": {
@@ -2482,6 +6663,116 @@
         "required": [
           "identifier",
           "password"
+        ]
+      },
+      "AuthMeCustomerResponseDto": {
+        "type": "object",
+        "properties": {
+          "actorType": {
+            "type": "string",
+            "enum": [
+              "customer"
+            ],
+            "example": "customer"
+          },
+          "customer": {
+            "$ref": "#/components/schemas/AuthCustomerDto"
+          }
+        },
+        "required": [
+          "actorType",
+          "customer"
+        ]
+      },
+      "AuthMeUserResponseDto": {
+        "type": "object",
+        "properties": {
+          "actorType": {
+            "type": "string",
+            "enum": [
+              "user"
+            ],
+            "example": "user"
+          },
+          "user": {
+            "$ref": "#/components/schemas/AuthUserDto"
+          }
+        },
+        "required": [
+          "actorType",
+          "user"
+        ]
+      },
+      "AmenityDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "1"
+          },
+          "name": {
+            "type": "string",
+            "example": "Wi-Fi"
+          },
+          "description": {
+            "type": "string",
+            "example": "Free wireless internet.",
+            "nullable": true
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "description",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "AdminAmenityDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "1"
+          },
+          "name": {
+            "type": "string",
+            "example": "Wi-Fi"
+          },
+          "description": {
+            "type": "string",
+            "example": "Free wireless internet.",
+            "nullable": true
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "deletedAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "description",
+          "createdAt",
+          "updatedAt",
+          "deletedAt"
         ]
       },
       "CreateAmenityDto": {
@@ -2518,6 +6809,244 @@
             "nullable": true
           }
         }
+      },
+      "BookingStatus": {
+        "type": "string",
+        "enum": [
+          "PENDING_PAYMENT",
+          "CONFIRMED",
+          "CHECKED_IN",
+          "CHECKED_OUT",
+          "CANCELLED"
+        ]
+      },
+      "BookingPaymentStatus": {
+        "type": "string",
+        "enum": [
+          "UNPAID",
+          "PAID",
+          "REFUNDED"
+        ]
+      },
+      "BookingCustomerDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "1"
+          },
+          "fullName": {
+            "type": "string",
+            "example": "Nguyen Van A"
+          },
+          "phone": {
+            "type": "string",
+            "example": "0912345678"
+          }
+        },
+        "required": [
+          "id",
+          "fullName",
+          "phone"
+        ]
+      },
+      "BookingRoomTypeDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "1"
+          },
+          "name": {
+            "type": "string",
+            "example": "Deluxe Room"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ]
+      },
+      "BookingRoomDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "1"
+          },
+          "roomNumber": {
+            "type": "string",
+            "example": "101"
+          },
+          "name": {
+            "type": "string",
+            "example": "Deluxe 101"
+          },
+          "roomType": {
+            "$ref": "#/components/schemas/BookingRoomTypeDto"
+          }
+        },
+        "required": [
+          "id",
+          "roomNumber",
+          "name",
+          "roomType"
+        ]
+      },
+      "BookingUserDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "1"
+          },
+          "fullName": {
+            "type": "string",
+            "example": "Staff One"
+          }
+        },
+        "required": [
+          "id",
+          "fullName"
+        ]
+      },
+      "BookingDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "1"
+          },
+          "bookingCode": {
+            "type": "string",
+            "example": "BK-20260727-ABC123"
+          },
+          "customerId": {
+            "type": "string",
+            "example": "1"
+          },
+          "roomId": {
+            "type": "string",
+            "example": "1"
+          },
+          "createdByUserId": {
+            "type": "string",
+            "example": "1",
+            "nullable": true
+          },
+          "checkInDate": {
+            "type": "string",
+            "example": "2026-07-28",
+            "format": "date"
+          },
+          "checkOutDate": {
+            "type": "string",
+            "example": "2026-07-30",
+            "format": "date"
+          },
+          "guestCount": {
+            "type": "number",
+            "example": 2,
+            "minimum": 1
+          },
+          "contactName": {
+            "type": "string",
+            "example": "Nguyen Van A"
+          },
+          "contactPhone": {
+            "type": "string",
+            "example": "0912345678"
+          },
+          "contactEmail": {
+            "type": "string",
+            "example": "guest@example.com",
+            "nullable": true
+          },
+          "totalAmount": {
+            "type": "string",
+            "example": "3000000.00"
+          },
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BookingStatus"
+              }
+            ]
+          },
+          "paymentStatus": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BookingPaymentStatus"
+              }
+            ]
+          },
+          "paymentExpiresAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "customerNote": {
+            "type": "string",
+            "nullable": true
+          },
+          "cancelledAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "cancellationReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "customer": {
+            "$ref": "#/components/schemas/BookingCustomerDto"
+          },
+          "room": {
+            "$ref": "#/components/schemas/BookingRoomDto"
+          },
+          "createdByUser": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BookingUserDto"
+              }
+            ]
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "bookingCode",
+          "customerId",
+          "roomId",
+          "createdByUserId",
+          "checkInDate",
+          "checkOutDate",
+          "guestCount",
+          "contactName",
+          "contactPhone",
+          "contactEmail",
+          "totalAmount",
+          "status",
+          "paymentStatus",
+          "paymentExpiresAt",
+          "customerNote",
+          "cancelledAt",
+          "cancellationReason",
+          "customer",
+          "room",
+          "createdByUser",
+          "createdAt",
+          "updatedAt"
+        ]
       },
       "CreateBookingDto": {
         "type": "object",
@@ -2579,9 +7108,215 @@
             "example": "Khách thay đổi kế hoạch.",
             "maxLength": 500
           }
+        }
+      },
+      "CustomerCredentialCapabilitiesDto": {
+        "type": "object",
+        "properties": {
+          "canSetInitialPassword": {
+            "type": "boolean",
+            "example": true
+          },
+          "reasonCode": {
+            "type": "string",
+            "example": null,
+            "nullable": true,
+            "enum": [
+              "CUSTOMER_INITIAL_PASSWORD_ALREADY_CONFIGURED",
+              "COMMON_NOT_FOUND",
+              null
+            ]
+          }
         },
         "required": [
-          "reason"
+          "canSetInitialPassword",
+          "reasonCode"
+        ]
+      },
+      "BookingTransitionCapabilityDto": {
+        "type": "object",
+        "properties": {
+          "targetStatus": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BookingStatus"
+              }
+            ]
+          },
+          "allowed": {
+            "type": "boolean",
+            "example": true
+          },
+          "reasonCode": {
+            "type": "string",
+            "example": null,
+            "nullable": true,
+            "enum": [
+              "BOOKING_REFUND_PENDING",
+              "BOOKING_TRANSITION_NOT_ALLOWED",
+              "BOOKING_CONFIRMATION_REQUIRES_PAYMENT",
+              "BOOKING_CHECKIN_REQUIRES_PAYMENT",
+              "BOOKING_CHECKIN_OUTSIDE_STAY_WINDOW",
+              "BOOKING_ROOM_NOT_FOUND",
+              "BOOKING_ROOM_NOT_READY",
+              "BOOKING_CANCELLATION_ALREADY_PAID",
+              null
+            ]
+          }
+        },
+        "required": [
+          "targetStatus",
+          "allowed",
+          "reasonCode"
+        ]
+      },
+      "ManagementBookingDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "1"
+          },
+          "bookingCode": {
+            "type": "string",
+            "example": "BK-20260727-ABC123"
+          },
+          "customerId": {
+            "type": "string",
+            "example": "1"
+          },
+          "roomId": {
+            "type": "string",
+            "example": "1"
+          },
+          "createdByUserId": {
+            "type": "string",
+            "example": "1",
+            "nullable": true
+          },
+          "checkInDate": {
+            "type": "string",
+            "example": "2026-07-28",
+            "format": "date"
+          },
+          "checkOutDate": {
+            "type": "string",
+            "example": "2026-07-30",
+            "format": "date"
+          },
+          "guestCount": {
+            "type": "number",
+            "example": 2,
+            "minimum": 1
+          },
+          "contactName": {
+            "type": "string",
+            "example": "Nguyen Van A"
+          },
+          "contactPhone": {
+            "type": "string",
+            "example": "0912345678"
+          },
+          "contactEmail": {
+            "type": "string",
+            "example": "guest@example.com",
+            "nullable": true
+          },
+          "totalAmount": {
+            "type": "string",
+            "example": "3000000.00"
+          },
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BookingStatus"
+              }
+            ]
+          },
+          "paymentStatus": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BookingPaymentStatus"
+              }
+            ]
+          },
+          "paymentExpiresAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "customerNote": {
+            "type": "string",
+            "nullable": true
+          },
+          "cancelledAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "cancellationReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "customer": {
+            "$ref": "#/components/schemas/BookingCustomerDto"
+          },
+          "room": {
+            "$ref": "#/components/schemas/BookingRoomDto"
+          },
+          "createdByUser": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BookingUserDto"
+              }
+            ]
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "credentialCapabilities": {
+            "$ref": "#/components/schemas/CustomerCredentialCapabilitiesDto"
+          },
+          "transitionCapabilities": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BookingTransitionCapabilityDto"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "bookingCode",
+          "customerId",
+          "roomId",
+          "createdByUserId",
+          "checkInDate",
+          "checkOutDate",
+          "guestCount",
+          "contactName",
+          "contactPhone",
+          "contactEmail",
+          "totalAmount",
+          "status",
+          "paymentStatus",
+          "paymentExpiresAt",
+          "customerNote",
+          "cancelledAt",
+          "cancellationReason",
+          "customer",
+          "room",
+          "createdByUser",
+          "createdAt",
+          "updatedAt",
+          "credentialCapabilities",
+          "transitionCapabilities"
         ]
       },
       "CreateManagementBookingDto": {
@@ -2658,7 +7393,7 @@
           },
           "cancellationReason": {
             "type": "string",
-            "description": "Required when the target status is CANCELLED.",
+            "description": "Required when changing the booking from another status to CANCELLED.",
             "example": "Khách yêu cầu hủy tại quầy.",
             "maxLength": 500
           }
@@ -2687,6 +7422,18 @@
           }
         }
       },
+      "CustomerCredentialResultDto": {
+        "type": "object",
+        "properties": {
+          "passwordConfigured": {
+            "type": "boolean",
+            "example": true
+          }
+        },
+        "required": [
+          "passwordConfigured"
+        ]
+      },
       "ChangeCustomerPasswordDto": {
         "type": "object",
         "properties": {
@@ -2709,53 +7456,58 @@
           "newPassword"
         ]
       },
-      "CustomerCredentialResultDto": {
+      "AdminCustomerDto": {
         "type": "object",
         "properties": {
-          "passwordConfigured": {
-            "type": "boolean",
-            "example": true
+          "id": {
+            "type": "string",
+            "example": "123e4567-e89b-12d3-a456-426614174000",
+            "format": "uuid"
+          },
+          "fullName": {
+            "type": "string",
+            "example": "Nguyen Van A"
+          },
+          "email": {
+            "type": "string",
+            "example": "user@example.com",
+            "nullable": true
+          },
+          "phone": {
+            "type": "string",
+            "example": "+84912345678"
+          },
+          "status": {
+            "type": "string",
+            "example": "ACTIVE",
+            "enum": [
+              "ACTIVE",
+              "LOCKED"
+            ]
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string",
+            "example": "2026-07-27T04:00:00.000Z"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string",
+            "example": "2026-07-27T04:00:00.000Z"
+          },
+          "credentialCapabilities": {
+            "$ref": "#/components/schemas/CustomerCredentialCapabilitiesDto"
           }
         },
         "required": [
-          "passwordConfigured"
-        ]
-      },
-      "CustomerCredentialEnvelopeDto": {
-        "type": "object",
-        "properties": {
-          "success": {
-            "type": "boolean",
-            "example": true
-          },
-          "statusCode": {
-            "type": "number",
-            "example": 200
-          },
-          "message": {
-            "type": "string",
-            "example": "Cap nhat mat khau customer thanh cong."
-          },
-          "data": {
-            "$ref": "#/components/schemas/CustomerCredentialResultDto"
-          },
-          "path": {
-            "type": "string",
-            "example": "/api/v1/customers/me/password"
-          },
-          "timestamp": {
-            "type": "string",
-            "example": "2026-07-27T05:00:00.000Z",
-            "format": "date-time"
-          }
-        },
-        "required": [
-          "success",
-          "statusCode",
-          "message",
-          "data",
-          "path",
-          "timestamp"
+          "id",
+          "fullName",
+          "email",
+          "phone",
+          "status",
+          "createdAt",
+          "updatedAt",
+          "credentialCapabilities"
         ]
       },
       "UpdateAccountStatusDto": {
@@ -2789,6 +7541,299 @@
           "password"
         ]
       },
+      "BookingStatusCount": {
+        "type": "object",
+        "properties": {
+          "pendingPayment": {
+            "type": "number",
+            "minimum": 0
+          },
+          "confirmed": {
+            "type": "number",
+            "minimum": 0
+          },
+          "checkedIn": {
+            "type": "number",
+            "minimum": 0
+          },
+          "checkedOut": {
+            "type": "number",
+            "minimum": 0
+          },
+          "cancelled": {
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "pendingPayment",
+          "confirmed",
+          "checkedIn",
+          "checkedOut",
+          "cancelled"
+        ]
+      },
+      "RoomStatusCount": {
+        "type": "object",
+        "properties": {
+          "ready": {
+            "type": "number",
+            "minimum": 0
+          },
+          "occupied": {
+            "type": "number",
+            "minimum": 0
+          },
+          "cleaning": {
+            "type": "number",
+            "minimum": 0
+          },
+          "maintenance": {
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "ready",
+          "occupied",
+          "cleaning",
+          "maintenance"
+        ]
+      },
+      "RevenueByMethod": {
+        "type": "object",
+        "properties": {
+          "vnpay": {
+            "type": "number",
+            "description": "Collected VNPay amount in VND.",
+            "minimum": 0
+          },
+          "manual": {
+            "type": "number",
+            "description": "Collected CASH and BANK_TRANSFER amount in VND.",
+            "minimum": 0
+          },
+          "total": {
+            "type": "number",
+            "description": "Gross collected amount in VND.",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "vnpay",
+          "manual",
+          "total"
+        ]
+      },
+      "PaymentMetrics": {
+        "type": "object",
+        "properties": {
+          "requiresReview": {
+            "type": "number",
+            "minimum": 0
+          },
+          "refundPending": {
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "requiresReview",
+          "refundPending"
+        ]
+      },
+      "OccupancyMetrics": {
+        "type": "object",
+        "properties": {
+          "roomNightsReserved": {
+            "type": "number",
+            "minimum": 0
+          },
+          "roomNightsAvailable": {
+            "type": "number",
+            "description": "Operational room-night capacity after blocked nights are excluded.",
+            "minimum": 0
+          },
+          "occupancyRate": {
+            "type": "number",
+            "description": "Percentage from 0 to 100.",
+            "maximum": 100
+          }
+        },
+        "required": [
+          "roomNightsReserved",
+          "roomNightsAvailable",
+          "occupancyRate"
+        ]
+      },
+      "DashboardSummaryResponse": {
+        "type": "object",
+        "properties": {
+          "fromDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "toDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "bookings": {
+            "$ref": "#/components/schemas/BookingStatusCount"
+          },
+          "rooms": {
+            "$ref": "#/components/schemas/RoomStatusCount"
+          },
+          "revenue": {
+            "$ref": "#/components/schemas/RevenueByMethod"
+          },
+          "totalRefunded": {
+            "type": "number",
+            "description": "Amount with completed REFUNDED status in VND.",
+            "minimum": 0
+          },
+          "payments": {
+            "$ref": "#/components/schemas/PaymentMetrics"
+          },
+          "occupancy": {
+            "$ref": "#/components/schemas/OccupancyMetrics"
+          },
+          "generatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "fromDate",
+          "toDate",
+          "bookings",
+          "rooms",
+          "revenue",
+          "totalRefunded",
+          "payments",
+          "occupancy",
+          "generatedAt"
+        ]
+      },
+      "PaymentMethod": {
+        "type": "string",
+        "enum": [
+          "CASH",
+          "BANK_TRANSFER",
+          "VNPAY"
+        ]
+      },
+      "PaymentStatus": {
+        "type": "string",
+        "enum": [
+          "PENDING",
+          "SUCCESS",
+          "FAILED",
+          "REQUIRES_REVIEW",
+          "REFUND_PENDING",
+          "REFUNDED"
+        ]
+      },
+      "CustomerPaymentDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "1"
+          },
+          "bookingId": {
+            "type": "string",
+            "example": "1"
+          },
+          "amount": {
+            "type": "string",
+            "example": "3000000.00"
+          },
+          "currency": {
+            "type": "string",
+            "enum": [
+              "VND"
+            ],
+            "example": "VND"
+          },
+          "method": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PaymentMethod"
+              }
+            ]
+          },
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PaymentStatus"
+              }
+            ]
+          },
+          "gatewayReference": {
+            "type": "string",
+            "description": "Safe merchant payment reference shown on customer receipts.",
+            "nullable": true
+          },
+          "paidAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "refundedAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "bookingId",
+          "amount",
+          "currency",
+          "method",
+          "status",
+          "gatewayReference",
+          "paidAt",
+          "refundedAt",
+          "expiresAt",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "OnlinePaymentDto": {
+        "type": "object",
+        "properties": {
+          "payment": {
+            "$ref": "#/components/schemas/CustomerPaymentDto"
+          },
+          "paymentUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "payment",
+          "paymentUrl",
+          "expiresAt"
+        ]
+      },
       "CreateVnpayPaymentDto": {
         "type": "object",
         "properties": {
@@ -2811,6 +7856,233 @@
             "example": "vn"
           }
         }
+      },
+      "PaymentUserDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "1"
+          },
+          "fullName": {
+            "type": "string",
+            "example": "Admin One"
+          }
+        },
+        "required": [
+          "id",
+          "fullName"
+        ]
+      },
+      "PaymentDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "1"
+          },
+          "bookingId": {
+            "type": "string",
+            "example": "1"
+          },
+          "amount": {
+            "type": "string",
+            "example": "3000000.00"
+          },
+          "currency": {
+            "type": "string",
+            "enum": [
+              "VND"
+            ],
+            "example": "VND"
+          },
+          "method": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PaymentMethod"
+              }
+            ]
+          },
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PaymentStatus"
+              }
+            ]
+          },
+          "gatewayName": {
+            "type": "string",
+            "nullable": true
+          },
+          "gatewayReference": {
+            "type": "string",
+            "nullable": true
+          },
+          "gatewayTransactionId": {
+            "type": "string",
+            "nullable": true
+          },
+          "gatewayResponseCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "gatewayTransactionStatus": {
+            "type": "string",
+            "nullable": true
+          },
+          "gatewayTransactionDate": {
+            "type": "string",
+            "nullable": true
+          },
+          "refundRequestId": {
+            "type": "string",
+            "nullable": true
+          },
+          "refundPreviousStatus": {
+            "type": "string",
+            "enum": [
+              "PENDING",
+              "SUCCESS",
+              "FAILED",
+              "REQUIRES_REVIEW",
+              "REFUND_PENDING",
+              "REFUNDED",
+              null
+            ],
+            "nullable": true
+          },
+          "refundGatewayTransactionId": {
+            "type": "string",
+            "nullable": true
+          },
+          "refundResponseCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "refundTransactionStatus": {
+            "type": "string",
+            "nullable": true
+          },
+          "refundMessage": {
+            "type": "string",
+            "nullable": true
+          },
+          "refundReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdByUserId": {
+            "type": "string",
+            "example": "1",
+            "nullable": true
+          },
+          "refundedByUserId": {
+            "type": "string",
+            "example": "1",
+            "nullable": true
+          },
+          "paidAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "refundedAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "refundRequestedAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "refundLastQueriedAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          },
+          "createdByUser": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PaymentUserDto"
+              }
+            ]
+          },
+          "refundedByUser": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PaymentUserDto"
+              }
+            ]
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "bookingId",
+          "amount",
+          "currency",
+          "method",
+          "status",
+          "gatewayName",
+          "gatewayReference",
+          "gatewayTransactionId",
+          "gatewayResponseCode",
+          "gatewayTransactionStatus",
+          "gatewayTransactionDate",
+          "refundRequestId",
+          "refundPreviousStatus",
+          "refundGatewayTransactionId",
+          "refundResponseCode",
+          "refundTransactionStatus",
+          "refundMessage",
+          "refundReason",
+          "createdByUserId",
+          "refundedByUserId",
+          "paidAt",
+          "refundedAt",
+          "refundRequestedAt",
+          "refundLastQueriedAt",
+          "expiresAt",
+          "createdByUser",
+          "refundedByUser",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "PaymentManagementMetaDto": {
+        "type": "object",
+        "properties": {
+          "pagination": {
+            "$ref": "#/components/schemas/PaginationDto"
+          },
+          "staleRefundCount": {
+            "type": "number",
+            "description": "Number of VNPay refunds still pending more than seven days.",
+            "example": 2,
+            "minimum": 0
+          }
+        },
+        "required": [
+          "pagination",
+          "staleRefundCount"
+        ]
       },
       "CreateManualPaymentDto": {
         "type": "object",
@@ -2836,9 +8108,294 @@
             "example": "Customer requested a refund.",
             "maxLength": 500
           }
+        }
+      },
+      "VnPayIpnDto": {
+        "type": "object",
+        "properties": {
+          "RspCode": {
+            "type": "string",
+            "enum": [
+              "00",
+              "01",
+              "02",
+              "04",
+              "97",
+              "99"
+            ]
+          },
+          "Message": {
+            "type": "string"
+          }
         },
         "required": [
-          "reason"
+          "RspCode",
+          "Message"
+        ]
+      },
+      "VnPayReturnDto": {
+        "type": "object",
+        "properties": {
+          "validSignature": {
+            "type": "boolean"
+          },
+          "paymentId": {
+            "type": "string",
+            "nullable": true
+          },
+          "bookingId": {
+            "type": "string",
+            "nullable": true
+          },
+          "paymentStatus": {
+            "type": "string",
+            "enum": [
+              "PENDING",
+              "SUCCESS",
+              "FAILED",
+              "REQUIRES_REVIEW",
+              "REFUND_PENDING",
+              "REFUNDED",
+              null
+            ],
+            "nullable": true
+          },
+          "responseCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "transactionStatus": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "validSignature",
+          "paymentId",
+          "bookingId",
+          "paymentStatus",
+          "responseCode",
+          "transactionStatus"
+        ]
+      },
+      "RoomTypeAmenityDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "1"
+          },
+          "name": {
+            "type": "string",
+            "example": "Wi-Fi"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "description"
+        ]
+      },
+      "RoomResponseRoomTypeDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "1"
+          },
+          "name": {
+            "type": "string",
+            "example": "Deluxe Room"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "bedType": {
+            "type": "string",
+            "example": "1 giường đôi",
+            "nullable": true
+          },
+          "maxGuests": {
+            "type": "number",
+            "example": 2,
+            "minimum": 1
+          },
+          "basePrice": {
+            "type": "string",
+            "example": "1500000.00"
+          },
+          "amenities": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RoomTypeAmenityDto"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "description",
+          "bedType",
+          "maxGuests",
+          "basePrice",
+          "amenities"
+        ]
+      },
+      "RoomImageDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "1"
+          },
+          "imageUrl": {
+            "type": "string",
+            "example": "/uploads/rooms/room-1.jpg"
+          },
+          "sortOrder": {
+            "type": "number",
+            "example": 0,
+            "minimum": 0
+          },
+          "isCover": {
+            "type": "boolean",
+            "example": true
+          }
+        },
+        "required": [
+          "id",
+          "imageUrl",
+          "sortOrder",
+          "isCover"
+        ]
+      },
+      "PublicRoomDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "1"
+          },
+          "roomTypeId": {
+            "type": "string",
+            "example": "1"
+          },
+          "roomNumber": {
+            "type": "string",
+            "example": "101"
+          },
+          "name": {
+            "type": "string",
+            "example": "Deluxe Room"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "roomType": {
+            "$ref": "#/components/schemas/RoomResponseRoomTypeDto"
+          },
+          "images": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RoomImageDto"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "roomTypeId",
+          "roomNumber",
+          "name",
+          "description",
+          "roomType",
+          "images"
+        ]
+      },
+      "RoomSearchSort": {
+        "type": "string",
+        "enum": [
+          "RECOMMENDED",
+          "PRICE_ASC",
+          "PRICE_DESC",
+          "POPULARITY",
+          "NEWEST"
+        ]
+      },
+      "RoomStatus": {
+        "type": "string",
+        "enum": [
+          "READY",
+          "OCCUPIED",
+          "CLEANING",
+          "MAINTENANCE",
+          "HIDDEN"
+        ]
+      },
+      "RoomDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "1"
+          },
+          "roomTypeId": {
+            "type": "string",
+            "example": "1"
+          },
+          "roomNumber": {
+            "type": "string",
+            "example": "101"
+          },
+          "name": {
+            "type": "string",
+            "example": "Deluxe 101"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RoomStatus"
+              }
+            ]
+          },
+          "roomType": {
+            "$ref": "#/components/schemas/RoomResponseRoomTypeDto"
+          },
+          "images": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RoomImageDto"
+            }
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "roomTypeId",
+          "roomNumber",
+          "name",
+          "description",
+          "status",
+          "roomType",
+          "images",
+          "createdAt",
+          "updatedAt"
         ]
       },
       "CreateRoomDto": {
@@ -2926,6 +8483,175 @@
           "status"
         ]
       },
+      "RoomTodayAvailabilityStatus": {
+        "type": "string",
+        "enum": [
+          "AVAILABLE",
+          "RESERVED",
+          "BLOCKED"
+        ]
+      },
+      "ManagementRoomCalendarBookingDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "28"
+          },
+          "bookingCode": {
+            "type": "string",
+            "example": "BKMRZ123ABC"
+          },
+          "checkInDate": {
+            "type": "string",
+            "example": "2030-08-01",
+            "format": "date"
+          },
+          "checkOutDate": {
+            "type": "string",
+            "example": "2030-08-03",
+            "format": "date"
+          }
+        },
+        "required": [
+          "id",
+          "bookingCode",
+          "checkInDate",
+          "checkOutDate"
+        ]
+      },
+      "ManagementRoomCalendarEventDto": {
+        "type": "object",
+        "properties": {
+          "stayDate": {
+            "type": "string",
+            "example": "2030-08-01",
+            "format": "date"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "RESERVED",
+              "BLOCKED"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
+          },
+          "booking": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ManagementRoomCalendarBookingDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "stayDate",
+          "status",
+          "reason",
+          "booking"
+        ]
+      },
+      "ManagementRoomCalendarSummaryDto": {
+        "type": "object",
+        "properties": {
+          "asOfDate": {
+            "type": "string",
+            "example": "2030-08-01",
+            "format": "date"
+          },
+          "todayStatus": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RoomTodayAvailabilityStatus"
+              }
+            ]
+          },
+          "nextEvent": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ManagementRoomCalendarEventDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "asOfDate",
+          "todayStatus",
+          "nextEvent"
+        ]
+      },
+      "ManagementRoomDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "1"
+          },
+          "roomTypeId": {
+            "type": "string",
+            "example": "1"
+          },
+          "roomNumber": {
+            "type": "string",
+            "example": "101"
+          },
+          "name": {
+            "type": "string",
+            "example": "Deluxe 101"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RoomStatus"
+              }
+            ]
+          },
+          "roomType": {
+            "$ref": "#/components/schemas/RoomResponseRoomTypeDto"
+          },
+          "images": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RoomImageDto"
+            }
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "calendarSummary": {
+            "$ref": "#/components/schemas/ManagementRoomCalendarSummaryDto"
+          }
+        },
+        "required": [
+          "id",
+          "roomTypeId",
+          "roomNumber",
+          "name",
+          "description",
+          "status",
+          "roomType",
+          "images",
+          "createdAt",
+          "updatedAt",
+          "calendarSummary"
+        ]
+      },
       "RoomCalendarBookingDto": {
         "type": "object",
         "properties": {
@@ -2985,46 +8711,6 @@
           "booking"
         ]
       },
-      "RoomCalendarEntriesEnvelopeDto": {
-        "type": "object",
-        "properties": {
-          "success": {
-            "type": "boolean",
-            "example": true
-          },
-          "statusCode": {
-            "type": "number",
-            "example": 200
-          },
-          "message": {
-            "type": "string",
-            "example": "Lay lich phong quan ly thanh cong."
-          },
-          "data": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/RoomCalendarEntryDto"
-            }
-          },
-          "path": {
-            "type": "string",
-            "example": "/api/v1/management/rooms/21/calendar"
-          },
-          "timestamp": {
-            "type": "string",
-            "example": "2026-07-27T04:00:00.000Z",
-            "format": "date-time"
-          }
-        },
-        "required": [
-          "success",
-          "statusCode",
-          "message",
-          "data",
-          "path",
-          "timestamp"
-        ]
-      },
       "BlockRoomDatesDto": {
         "type": "object",
         "properties": {
@@ -3063,41 +8749,124 @@
           "removedCount"
         ]
       },
-      "UnblockRoomDatesEnvelopeDto": {
+      "RoomTypeDto": {
         "type": "object",
         "properties": {
-          "success": {
-            "type": "boolean",
-            "example": true
+          "id": {
+            "type": "string",
+            "example": "1"
           },
-          "statusCode": {
+          "name": {
+            "type": "string",
+            "example": "Deluxe Room"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "bedType": {
+            "type": "string",
+            "example": "1 giường đôi",
+            "nullable": true
+          },
+          "maxGuests": {
             "type": "number",
-            "example": 200
+            "example": 2,
+            "minimum": 1
           },
-          "message": {
+          "basePrice": {
             "type": "string",
-            "example": "Mo khoa lich phong thanh cong."
+            "example": "1500000.00",
+            "description": "Base price represented as a decimal string."
           },
-          "data": {
-            "$ref": "#/components/schemas/UnblockRoomDatesDto"
+          "amenities": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RoomTypeAmenityDto"
+            }
           },
-          "path": {
-            "type": "string",
-            "example": "/api/v1/management/rooms/21/blocks"
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
           },
-          "timestamp": {
-            "type": "string",
-            "example": "2026-07-27T04:00:00.000Z",
-            "format": "date-time"
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
           }
         },
         "required": [
-          "success",
-          "statusCode",
-          "message",
-          "data",
-          "path",
-          "timestamp"
+          "id",
+          "name",
+          "description",
+          "bedType",
+          "maxGuests",
+          "basePrice",
+          "amenities",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "AdminRoomTypeDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "1"
+          },
+          "name": {
+            "type": "string",
+            "example": "Deluxe Room"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "bedType": {
+            "type": "string",
+            "example": "1 giường đôi",
+            "nullable": true
+          },
+          "maxGuests": {
+            "type": "number",
+            "example": 2,
+            "minimum": 1
+          },
+          "basePrice": {
+            "type": "string",
+            "example": "1500000.00",
+            "description": "Base price represented as a decimal string."
+          },
+          "amenities": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RoomTypeAmenityDto"
+            }
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "deletedAt": {
+            "format": "date-time",
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "description",
+          "bedType",
+          "maxGuests",
+          "basePrice",
+          "amenities",
+          "createdAt",
+          "updatedAt",
+          "deletedAt"
         ]
       },
       "CreateRoomTypeDto": {
@@ -3111,6 +8880,12 @@
           "description": {
             "type": "string",
             "example": "Phòng dành cho hai khách.",
+            "nullable": true
+          },
+          "bedType": {
+            "type": "string",
+            "example": "1 giường đôi",
+            "maxLength": 120,
             "nullable": true
           },
           "maxGuests": {
@@ -3142,6 +8917,12 @@
           "description": {
             "type": "string",
             "example": "Phòng dành cho hai khách.",
+            "nullable": true
+          },
+          "bedType": {
+            "type": "string",
+            "example": "1 giường đôi",
+            "maxLength": 120,
             "nullable": true
           },
           "maxGuests": {

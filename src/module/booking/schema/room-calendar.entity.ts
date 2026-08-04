@@ -23,6 +23,7 @@ export enum RoomCalendarStatus {
 @Index('idx_room_calendar_booking', ['bookingId'])
 @Index('idx_room_calendar_date', ['stayDate'])
 @Index('idx_room_calendar_status', ['status'])
+@Index('idx_room_calendar_status_date', ['status', 'stayDate'])
 @Check(
   'chk_room_calendar_status_ownership',
   "(status = 'RESERVED' AND booking_id IS NOT NULL) OR (status = 'BLOCKED' AND booking_id IS NULL)",

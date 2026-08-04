@@ -1,5 +1,7 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
+import { UserRoleEnum } from '../../../common/domain/account.enums';
+
 export class UpdateUserDto {
   @ApiPropertyOptional({
     example: 'Nguyen Van Staff',
@@ -32,7 +34,7 @@ export class UpdateUserDto {
   password?: unknown;
 
   @ApiPropertyOptional({
-    enum: ['STAFF'],
+    enum: [UserRoleEnum.STAFF],
     example: 'STAFF',
     type: String,
   })

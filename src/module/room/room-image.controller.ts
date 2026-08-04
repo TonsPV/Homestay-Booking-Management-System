@@ -14,18 +14,25 @@ import {
   Roles,
   RolesGuard,
 } from '../../common/http';
+import {
+  ApiCommonAuthErrors,
+  ApiOkEnvelope,
+} from '../../openapi/api-response.decorators';
 import { AccessTokenGuard } from '../auth/access-token.guard';
+import { RoomImageDto } from './dto/room-response.dto';
 import { RoomImageService } from './room-image.service';
 import type { RoomImageResponse } from './room.service';
 
 @Controller('v1/room-images')
 @UseGuards(AccessTokenGuard, RolesGuard)
 @Roles('ADMIN')
+@ApiCommonAuthErrors()
 export class RoomImageController {
   constructor(private readonly roomImageService: RoomImageService) {}
 
   @Delete(':imageId')
   @HttpCode(HttpStatus.OK)
+  @ApiOkEnvelope(RoomImageDto)
   delete(
     @Param('imageId') imageId: string,
   ): Promise<ApiResponsePayload<RoomImageResponse>> {
@@ -35,6 +42,7 @@ export class RoomImageController {
   }
 
   @Patch(':imageId/set-cover')
+  @ApiOkEnvelope(RoomImageDto)
   setCover(
     @Param('imageId') imageId: string,
   ): Promise<ApiResponsePayload<RoomImageResponse>> {

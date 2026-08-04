@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import type { Repository } from 'typeorm';
+import type { EntityManager, Repository } from 'typeorm';
 
 import type { AccountStatus, PaginationMeta } from '../../common/http';
 import {
@@ -13,6 +13,10 @@ import {
   parsePagination,
   requireAccountStatus,
 } from '../../common/validation';
+import {
+  CustomerCredentialPolicy,
+  type CustomerCredentialCapabilities,
+} from './customer-credential.policy';
 import { ListCustomersQueryDto } from './dto/list-customers-query.dto';
 import { Customer } from './schema/customer.entity';
 
@@ -24,7 +28,13 @@ export interface AdminCustomerResponse {
   status: AccountStatus;
   createdAt: Date;
   updatedAt: Date;
+  credentialCapabilities: CustomerCredentialCapabilities;
 }
+
+type AdminCustomerProfile = Omit<
+  AdminCustomerResponse,
+  'credentialCapabilities'
+>;
 
 export interface AdminCustomerListResponse {
   items: AdminCustomerResponse[];
@@ -36,6 +46,7 @@ export class CustomerAdminService {
   constructor(
     @InjectRepository(Customer)
     private readonly customersRepository: Repository<Customer>,
+    private readonly customerCredentialPolicy: CustomerCredentialPolicy,
   ) {}
 
   async listCustomers(
@@ -48,6 +59,7 @@ export class CustomerAdminService {
     const status = optionalAccountStatus(query.status);
     const customersQuery = this.customersRepository
       .createQueryBuilder('customer')
+      .addSelect('customer.passwordHash')
       .where('customer.deletedAt IS NULL')
       .orderBy('customer.createdAt', 'DESC')
       .skip(skip)
@@ -81,18 +93,65 @@ export class CustomerAdminService {
     id: string,
     statusValue: unknown,
   ): Promise<AdminCustomerResponse> {
-    const customer = await this.getCustomer(id);
-    customer.status = requireAccountStatus(statusValue);
+    const customer = await this.withCustomerTransaction((repository) =>
+      this.updateStatusWithRepository(repository, id, statusValue),
+    );
 
-    return this.toAdminCustomerResponse(
-      await this.customersRepository.save(customer),
+    return {
+      ...customer,
+      credentialCapabilities:
+        await this.customerCredentialPolicy.evaluateByCustomerId(id),
+    };
+  }
+
+  private async updateStatusWithRepository(
+    repository: Repository<Customer>,
+    id: string,
+    statusValue: unknown,
+  ): Promise<AdminCustomerProfile> {
+    const customer = await this.getCustomer(id, repository);
+    const status = requireAccountStatus(statusValue);
+
+    if (customer.status !== status) {
+      customer.status = status;
+      customer.tokenVersion += 1;
+    }
+
+    return this.toAdminCustomerProfile(await repository.save(customer));
+  }
+
+  private async withCustomerTransaction<T>(
+    operation: (repository: Repository<Customer>) => Promise<T>,
+  ): Promise<T> {
+    const repository = this.customersRepository as Repository<Customer> & {
+      manager?: EntityManager;
+    };
+
+    if (repository.manager === undefined) {
+      return operation(this.customersRepository);
+    }
+
+    return repository.manager.transaction((manager) =>
+      operation(manager.getRepository(Customer)),
     );
   }
 
-  private async getCustomer(id: string): Promise<Customer> {
+  private async getCustomer(
+    id: string,
+    repository: Repository<Customer> = this.customersRepository,
+  ): Promise<Customer> {
     this.validateId(id);
 
-    const customer = await this.customersRepository.findOneBy({ id });
+    const repositoryWithFindOne = repository as Repository<Customer> & {
+      findOne?: Repository<Customer>['findOne'];
+    };
+    const customer =
+      typeof repositoryWithFindOne.findOne === 'function'
+        ? await repositoryWithFindOne.findOne({
+            where: { id },
+            lock: { mode: 'pessimistic_write' },
+          })
+        : await repository.findOneBy({ id });
 
     if (customer === null) {
       throw new NotFoundException('Khong tim thay customer.');
@@ -108,6 +167,13 @@ export class CustomerAdminService {
   }
 
   private toAdminCustomerResponse(customer: Customer): AdminCustomerResponse {
+    return {
+      ...this.toAdminCustomerProfile(customer),
+      credentialCapabilities: this.customerCredentialPolicy.evaluate(customer),
+    };
+  }
+
+  private toAdminCustomerProfile(customer: Customer): AdminCustomerProfile {
     return {
       id: customer.id,
       fullName: customer.fullName,

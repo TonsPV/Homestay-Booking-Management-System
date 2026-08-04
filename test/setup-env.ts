@@ -24,5 +24,7 @@ if (result.error !== undefined) {
 }
 
 process.env.ROOM_IMAGE_UPLOAD_DIR ||= '.data/test-uploads/room-images';
+process.env.BOOKING_MAX_ADVANCE_DAYS ||= '3650';
+process.env.CUSTOMER_CLAIM_LOCAL_BYPASS_ENABLED ||= 'true';
 
 assertSafeE2eEnvironment(process.env);

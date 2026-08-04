@@ -1,13 +1,16 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
+  HttpStatus,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import type { Repository } from 'typeorm';
+import { IsNull, type QueryDeepPartialEntity, type Repository } from 'typeorm';
 
 import { getMysqlDuplicateKey } from '../../common/database';
+import { AppHttpException, ErrorCode } from '../../common/http';
 import {
   getVietnamesePhoneLookupVariants,
   optionalNullableEmail,
@@ -15,14 +18,14 @@ import {
   requiredPhone,
 } from '../../common/validation';
 import { UpdateCustomerProfileDto } from './dto/update-customer-profile.dto';
-import { Customer } from './schema/customer.entity';
+import { Customer, type CustomerStatus } from './schema/customer.entity';
 
 export interface CustomerProfileResponse {
   id: string;
   fullName: string;
   email: string | null;
   phone: string;
-  status: string;
+  status: CustomerStatus;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -56,33 +59,53 @@ export class CustomerProfileService {
     const phone =
       body.phone === undefined ? undefined : requiredPhone(body.phone);
 
+    if (fullName === undefined && email === undefined && phone === undefined) {
+      throw new BadRequestException('Khong co thong tin customer de cap nhat.');
+    }
+
+    const profileChanges: QueryDeepPartialEntity<Customer> = {};
+
     if (email !== undefined && email !== null) {
       await this.ensureEmailIsAvailable(email, customer.id);
-      customer.email = email;
+      profileChanges.email = email;
     }
 
     if (email === null) {
-      customer.email = null;
+      profileChanges.email = null;
     }
 
     if (phone !== undefined) {
       await this.ensurePhoneIsAvailable(phone, customer.id);
-      customer.phone = phone;
+      profileChanges.phone = phone;
     }
 
     if (fullName !== undefined) {
-      customer.fullName = fullName;
+      profileChanges.fullName = fullName;
     }
 
-    let savedCustomer: Customer;
-
     try {
-      savedCustomer = await this.customersRepository.save(customer);
+      const result = await this.customersRepository.update(
+        {
+          id: customer.id,
+          status: 'ACTIVE',
+          tokenVersion: customer.tokenVersion,
+          deletedAt: IsNull(),
+        },
+        profileChanges,
+      );
+
+      if (result.affected !== 1) {
+        throw new ConflictException(
+          'Thong tin tai khoan da thay doi. Vui long tai lai va thu lai.',
+        );
+      }
     } catch (error) {
       this.throwCustomerDuplicateConflict(error);
     }
 
-    return this.toCustomerProfileResponse(savedCustomer);
+    return this.toCustomerProfileResponse(
+      await this.getActiveCustomer(customer.id),
+    );
   }
 
   private async getActiveCustomer(
@@ -119,7 +142,11 @@ export class CustomerProfileService {
       .getOne();
 
     if (existingCustomer !== null) {
-      throw new ConflictException('Email da duoc su dung.');
+      throw this.contactConflict(
+        'email',
+        ErrorCode.CUSTOMER_EMAIL_IN_USE,
+        'Email da duoc su dung.',
+      );
     }
   }
 
@@ -137,7 +164,11 @@ export class CustomerProfileService {
       .getOne();
 
     if (existingCustomer !== null) {
-      throw new ConflictException('So dien thoai da duoc su dung.');
+      throw this.contactConflict(
+        'phone',
+        ErrorCode.CUSTOMER_PHONE_IN_USE,
+        'So dien thoai da duoc su dung.',
+      );
     }
   }
 
@@ -149,14 +180,36 @@ export class CustomerProfileService {
     }
 
     if (duplicateKey.includes('email')) {
-      throw new ConflictException('Email da duoc su dung.');
+      throw this.contactConflict(
+        'email',
+        ErrorCode.CUSTOMER_EMAIL_IN_USE,
+        'Email da duoc su dung.',
+      );
     }
 
     if (duplicateKey.includes('phone')) {
-      throw new ConflictException('So dien thoai da duoc su dung.');
+      throw this.contactConflict(
+        'phone',
+        ErrorCode.CUSTOMER_PHONE_IN_USE,
+        'So dien thoai da duoc su dung.',
+      );
     }
 
     throw new ConflictException('Thong tin customer da ton tai.');
+  }
+
+  private contactConflict(
+    field: 'email' | 'phone',
+    errorCode:
+      | typeof ErrorCode.CUSTOMER_EMAIL_IN_USE
+      | typeof ErrorCode.CUSTOMER_PHONE_IN_USE,
+    message: string,
+  ): AppHttpException {
+    return new AppHttpException(HttpStatus.CONFLICT, errorCode, message, {
+      fieldErrors: {
+        [field]: [{ errorCode, message }],
+      },
+    });
   }
 
   private toCustomerProfileResponse(

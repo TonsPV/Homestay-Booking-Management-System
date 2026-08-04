@@ -1,5 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
+import { UserRoleEnum } from '../../../common/domain/account.enums';
+
 export class CreateUserDto {
   @ApiProperty({ example: 'Nguyen Van Staff', maxLength: 120, type: String })
   fullName?: unknown;
@@ -29,7 +31,7 @@ export class CreateUserDto {
 
   @ApiPropertyOptional({
     description: 'Only STAFF accounts can be issued through this endpoint.',
-    enum: ['STAFF'],
+    enum: [UserRoleEnum.STAFF],
     example: 'STAFF',
     type: String,
   })

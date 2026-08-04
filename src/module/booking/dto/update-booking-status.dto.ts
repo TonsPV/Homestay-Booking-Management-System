@@ -8,10 +8,11 @@ export class UpdateBookingStatusDto {
     example: BookingStatus.CONFIRMED,
     type: String,
   })
-  status?: unknown;
+  status!: unknown;
 
   @ApiPropertyOptional({
-    description: 'Required when the target status is CANCELLED.',
+    description:
+      'Required when changing the booking from another status to CANCELLED.',
     example: 'Khách yêu cầu hủy tại quầy.',
     maxLength: 500,
     type: String,

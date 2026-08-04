@@ -1,8 +1,17 @@
 import type { Request } from 'express';
 
-export type ActorType = 'customer' | 'user';
-export type UserRole = 'STAFF' | 'ADMIN';
-export type AccountStatus = 'ACTIVE' | 'LOCKED';
+export {
+  AccountStatusEnum,
+  ActorTypeEnum,
+  UserRoleEnum,
+} from '../domain/account.enums';
+export type {
+  AccountStatus,
+  ActorType,
+  UserRole,
+} from '../domain/account.enums';
+
+import type { ActorType, UserRole } from '../domain/account.enums';
 
 export interface AccessTokenPayload {
   sub: string;
@@ -25,6 +34,7 @@ export interface AccessTokenSubject {
 
 export interface AppRequest<TAuth = unknown> extends Request {
   auth?: TAuth;
+  requestId?: string;
 }
 
 export interface AuthenticatedRequest extends AppRequest<AccessTokenPayload> {

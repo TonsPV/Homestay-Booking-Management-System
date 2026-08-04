@@ -11,6 +11,8 @@ import { RoomImageStorageService } from './room-image-storage.service';
 import { RoomManagementController } from './room-management.controller';
 import { RoomAvailabilityService } from './room-availability.service';
 import { RoomController } from './room.controller';
+import { RoomMutationService } from './room-mutation.service';
+import { RoomQueryService } from './room-query.service';
 import { RoomService } from './room.service';
 import { RoomImage } from './schema/room-image.entity';
 import { Room } from './schema/room.entity';
@@ -29,6 +31,8 @@ import { Room } from './schema/room.entity';
   controllers: [RoomController, RoomManagementController, RoomImageController],
   providers: [
     RoomService,
+    RoomQueryService,
+    RoomMutationService,
     RoomImageService,
     RoomImageStorageService,
     RoomAvailabilityService,

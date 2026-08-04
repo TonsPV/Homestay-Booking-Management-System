@@ -11,6 +11,14 @@ export class CreateRoomTypeDto {
   })
   description?: unknown;
 
+  @ApiPropertyOptional({
+    example: '1 giường đôi',
+    maxLength: 120,
+    nullable: true,
+    type: String,
+  })
+  bedType?: unknown;
+
   @ApiProperty({ example: 2, maximum: 100, minimum: 1, type: Number })
   maxGuests?: unknown;
 

@@ -19,6 +19,7 @@ describe('configureApp', () => {
     configureApp(app.value);
 
     expect(app.enableCors).toHaveBeenCalledWith({
+      exposedHeaders: ['Retry-After', 'X-Request-Id'],
       origin: ['http://localhost:5173', 'https://app.example.com'],
     });
   });
@@ -35,7 +36,10 @@ describe('configureApp', () => {
 
     configureApp(app.value);
 
-    expect(app.enableCors).toHaveBeenCalledWith({ origin: true });
+    expect(app.enableCors).toHaveBeenCalledWith({
+      exposedHeaders: ['Retry-After', 'X-Request-Id'],
+      origin: true,
+    });
   });
 
   it('serves optimized room images with immutable cache settings', () => {
@@ -64,15 +68,99 @@ describe('configureApp', () => {
       }),
     );
   });
+
+  it('propagates a bounded request id to the response', () => {
+    const configService = {
+      get: jest
+        .fn()
+        .mockImplementation((key: string) =>
+          key === 'CORS_ORIGINS' ? [] : undefined,
+        ),
+    };
+    const app = createApp(configService);
+
+    configureApp(app.value);
+
+    type RequestIdMiddleware = (
+      request: {
+        header: (name: string) => string | undefined;
+        requestId?: string;
+      },
+      response: { setHeader: jest.Mock },
+      next: jest.Mock,
+    ) => void;
+    const useCalls = app.use.mock.calls as unknown as Array<
+      [RequestIdMiddleware]
+    >;
+    const middleware = useCalls[1]?.[0];
+    const request = {
+      header: jest.fn().mockReturnValue('request-from-proxy'),
+      requestId: undefined as string | undefined,
+    };
+    const response = { setHeader: jest.fn() };
+    const next = jest.fn();
+
+    expect(middleware).toBeDefined();
+    middleware?.(request, response, next);
+
+    expect(request.requestId).toBe('request-from-proxy');
+    expect(response.setHeader).toHaveBeenCalledWith(
+      'X-Request-Id',
+      'request-from-proxy',
+    );
+    expect(next).toHaveBeenCalledTimes(1);
+  });
+
+  it('replaces an unsafe request id instead of reflecting it', () => {
+    const configService = {
+      get: jest
+        .fn()
+        .mockImplementation((key: string) =>
+          key === 'CORS_ORIGINS' ? [] : undefined,
+        ),
+    };
+    const app = createApp(configService);
+
+    configureApp(app.value);
+
+    type RequestIdMiddleware = (
+      request: {
+        header: (name: string) => string | undefined;
+        requestId?: string;
+      },
+      response: { setHeader: jest.Mock },
+      next: jest.Mock,
+    ) => void;
+    const middleware = (
+      app.use.mock.calls as unknown as Array<[RequestIdMiddleware]>
+    )[1]?.[0];
+    const request = {
+      header: jest.fn().mockReturnValue('unsafe\r\ninjected-header: value'),
+      requestId: undefined as string | undefined,
+    };
+    const response = { setHeader: jest.fn() };
+
+    middleware?.(request, response, jest.fn());
+
+    expect(request.requestId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
+    expect(response.setHeader).toHaveBeenCalledWith(
+      'X-Request-Id',
+      request.requestId,
+    );
+  });
 });
 
 function createApp(configService: { get: jest.Mock }): {
   value: INestApplication;
   enableCors: jest.Mock;
   useStaticAssets: jest.Mock;
+  use: jest.Mock;
 } {
   const enableCors = jest.fn();
   const useStaticAssets = jest.fn();
+  const use = jest.fn();
   const value = {
     get: jest.fn((token: unknown) => {
       if (token === ConfigService) {
@@ -84,10 +172,11 @@ function createApp(configService: { get: jest.Mock }): {
     setGlobalPrefix: jest.fn(),
     enableCors,
     useStaticAssets,
+    use,
     useGlobalInterceptors: jest.fn(),
     useGlobalFilters: jest.fn(),
     enableShutdownHooks: jest.fn(),
   } as unknown as INestApplication;
 
-  return { value, enableCors, useStaticAssets };
+  return { value, enableCors, useStaticAssets, use };
 }

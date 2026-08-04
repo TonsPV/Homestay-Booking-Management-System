@@ -24,6 +24,12 @@ import {
   RolesGuard,
   type AccessTokenPayload,
 } from '../../common/http';
+import {
+  ApiCommonAuthErrors,
+  ApiCommonMutationErrors,
+  ApiCreatedEnvelope,
+  ApiOkEnvelope,
+} from '../../openapi/api-response.decorators';
 import { ROOM_IMAGE_MAX_FILE_SIZE } from '../../config/room-image-storage';
 import { AccessTokenGuard } from '../auth/access-token.guard';
 import { CreateRoomImageDto } from './dto/create-room-image.dto';
@@ -32,10 +38,12 @@ import { ListRoomsQueryDto } from './dto/list-rooms-query.dto';
 import { SearchRoomsQueryDto } from './dto/search-rooms-query.dto';
 import { UpdateRoomStatusDto } from './dto/update-room-status.dto';
 import { UpdateRoomDto } from './dto/update-room.dto';
+import { PublicRoomDto, RoomDto, RoomImageDto } from './dto/room-response.dto';
 import { RoomImageService } from './room-image.service';
 import type { UploadedRoomImageFile } from './room-image-storage.service';
 import {
   type RoomImageResponse,
+  type PublicRoomResponse,
   type RoomResponse,
   RoomService,
 } from './room.service';
@@ -48,9 +56,10 @@ export class RoomController {
   ) {}
 
   @Get('search')
+  @ApiOkEnvelope(PublicRoomDto, { isArray: true, paginated: true })
   search(
     @Query() query: SearchRoomsQueryDto,
-  ): Promise<ApiResponsePayload<RoomResponse[]>> {
+  ): Promise<ApiResponsePayload<PublicRoomResponse[]>> {
     return this.roomService
       .search(query)
       .then((result) =>
@@ -63,9 +72,10 @@ export class RoomController {
   }
 
   @Get()
+  @ApiOkEnvelope(PublicRoomDto, { isArray: true, paginated: true })
   list(
     @Query() query: ListRoomsQueryDto,
-  ): Promise<ApiResponsePayload<RoomResponse[]>> {
+  ): Promise<ApiResponsePayload<PublicRoomResponse[]>> {
     return this.roomService
       .list(query)
       .then((result) =>
@@ -78,7 +88,10 @@ export class RoomController {
   }
 
   @Get(':id')
-  getById(@Param('id') id: string): Promise<ApiResponsePayload<RoomResponse>> {
+  @ApiOkEnvelope(PublicRoomDto)
+  getById(
+    @Param('id') id: string,
+  ): Promise<ApiResponsePayload<PublicRoomResponse>> {
     return this.roomService
       .getById(id)
       .then((room) => ApiResponse.ok(room, 'Lay thong tin phong thanh cong.'));
@@ -88,6 +101,9 @@ export class RoomController {
   @UseGuards(AccessTokenGuard, RolesGuard)
   @Roles('ADMIN')
   @HttpCode(HttpStatus.CREATED)
+  @ApiCreatedEnvelope(RoomDto)
+  @ApiCommonAuthErrors()
+  @ApiCommonMutationErrors()
   create(
     @Body() body: CreateRoomDto,
   ): Promise<ApiResponsePayload<RoomResponse>> {
@@ -99,6 +115,9 @@ export class RoomController {
   @Patch(':id')
   @UseGuards(AccessTokenGuard, RolesGuard)
   @Roles('ADMIN')
+  @ApiOkEnvelope(RoomDto)
+  @ApiCommonAuthErrors()
+  @ApiCommonMutationErrors()
   update(
     @Param('id') id: string,
     @Body() body: UpdateRoomDto,
@@ -112,6 +131,8 @@ export class RoomController {
   @UseGuards(AccessTokenGuard, RolesGuard)
   @Roles('ADMIN')
   @HttpCode(HttpStatus.OK)
+  @ApiOkEnvelope(RoomDto)
+  @ApiCommonAuthErrors()
   delete(@Param('id') id: string): Promise<ApiResponsePayload<RoomResponse>> {
     return this.roomService
       .delete(id)
@@ -121,6 +142,9 @@ export class RoomController {
   @Patch(':id/status')
   @UseGuards(AccessTokenGuard, RolesGuard)
   @Roles('ADMIN', 'STAFF')
+  @ApiOkEnvelope(RoomDto)
+  @ApiCommonAuthErrors()
+  @ApiCommonMutationErrors()
   updateStatus(
     @Param('id') id: string,
     @Body() body: UpdateRoomStatusDto,
@@ -169,6 +193,9 @@ export class RoomController {
     }),
   )
   @HttpCode(HttpStatus.CREATED)
+  @ApiCreatedEnvelope(RoomImageDto)
+  @ApiCommonAuthErrors()
+  @ApiCommonMutationErrors()
   createImage(
     @Param('roomId') roomId: string,
     @Body() body: CreateRoomImageDto,

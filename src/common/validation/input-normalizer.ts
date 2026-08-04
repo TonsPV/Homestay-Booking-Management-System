@@ -1,5 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 
+import { AccountStatusEnum, type AccountStatus } from '../domain/account.enums';
+
 export function requireTrimmedString(
   value: unknown,
   message: string,
@@ -277,22 +279,25 @@ export function parseBoolean(
 export function optionalAccountStatus(
   value: unknown,
   message = 'Trang thai tai khoan khong hop le.',
-): 'ACTIVE' | 'LOCKED' | undefined {
+): AccountStatus | undefined {
   if (value === undefined || value === null || value === '') {
     return undefined;
   }
 
-  if (value !== 'ACTIVE' && value !== 'LOCKED') {
+  if (
+    typeof value !== 'string' ||
+    !Object.values(AccountStatusEnum).includes(value as AccountStatusEnum)
+  ) {
     throw new BadRequestException(message);
   }
 
-  return value;
+  return value as AccountStatus;
 }
 
 export function requireAccountStatus(
   value: unknown,
   message = 'Trang thai tai khoan khong hop le.',
-): 'ACTIVE' | 'LOCKED' {
+): AccountStatus {
   const status = optionalAccountStatus(value, message);
 
   if (status === undefined) {

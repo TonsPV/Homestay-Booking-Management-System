@@ -45,6 +45,9 @@ export enum PaymentStatus {
 @Index('idx_payments_created_by_user', ['createdByUserId'])
 @Index('idx_payments_refunded_by_user', ['refundedByUserId'])
 @Index('idx_payments_expires_at', ['expiresAt'])
+@Index('idx_payments_status_paid_at', ['status', 'paidAt'])
+@Index('idx_payments_status_refunded_at', ['status', 'refundedAt'])
+@Index('idx_payments_created_at_status', ['createdAt', 'status'])
 @Check('chk_payments_amount', 'amount > 0')
 @Check('chk_payments_currency', "currency = 'VND'")
 export class Payment {

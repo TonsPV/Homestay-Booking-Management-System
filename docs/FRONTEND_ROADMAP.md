@@ -94,6 +94,94 @@ khi hoàn thành checklist tại mục 6.
 | Booking Core | Ready         | Customer booking history/create/cancel, Staff counter booking/management         | Có pending-payment expiry            |
 | Payment      | Backend Ready | Customer VNPay/history, Staff manual payment, Admin full refund/reconciliation   | FE đã tích hợp contract refund/query |
 
+### Security Lượt 3 contract migration - 2026-07-30
+
+This is an intentional breaking response change. Regenerate the FE API client
+from `docs/openapi.json` before updating Room or Payment screens.
+
+Customer Payment endpoints now return `CustomerPaymentDto` with only:
+
+- `id`, `bookingId`, `amount`, `currency`, `method`, `status`
+- `gatewayReference`
+- `paidAt`, `refundedAt`, `expiresAt`, `createdAt`, `updatedAt`
+
+Customer code must not depend on operator identity, gateway transaction codes,
+refund reconciliation IDs/messages, or management audit timestamps. Those
+fields remain available only through management Payment endpoints using
+`PaymentDto`.
+
+Public Room list/search/detail now return `PublicRoomDto`. The public contract
+does not contain `roomNumber`, operational `status`, `createdAt`, or
+`updatedAt`. Management Room endpoints continue returning `RoomDto` with the
+physical room number and operational status.
+
+Required FE changes:
+
+1. Replace public Room types with `PublicRoomDto`.
+2. Keep `RoomDto` only in authenticated management screens.
+3. Replace customer history and VNPay creation payment types with
+   `CustomerPaymentDto`.
+4. Keep `PaymentDto` only in management payment/refund/reconciliation screens.
+5. Do not infer occupancy by polling public Room endpoints.
+
+### Customer registration contract correction - 2026-08-02
+
+Local development amendment: when
+`CUSTOMER_CLAIM_LOCAL_BYPASS_ENABLED=true`, an active counter-created Customer
+whose password is still null may submit the normal registration form with the
+same phone and receive `201`; the password is attached to the existing Customer
+ID and the next login succeeds. This bridge is rejected by production
+environment validation, does not mark the phone verified, and never overwrites
+an existing password. FE does not need a separate local-only screen.
+
+This is an intentional breaking response change. Regenerate the FE API client
+from `docs/openapi.json` before updating registration and login screens.
+
+`POST /api/v1/auth/customers/register` does not return a Customer profile. A
+new account returns `201`, while an email/phone conflict returns a generic `409`.
+This prevents the UI from reporting successful registration when no account was
+created.
+
+```json
+{
+  "success": true,
+  "statusCode": 201,
+  "message": "Dang ky tai khoan thanh cong.",
+  "data": {
+    "accepted": true
+  }
+}
+```
+
+Required FE registration changes:
+
+1. Replace `AuthCustomerDto` with `AuthRegistrationAcceptedDto` for the
+   registration response.
+2. Do not read `data.id`, `data.phone`, account status or profile fields from
+   registration.
+3. On `409`, show the generic message returned by the API; do not infer whether
+   the email or phone caused the conflict.
+4. After `201`, the account exists and may be logged in immediately with the
+   submitted email/phone and password.
+5. Keep validation handling for `400` and throttling handling for `429`.
+
+Both Customer and Staff/Admin login now return the same generic `401` response
+for missing account, locked account, missing Customer password and wrong
+password. Successful login responses are unchanged.
+
+Required FE login changes:
+
+1. Use one generic invalid-login message for `401`.
+2. Do not branch on missing/locked/passwordless/wrong-password causes.
+3. Do not expect `403` for a locked account on the public login routes.
+4. Keep `429` handling and honor `Retry-After`.
+
+The generic `409` avoids revealing which identifier caused the conflict, but
+the status code still exposes that one of them is already registered. Full
+identity ownership verification is deferred until the Backend has a real
+email/SMS provider and OTP/verification flow; FE must not simulate a
+verification success locally.
+
 ## 4. FE Delivery Phases
 
 ### Phase 1 - Foundation

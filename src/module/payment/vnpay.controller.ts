@@ -8,8 +8,11 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { Response } from 'express';
+import { ApiOkResponse } from '@nestjs/swagger';
 
 import { ApiResponse, type ApiResponsePayload } from '../../common/http';
+import { ApiOkEnvelope } from '../../openapi/api-response.decorators';
+import { VnPayIpnDto, VnPayReturnDto } from './dto/payment-response.dto';
 import { PaymentService, type VnPayReturnResponse } from './payment.service';
 
 @Controller('v1/payments/vnpay')
@@ -21,6 +24,10 @@ export class VnPayController {
 
   @Get('ipn')
   @HttpCode(HttpStatus.OK)
+  @ApiOkResponse({
+    description: 'Raw VNPay IPN acknowledgement (not wrapped).',
+    type: VnPayIpnDto,
+  })
   async ipn(
     @Query() query: Record<string, unknown>,
     @Res() response: Response,
@@ -31,6 +38,7 @@ export class VnPayController {
   }
 
   @Get('return')
+  @ApiOkEnvelope(VnPayReturnDto)
   async getReturn(
     @Query() query: Record<string, unknown>,
     @Res({ passthrough: true }) response: Response,

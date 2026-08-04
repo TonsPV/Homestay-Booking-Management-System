@@ -19,9 +19,16 @@ import {
   Roles,
   RolesGuard,
 } from '../../common/http';
+import {
+  ApiCommonAuthErrors,
+  ApiCommonMutationErrors,
+  ApiCreatedEnvelope,
+  ApiOkEnvelope,
+} from '../../openapi/api-response.decorators';
 import { AccessTokenGuard } from '../auth/access-token.guard';
 import { AmenityService, type AdminAmenityResponse } from './amenity.service';
 import { CreateAmenityDto } from './dto/create-amenity.dto';
+import { AdminAmenityDto } from './dto/amenity-response.dto';
 import { AdminListAmenitiesQueryDto } from './dto/list-amenities-query.dto';
 import { UpdateAmenityDto } from './dto/update-amenity.dto';
 
@@ -30,11 +37,14 @@ import { UpdateAmenityDto } from './dto/update-amenity.dto';
 @Roles('ADMIN')
 @ApiTags('Admin Amenities')
 @ApiBearerAuth()
+@ApiCommonAuthErrors()
 export class AmenityAdminController {
   constructor(private readonly amenityService: AmenityService) {}
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
+  @ApiCreatedEnvelope(AdminAmenityDto)
+  @ApiCommonMutationErrors()
   create(
     @Body() body: CreateAmenityDto,
   ): Promise<ApiResponsePayload<AdminAmenityResponse>> {
@@ -46,6 +56,7 @@ export class AmenityAdminController {
   }
 
   @Get()
+  @ApiOkEnvelope(AdminAmenityDto, { isArray: true, paginated: true })
   list(
     @Query() query: AdminListAmenitiesQueryDto,
   ): Promise<ApiResponsePayload<AdminAmenityResponse[]>> {
@@ -61,6 +72,7 @@ export class AmenityAdminController {
   }
 
   @Get(':id')
+  @ApiOkEnvelope(AdminAmenityDto)
   getById(
     @Param('id') id: string,
   ): Promise<ApiResponsePayload<AdminAmenityResponse>> {
@@ -72,6 +84,8 @@ export class AmenityAdminController {
   }
 
   @Patch(':id')
+  @ApiOkEnvelope(AdminAmenityDto)
+  @ApiCommonMutationErrors()
   update(
     @Param('id') id: string,
     @Body() body: UpdateAmenityDto,
@@ -85,6 +99,8 @@ export class AmenityAdminController {
 
   @Delete(':id')
   @HttpCode(HttpStatus.OK)
+  @ApiOkEnvelope(AdminAmenityDto)
+  @ApiCommonMutationErrors()
   softDelete(
     @Param('id') id: string,
   ): Promise<ApiResponsePayload<AdminAmenityResponse>> {
@@ -94,6 +110,8 @@ export class AmenityAdminController {
   }
 
   @Patch(':id/restore')
+  @ApiOkEnvelope(AdminAmenityDto)
+  @ApiCommonMutationErrors()
   restore(
     @Param('id') id: string,
   ): Promise<ApiResponsePayload<AdminAmenityResponse>> {

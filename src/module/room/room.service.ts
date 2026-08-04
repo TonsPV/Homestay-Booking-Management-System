@@ -1,767 +1,82 @@
-import {
-  BadRequestException,
-  ConflictException,
-  ForbiddenException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import type { EntityManager, SelectQueryBuilder } from 'typeorm';
-import { Repository } from 'typeorm';
+import { Injectable } from '@nestjs/common';
+import type { UserRole } from '../../common/http';
+import type { CreateRoomDto } from './dto/create-room.dto';
+import type { ListAvailableRoomsQueryDto } from './dto/list-available-rooms-query.dto';
+import type { ListManagementRoomsQueryDto } from './dto/list-management-rooms-query.dto';
+import type { ListRoomsQueryDto } from './dto/list-rooms-query.dto';
+import type { SearchRoomsQueryDto } from './dto/search-rooms-query.dto';
+import type { UpdateRoomStatusDto } from './dto/update-room-status.dto';
+import type { UpdateRoomDto } from './dto/update-room.dto';
+import { RoomMutationService } from './room-mutation.service';
+import { RoomQueryService } from './room-query.service';
+import type {
+  ManagementRoomListResult,
+  PublicRoomListResult,
+  PublicRoomResponse,
+  RoomListResult,
+  RoomResponse,
+} from './room.types';
 
-import { getMysqlDuplicateKey } from '../../common/database';
-import type { PaginationMeta, UserRole } from '../../common/http';
-import {
-  optionalDecimalAmount,
-  optionalNullableTrimmedString,
-  optionalSearch,
-  optionalTrimmedString,
-  parsePagination,
-  requirePositiveInt,
-  requireTrimmedString,
-} from '../../common/validation';
-import { RoomType } from '../room-type/schema/room-type.entity';
-import { CreateRoomDto } from './dto/create-room.dto';
-import { ListManagementRoomsQueryDto } from './dto/list-management-rooms-query.dto';
-import { ListRoomsQueryDto } from './dto/list-rooms-query.dto';
-import { SearchRoomsQueryDto } from './dto/search-rooms-query.dto';
-import { UpdateRoomStatusDto } from './dto/update-room-status.dto';
-import { UpdateRoomDto } from './dto/update-room.dto';
-import { RoomImageStorageService } from './room-image-storage.service';
-import { RoomImage } from './schema/room-image.entity';
-import { Room, RoomStatus } from './schema/room.entity';
-
-export interface RoomImageResponse {
-  id: string;
-  imageUrl: string;
-  sortOrder: number;
-  isCover: boolean;
-}
-
-export interface RoomResponse {
-  id: string;
-  roomTypeId: string;
-  roomNumber: string;
-  name: string;
-  description: string | null;
-  status: RoomStatus;
-  roomType: {
-    id: string;
-    name: string;
-    description: string | null;
-    maxGuests: number;
-    basePrice: string;
-    amenities: {
-      id: string;
-      name: string;
-      description: string | null;
-    }[];
-  };
-  images: RoomImageResponse[];
-  createdAt: Date;
-  updatedAt: Date;
-}
-
-interface RoomListResult {
-  items: RoomResponse[];
-  meta: PaginationMeta;
-}
+export type {
+  ManagementRoomListResult,
+  ManagementRoomResponse,
+  RoomImageResponse,
+  PublicRoomListResult,
+  PublicRoomResponse,
+  RoomListResult,
+  RoomResponse,
+} from './room.types';
 
 @Injectable()
 export class RoomService {
   constructor(
-    @InjectRepository(Room)
-    private readonly roomsRepository: Repository<Room>,
-    @InjectRepository(RoomType)
-    private readonly roomTypesRepository: Repository<RoomType>,
-    private readonly roomImageStorage: RoomImageStorageService,
+    private readonly roomQueryService: RoomQueryService,
+    private readonly roomMutationService: RoomMutationService,
   ) {}
 
-  async list(query: ListRoomsQueryDto): Promise<RoomListResult> {
-    const { page, limit, skip } = parsePagination(
-      query as Record<string, unknown>,
-    );
-    const search = optionalSearch(query.search);
-    const roomTypeId = this.optionalId(
-      query.roomTypeId,
-      'Room type id khong hop le.',
-    );
-    const roomsQuery = this.createPublicQuery()
-      .orderBy('room.roomNumber', 'ASC')
-      .addOrderBy('image.isCover', 'DESC')
-      .addOrderBy('image.sortOrder', 'ASC')
-      .addOrderBy('image.id', 'ASC')
-      .skip(skip)
-      .take(limit);
-
-    if (search !== undefined) {
-      roomsQuery.andWhere(
-        '(LOWER(room.name) LIKE :search OR LOWER(room.roomNumber) LIKE :search OR LOWER(room.description) LIKE :search)',
-        { search: `%${search.toLowerCase()}%` },
-      );
-    }
-
-    if (roomTypeId !== undefined) {
-      roomsQuery.andWhere('room.roomTypeId = :roomTypeId', { roomTypeId });
-    }
-
-    return this.toListResult(roomsQuery, page, limit);
+  list(query: ListRoomsQueryDto): Promise<PublicRoomListResult> {
+    return this.roomQueryService.list(query);
   }
 
-  async listManagement(
+  listManagement(
     query: ListManagementRoomsQueryDto,
-  ): Promise<RoomListResult> {
-    const { page, limit, skip } = parsePagination(
-      query as Record<string, unknown>,
-    );
-    const search = optionalSearch(query.search);
-    const roomTypeId = this.optionalId(
-      query.roomTypeId,
-      'Room type id khong hop le.',
-    );
-    const status = this.optionalStatus(query.status);
-    const roomsQuery = this.createManagementQuery()
-      .orderBy('room.roomNumber', 'ASC')
-      .addOrderBy('image.isCover', 'DESC')
-      .addOrderBy('image.sortOrder', 'ASC')
-      .addOrderBy('image.id', 'ASC')
-      .skip(skip)
-      .take(limit);
-
-    if (search !== undefined) {
-      roomsQuery.andWhere(
-        '(LOWER(room.name) LIKE :search OR LOWER(room.roomNumber) LIKE :search OR LOWER(room.description) LIKE :search)',
-        { search: `%${search.toLowerCase()}%` },
-      );
-    }
-
-    if (roomTypeId !== undefined) {
-      roomsQuery.andWhere('room.roomTypeId = :roomTypeId', { roomTypeId });
-    }
-
-    if (status !== undefined) {
-      roomsQuery.andWhere('room.status = :status', { status });
-    }
-
-    return this.toListResult(roomsQuery, page, limit);
+  ): Promise<ManagementRoomListResult> {
+    return this.roomQueryService.listManagement(query);
   }
 
-  async search(query: SearchRoomsQueryDto): Promise<RoomListResult> {
-    const checkIn = this.requireIsoDate(
-      query.checkIn,
-      'Ngay check-in khong hop le.',
-    );
-    const checkOut = this.requireIsoDate(
-      query.checkOut,
-      'Ngay check-out khong hop le.',
-    );
-
-    if (checkIn >= checkOut) {
-      throw new BadRequestException('Ngay check-out phai sau ngay check-in.');
-    }
-
-    const guests = requirePositiveInt(
-      query.guests,
-      'So luong khach khong hop le.',
-    );
-    const roomTypeId = this.optionalId(
-      query.roomTypeId,
-      'Room type id khong hop le.',
-    );
-    const minPrice = optionalDecimalAmount(
-      query.minPrice,
-      'Gia toi thieu khong hop le.',
-    );
-    const maxPrice = optionalDecimalAmount(
-      query.maxPrice,
-      'Gia toi da khong hop le.',
-    );
-    const amenityIds = this.optionalIdList(
-      query.amenityIds,
-      'Danh sach tien nghi khong hop le.',
-    );
-    const { page, limit, skip } = parsePagination(
-      query as Record<string, unknown>,
-    );
-
-    if (
-      minPrice !== undefined &&
-      maxPrice !== undefined &&
-      Number(minPrice) > Number(maxPrice)
-    ) {
-      throw new BadRequestException(
-        'Gia toi da phai lon hon hoac bang gia toi thieu.',
-      );
-    }
-
-    const roomsQuery = this.createPublicQuery()
-      .andWhere('roomType.maxGuests >= :guests', { guests })
-      .andWhere(
-        `NOT EXISTS (
-          SELECT 1
-          FROM room_calendar roomCalendar
-          WHERE roomCalendar.room_id = room.id
-            AND roomCalendar.stay_date >= :checkIn
-            AND roomCalendar.stay_date < :checkOut
-        )`,
-        { checkIn, checkOut },
-      )
-      .orderBy('roomType.basePrice', 'ASC')
-      .addOrderBy('room.roomNumber', 'ASC')
-      .addOrderBy('image.isCover', 'DESC')
-      .addOrderBy('image.sortOrder', 'ASC')
-      .addOrderBy('image.id', 'ASC')
-      .skip(skip)
-      .take(limit);
-
-    if (roomTypeId !== undefined) {
-      roomsQuery.andWhere('room.roomTypeId = :roomTypeId', { roomTypeId });
-    }
-
-    if (minPrice !== undefined) {
-      roomsQuery.andWhere('roomType.basePrice >= :minPrice', { minPrice });
-    }
-
-    if (maxPrice !== undefined) {
-      roomsQuery.andWhere('roomType.basePrice <= :maxPrice', { maxPrice });
-    }
-
-    if (amenityIds.length > 0) {
-      roomsQuery.andWhere(
-        `room.room_type_id IN (
-          SELECT roomTypeAmenity.room_type_id
-          FROM room_type_amenities roomTypeAmenity
-          INNER JOIN amenities amenityFilter
-            ON amenityFilter.id = roomTypeAmenity.amenity_id
-            AND amenityFilter.deleted_at IS NULL
-          WHERE roomTypeAmenity.amenity_id IN (:...amenityIds)
-          GROUP BY roomTypeAmenity.room_type_id
-          HAVING COUNT(DISTINCT roomTypeAmenity.amenity_id) = :amenityCount
-        )`,
-        {
-          amenityIds,
-          amenityCount: amenityIds.length,
-        },
-      );
-    }
-
-    return this.toListResult(roomsQuery, page, limit);
+  listAvailable(query: ListAvailableRoomsQueryDto): Promise<RoomListResult> {
+    return this.roomQueryService.listAvailable(query);
   }
 
-  async getById(id: string): Promise<RoomResponse> {
-    this.validateId(id);
-
-    const room = await this.createPublicQuery()
-      .andWhere('room.id = :id', { id })
-      .orderBy('image.isCover', 'DESC')
-      .addOrderBy('image.sortOrder', 'ASC')
-      .addOrderBy('image.id', 'ASC')
-      .getOne();
-
-    if (room === null) {
-      throw new NotFoundException('Khong tim thay phong.');
-    }
-
-    return this.toResponse(room);
+  search(query: SearchRoomsQueryDto): Promise<PublicRoomListResult> {
+    return this.roomQueryService.search(query);
   }
 
-  async getManagement(id: string): Promise<RoomResponse> {
-    this.validateId(id);
-
-    const room = await this.createManagementQuery()
-      .andWhere('room.id = :id', { id })
-      .orderBy('image.isCover', 'DESC')
-      .addOrderBy('image.sortOrder', 'ASC')
-      .addOrderBy('image.id', 'ASC')
-      .getOne();
-
-    if (room === null) {
-      throw new NotFoundException('Khong tim thay phong.');
-    }
-
-    return this.toResponse(room);
+  getById(id: string): Promise<PublicRoomResponse> {
+    return this.roomQueryService.getById(id);
   }
 
-  async create(body: CreateRoomDto): Promise<RoomResponse> {
-    const roomTypeId = this.requireId(
-      body.roomTypeId,
-      'Room type id khong hop le.',
-    );
-    const roomNumber = requireTrimmedString(
-      body.roomNumber,
-      'So phong khong hop le.',
-      50,
-    );
-    const name = requireTrimmedString(
-      body.name,
-      'Ten phong khong hop le.',
-      120,
-    );
-    const description =
-      optionalNullableTrimmedString(
-        body.description,
-        'Mo ta khong hop le.',
-        10000,
-      ) ?? null;
-    const status = this.optionalStatus(body.status) ?? RoomStatus.READY;
-
-    await this.getActiveRoomType(roomTypeId);
-    await this.ensureRoomNumberIsAvailable(roomNumber);
-
-    const room = this.roomsRepository.create({
-      roomTypeId,
-      roomNumber,
-      name,
-      description,
-      status,
-    });
-
-    try {
-      const savedRoom = await this.roomsRepository.save(room);
-      return this.getAdminRoom(savedRoom.id);
-    } catch (error) {
-      this.throwRoomDuplicateConflict(error);
-    }
+  getManagement(id: string): Promise<RoomResponse> {
+    return this.roomQueryService.getManagement(id);
   }
 
-  async update(id: string, body: UpdateRoomDto): Promise<RoomResponse> {
-    const room = await this.getActiveRoom(id);
-    const roomTypeId = this.optionalId(
-      body.roomTypeId,
-      'Room type id khong hop le.',
-    );
-    const roomNumber = optionalTrimmedString(
-      body.roomNumber,
-      'So phong khong hop le.',
-      50,
-    );
-    const name = optionalTrimmedString(
-      body.name,
-      'Ten phong khong hop le.',
-      120,
-    );
-    const description = optionalNullableTrimmedString(
-      body.description,
-      'Mo ta khong hop le.',
-      10000,
-    );
-
-    if (
-      roomTypeId === undefined &&
-      roomNumber === undefined &&
-      name === undefined &&
-      description === undefined
-    ) {
-      throw new BadRequestException('Khong co du lieu de cap nhat.');
-    }
-
-    if (roomTypeId !== undefined) {
-      await this.getActiveRoomType(roomTypeId);
-      room.roomTypeId = roomTypeId;
-    }
-
-    if (roomNumber !== undefined) {
-      await this.ensureRoomNumberIsAvailable(roomNumber, room.id);
-      room.roomNumber = roomNumber;
-    }
-
-    if (name !== undefined) {
-      room.name = name;
-    }
-
-    if (description !== undefined) {
-      room.description = description;
-    }
-
-    try {
-      await this.roomsRepository.save(room);
-      return this.getAdminRoom(room.id);
-    } catch (error) {
-      this.throwRoomDuplicateConflict(error);
-    }
+  create(body: CreateRoomDto): Promise<RoomResponse> {
+    return this.roomMutationService.create(body);
   }
 
-  async delete(id: string): Promise<RoomResponse> {
-    this.validateId(id);
-    const result = await this.roomsRepository.manager.transaction(
-      async (manager) => {
-        const room = await this.getLockedAdminRoomEntity(manager, id);
-
-        if (await this.hasHistory(room.id, manager)) {
-          throw new ConflictException(
-            'Phong da co lich su dat phong. Hay chuyen trang thai sang HIDDEN.',
-          );
-        }
-
-        const response = this.toResponse(room);
-        const imageUrls = room.images.map((image) => image.imageUrl);
-
-        await manager.getRepository(Room).remove(room);
-
-        return { imageUrls, response };
-      },
-    );
-    await Promise.all(
-      result.imageUrls.map((imageUrl) =>
-        this.roomImageStorage.deleteManaged(imageUrl),
-      ),
-    );
-
-    return result.response;
+  update(id: string, body: UpdateRoomDto): Promise<RoomResponse> {
+    return this.roomMutationService.update(id, body);
   }
 
-  async updateStatus(
+  delete(id: string): Promise<RoomResponse> {
+    return this.roomMutationService.delete(id);
+  }
+
+  updateStatus(
     id: string,
     body: UpdateRoomStatusDto,
     role: UserRole | undefined,
   ): Promise<RoomResponse> {
-    const room = await this.getActiveRoom(id);
-    const status = this.requireStatus(body.status);
-
-    this.assertStatusTransitionAllowed(room.status, status, role);
-
-    room.status = status;
-    await this.roomsRepository.save(room);
-
-    return this.getAdminRoom(room.id);
-  }
-
-  private createPublicQuery(): SelectQueryBuilder<Room> {
-    return this.roomsRepository
-      .createQueryBuilder('room')
-      .innerJoinAndSelect('room.roomType', 'roomType')
-      .leftJoinAndSelect(
-        'roomType.amenities',
-        'amenity',
-        'amenity.deletedAt IS NULL',
-      )
-      .leftJoinAndSelect('room.images', 'image')
-      .where('room.deletedAt IS NULL')
-      .andWhere('roomType.deletedAt IS NULL')
-      .andWhere('room.status NOT IN (:...hiddenStatuses)', {
-        hiddenStatuses: [RoomStatus.HIDDEN, RoomStatus.MAINTENANCE],
-      });
-  }
-
-  private createManagementQuery(): SelectQueryBuilder<Room> {
-    return this.roomsRepository
-      .createQueryBuilder('room')
-      .innerJoinAndSelect('room.roomType', 'roomType')
-      .leftJoinAndSelect(
-        'roomType.amenities',
-        'amenity',
-        'amenity.deletedAt IS NULL',
-      )
-      .leftJoinAndSelect('room.images', 'image')
-      .where('room.deletedAt IS NULL')
-      .andWhere('roomType.deletedAt IS NULL');
-  }
-
-  private async getAdminRoom(id: string): Promise<RoomResponse> {
-    return this.toResponse(await this.getAdminRoomEntity(id));
-  }
-
-  private async getAdminRoomEntity(id: string): Promise<Room> {
-    this.validateId(id);
-
-    const room = await this.roomsRepository
-      .createQueryBuilder('room')
-      .innerJoinAndSelect('room.roomType', 'roomType')
-      .leftJoinAndSelect(
-        'roomType.amenities',
-        'amenity',
-        'amenity.deletedAt IS NULL',
-      )
-      .leftJoinAndSelect('room.images', 'image')
-      .where('room.id = :id', { id })
-      .andWhere('room.deletedAt IS NULL')
-      .orderBy('image.isCover', 'DESC')
-      .addOrderBy('image.sortOrder', 'ASC')
-      .addOrderBy('image.id', 'ASC')
-      .getOne();
-
-    if (room === null) {
-      throw new NotFoundException('Khong tim thay phong.');
-    }
-
-    return room;
-  }
-
-  private async getLockedAdminRoomEntity(
-    manager: EntityManager,
-    id: string,
-  ): Promise<Room> {
-    const room = await manager
-      .getRepository(Room)
-      .createQueryBuilder('room')
-      .innerJoinAndSelect('room.roomType', 'roomType')
-      .leftJoinAndSelect(
-        'roomType.amenities',
-        'amenity',
-        'amenity.deletedAt IS NULL',
-      )
-      .leftJoinAndSelect('room.images', 'image')
-      .setLock('pessimistic_write')
-      .where('room.id = :id', { id })
-      .andWhere('room.deletedAt IS NULL')
-      .orderBy('image.isCover', 'DESC')
-      .addOrderBy('image.sortOrder', 'ASC')
-      .addOrderBy('image.id', 'ASC')
-      .getOne();
-
-    if (room === null) {
-      throw new NotFoundException('Khong tim thay phong.');
-    }
-
-    return room;
-  }
-
-  private async getActiveRoom(id: string): Promise<Room> {
-    this.validateId(id);
-
-    const room = await this.roomsRepository.findOneBy({ id });
-
-    if (room === null) {
-      throw new NotFoundException('Khong tim thay phong.');
-    }
-
-    return room;
-  }
-
-  private async getActiveRoomType(id: string): Promise<RoomType> {
-    const roomType = await this.roomTypesRepository.findOneBy({ id });
-
-    if (roomType === null) {
-      throw new NotFoundException('Khong tim thay loai phong.');
-    }
-
-    return roomType;
-  }
-
-  private async ensureRoomNumberIsAvailable(
-    roomNumber: string,
-    currentRoomId?: string,
-  ): Promise<void> {
-    const query = this.roomsRepository
-      .createQueryBuilder('room')
-      .withDeleted()
-      .where('room.roomNumber = :roomNumber', { roomNumber });
-
-    if (currentRoomId !== undefined) {
-      query.andWhere('room.id <> :currentRoomId', { currentRoomId });
-    }
-
-    if ((await query.getOne()) !== null) {
-      throw new ConflictException(
-        'So phong da ton tai, ke ca trong du lieu da xoa.',
-      );
-    }
-  }
-
-  private async hasHistory(
-    roomId: string,
-    manager: EntityManager = this.roomsRepository.manager,
-  ): Promise<boolean> {
-    const [booking, calendarEntry] = await Promise.all([
-      manager
-        .createQueryBuilder()
-        .select('booking.id', 'id')
-        .from('bookings', 'booking')
-        .where('booking.room_id = :roomId', { roomId })
-        .limit(1)
-        .getRawOne<{ id: string }>(),
-      manager
-        .createQueryBuilder()
-        .select('roomCalendar.id', 'id')
-        .from('room_calendar', 'roomCalendar')
-        .where('roomCalendar.room_id = :roomId', { roomId })
-        .limit(1)
-        .getRawOne<{ id: string }>(),
-    ]);
-
-    return booking != null || calendarEntry != null;
-  }
-
-  private async toListResult(
-    query: SelectQueryBuilder<Room>,
-    page: number,
-    limit: number,
-  ): Promise<RoomListResult> {
-    const [rooms, total] = await query.getManyAndCount();
-
-    return {
-      items: rooms.map((room) => this.toResponse(room)),
-      meta: {
-        pagination: {
-          page,
-          limit,
-          total,
-          totalPages: Math.ceil(total / limit),
-        },
-      },
-    };
-  }
-
-  private toResponse(room: Room): RoomResponse {
-    return {
-      id: room.id,
-      roomTypeId: room.roomTypeId,
-      roomNumber: room.roomNumber,
-      name: room.name,
-      description: room.description,
-      status: room.status,
-      roomType: {
-        id: room.roomType.id,
-        name: room.roomType.name,
-        description: room.roomType.description,
-        maxGuests: room.roomType.maxGuests,
-        basePrice: room.roomType.basePrice,
-        amenities: (room.roomType.amenities ?? []).map((amenity) => ({
-          id: amenity.id,
-          name: amenity.name,
-          description: amenity.description,
-        })),
-      },
-      images: (room.images ?? []).map((image) => this.toImageResponse(image)),
-      createdAt: room.createdAt,
-      updatedAt: room.updatedAt,
-    };
-  }
-
-  private toImageResponse(image: RoomImage): RoomImageResponse {
-    return {
-      id: image.id,
-      imageUrl: image.imageUrl,
-      sortOrder: image.sortOrder,
-      isCover: image.isCover,
-    };
-  }
-
-  private requireIsoDate(value: unknown, message: string): string {
-    if (typeof value !== 'string') {
-      throw new BadRequestException(message);
-    }
-
-    const date = value.trim();
-    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
-
-    if (match === null) {
-      throw new BadRequestException(message);
-    }
-
-    const parsed = new Date(`${date}T00:00:00.000Z`);
-
-    if (
-      Number.isNaN(parsed.getTime()) ||
-      parsed.getUTCFullYear() !== Number(match[1]) ||
-      parsed.getUTCMonth() + 1 !== Number(match[2]) ||
-      parsed.getUTCDate() !== Number(match[3])
-    ) {
-      throw new BadRequestException(message);
-    }
-
-    return date;
-  }
-
-  private requireId(value: unknown, message: string): string {
-    if (typeof value !== 'string' && typeof value !== 'number') {
-      throw new BadRequestException(message);
-    }
-
-    const id = String(value);
-
-    if (!/^[1-9][0-9]*$/.test(id)) {
-      throw new BadRequestException(message);
-    }
-
-    return id;
-  }
-
-  private optionalId(value: unknown, message: string): string | undefined {
-    if (value === undefined || value === null || value === '') {
-      return undefined;
-    }
-
-    return this.requireId(value, message);
-  }
-
-  private optionalIdList(value: unknown, message: string): string[] {
-    if (value === undefined || value === null || value === '') {
-      return [];
-    }
-
-    const values = Array.isArray(value) ? value : [value];
-    const ids = values.flatMap((item) =>
-      typeof item === 'string' ? item.split(',') : [],
-    );
-
-    if (
-      ids.length === 0 ||
-      ids.length > 20 ||
-      ids.some((id) => !/^[1-9][0-9]*$/.test(id))
-    ) {
-      throw new BadRequestException(message);
-    }
-
-    return [...new Set(ids)];
-  }
-
-  private validateId(id: string): void {
-    this.requireId(id, 'Id khong hop le.');
-  }
-
-  private requireStatus(value: unknown): RoomStatus {
-    const status = this.optionalStatus(value);
-
-    if (status === undefined) {
-      throw new BadRequestException('Trang thai phong khong hop le.');
-    }
-
-    return status;
-  }
-
-  private assertStatusTransitionAllowed(
-    currentStatus: RoomStatus,
-    nextStatus: RoomStatus,
-    role: UserRole | undefined,
-  ): void {
-    if (role === 'ADMIN') {
-      return;
-    }
-
-    if (
-      role !== 'STAFF' ||
-      currentStatus === RoomStatus.HIDDEN ||
-      nextStatus === RoomStatus.HIDDEN
-    ) {
-      throw new ForbiddenException(
-        'Chi admin duoc thay doi trang thai HIDDEN.',
-      );
-    }
-  }
-
-  private optionalStatus(value: unknown): RoomStatus | undefined {
-    if (value === undefined || value === null || value === '') {
-      return undefined;
-    }
-
-    if (
-      typeof value !== 'string' ||
-      !Object.values(RoomStatus).includes(value as RoomStatus)
-    ) {
-      throw new BadRequestException('Trang thai phong khong hop le.');
-    }
-
-    return value as RoomStatus;
-  }
-
-  private throwRoomDuplicateConflict(error: unknown): never {
-    if (getMysqlDuplicateKey(error) === undefined) {
-      throw error;
-    }
-
-    throw new ConflictException(
-      'So phong da ton tai, ke ca trong du lieu da xoa.',
-    );
+    return this.roomMutationService.updateStatus(id, body, role);
   }
 }

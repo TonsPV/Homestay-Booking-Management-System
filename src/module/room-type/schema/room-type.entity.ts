@@ -27,6 +27,9 @@ export class RoomType {
   @Column({ type: 'text', nullable: true })
   description: string | null;
 
+  @Column({ name: 'bed_type', type: 'varchar', length: 120, nullable: true })
+  bedType: string | null;
+
   @Column({ name: 'max_guests', type: 'int' })
   maxGuests: number;
 

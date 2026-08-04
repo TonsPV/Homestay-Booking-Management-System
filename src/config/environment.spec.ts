@@ -16,7 +16,26 @@ describe('validateEnvironment', () => {
     });
 
     expect(config.JWT_ACCESS_TOKEN_EXPIRES_IN).toBe('1h');
+    expect(config.DB_POOL_SIZE).toBe(10);
+    expect(config.DB_POOL_QUEUE_LIMIT).toBe(50);
+    expect(config.DB_CONNECT_TIMEOUT_MS).toBe(5000);
+    expect(config.HEALTH_DB_PROBE_TIMEOUT_MS).toBe(1000);
     expect(config.BOOKING_PAYMENT_TIMEOUT_MINUTES).toBe(15);
+    expect(config.BOOKING_MAX_ACTIVE_UNPAID_PER_CUSTOMER).toBe(3);
+    expect(config.BOOKING_MAX_HELD_NIGHTS_PER_CUSTOMER).toBe(30);
+    expect(config.BOOKING_MAX_ADVANCE_DAYS).toBe(365);
+    expect(config.EXPIRATION_SCHEDULERS_ENABLED).toBe(true);
+    expect(config.CUSTOMER_CLAIM_SMS_ENABLED).toBe(false);
+    expect(config.CUSTOMER_CLAIM_LOCAL_BYPASS_ENABLED).toBe(false);
+    expect(config.CUSTOMER_CLAIM_SMS_PROVIDER).toBe('disabled');
+    expect(config.CUSTOMER_CLAIM_OTP_LIFETIME_MINUTES).toBe(5);
+    expect(config.CUSTOMER_CLAIM_OTP_MAX_ATTEMPTS).toBe(5);
+    expect(config.CUSTOMER_CLAIM_OTP_RESEND_COOLDOWN_SECONDS).toBe(60);
+    expect(config.CUSTOMER_CLAIM_OTP_RATE_WINDOW_MINUTES).toBe(15);
+    expect(config.CUSTOMER_CLAIM_OTP_PHONE_WINDOW_LIMIT).toBe(3);
+    expect(config.CUSTOMER_CLAIM_OTP_PHONE_DAILY_LIMIT).toBe(10);
+    expect(config.CUSTOMER_CLAIM_OTP_IP_WINDOW_LIMIT).toBe(20);
+    expect(config.CUSTOMER_CLAIM_TOKEN_LIFETIME_MINUTES).toBe(10);
     expect(config.ROOM_IMAGE_UPLOAD_DIR).toBe('.data/uploads/room-images');
     expect(config.CORS_ORIGINS).toEqual([]);
     expect(config.VNPAY_FRONTEND_RETURN_URL).toBe('');
@@ -60,6 +79,201 @@ describe('validateEnvironment', () => {
       }),
     ).toThrow(
       'BOOKING_PAYMENT_TIMEOUT_MINUTES must be an integer from 1 to 1440.',
+    );
+  });
+
+  it('validates database resource bounds and health deadlines', () => {
+    const config = validateEnvironment({
+      JWT_ACCESS_TOKEN_SECRET: 'a'.repeat(32),
+      DB_POOL_SIZE: '20',
+      DB_POOL_QUEUE_LIMIT: '75',
+      DB_CONNECT_TIMEOUT_MS: '2500',
+      HEALTH_DB_PROBE_TIMEOUT_MS: '750',
+    });
+
+    expect(config.DB_POOL_SIZE).toBe(20);
+    expect(config.DB_POOL_QUEUE_LIMIT).toBe(75);
+    expect(config.DB_CONNECT_TIMEOUT_MS).toBe(2500);
+    expect(config.HEALTH_DB_PROBE_TIMEOUT_MS).toBe(750);
+    expect(() =>
+      validateEnvironment({
+        JWT_ACCESS_TOKEN_SECRET: 'a'.repeat(32),
+        DB_POOL_QUEUE_LIMIT: '0',
+      }),
+    ).toThrow('DB_POOL_QUEUE_LIMIT must be an integer from 1 to 1000.');
+    expect(() =>
+      validateEnvironment({
+        JWT_ACCESS_TOKEN_SECRET: 'a'.repeat(32),
+        DB_CONNECT_TIMEOUT_MS: '249',
+      }),
+    ).toThrow('DB_CONNECT_TIMEOUT_MS must be an integer from 250 to 60000.');
+    expect(() =>
+      validateEnvironment({
+        JWT_ACCESS_TOKEN_SECRET: 'a'.repeat(32),
+        HEALTH_DB_PROBE_TIMEOUT_MS: '99',
+      }),
+    ).toThrow(
+      'HEALTH_DB_PROBE_TIMEOUT_MS must be an integer from 100 to 10000.',
+    );
+  });
+
+  it('validates booking admission limits', () => {
+    const config = validateEnvironment({
+      JWT_ACCESS_TOKEN_SECRET: 'a'.repeat(32),
+      BOOKING_MAX_ACTIVE_UNPAID_PER_CUSTOMER: '4',
+      BOOKING_MAX_HELD_NIGHTS_PER_CUSTOMER: '45',
+      BOOKING_MAX_ADVANCE_DAYS: '730',
+    });
+
+    expect(config.BOOKING_MAX_ACTIVE_UNPAID_PER_CUSTOMER).toBe(4);
+    expect(config.BOOKING_MAX_HELD_NIGHTS_PER_CUSTOMER).toBe(45);
+    expect(config.BOOKING_MAX_ADVANCE_DAYS).toBe(730);
+    expect(() =>
+      validateEnvironment({
+        JWT_ACCESS_TOKEN_SECRET: 'a'.repeat(32),
+        BOOKING_MAX_ACTIVE_UNPAID_PER_CUSTOMER: '0',
+      }),
+    ).toThrow(
+      'BOOKING_MAX_ACTIVE_UNPAID_PER_CUSTOMER must be an integer from 1 to 20.',
+    );
+    expect(() =>
+      validateEnvironment({
+        JWT_ACCESS_TOKEN_SECRET: 'a'.repeat(32),
+        BOOKING_MAX_HELD_NIGHTS_PER_CUSTOMER: '366',
+      }),
+    ).toThrow(
+      'BOOKING_MAX_HELD_NIGHTS_PER_CUSTOMER must be an integer from 1 to 365.',
+    );
+    expect(() =>
+      validateEnvironment({
+        JWT_ACCESS_TOKEN_SECRET: 'a'.repeat(32),
+        BOOKING_MAX_ADVANCE_DAYS: '3651',
+      }),
+    ).toThrow('BOOKING_MAX_ADVANCE_DAYS must be an integer from 1 to 3650.');
+  });
+
+  it('validates the expiration scheduler toggle', () => {
+    expect(
+      validateEnvironment({
+        JWT_ACCESS_TOKEN_SECRET: 'a'.repeat(32),
+        EXPIRATION_SCHEDULERS_ENABLED: 'false',
+      }).EXPIRATION_SCHEDULERS_ENABLED,
+    ).toBe(false);
+    expect(() =>
+      validateEnvironment({
+        JWT_ACCESS_TOKEN_SECRET: 'a'.repeat(32),
+        EXPIRATION_SCHEDULERS_ENABLED: 'sometimes',
+      }),
+    ).toThrow('EXPIRATION_SCHEDULERS_ENABLED must be true or false.');
+  });
+
+  it('allows deterministic SMS delivery only in an enabled test environment', () => {
+    const config = validateEnvironment({
+      NODE_ENV: 'test',
+      JWT_ACCESS_TOKEN_SECRET: 'a'.repeat(32),
+      CUSTOMER_CLAIM_SMS_ENABLED: 'true',
+      CUSTOMER_CLAIM_SMS_PROVIDER: 'test',
+    });
+
+    expect(config.CUSTOMER_CLAIM_SMS_ENABLED).toBe(true);
+    expect(config.CUSTOMER_CLAIM_SMS_PROVIDER).toBe('test');
+
+    expect(() =>
+      validateEnvironment({
+        NODE_ENV: 'development',
+        JWT_ACCESS_TOKEN_SECRET: 'a'.repeat(32),
+        CUSTOMER_CLAIM_SMS_ENABLED: 'true',
+        CUSTOMER_CLAIM_SMS_PROVIDER: 'test',
+      }),
+    ).toThrow(
+      'CUSTOMER_CLAIM_SMS_PROVIDER=test is allowed only when NODE_ENV=test.',
+    );
+  });
+
+  it('allows local claim bypass only in development or test', () => {
+    expect(
+      validateEnvironment({
+        NODE_ENV: 'development',
+        JWT_ACCESS_TOKEN_SECRET: 'a'.repeat(32),
+        CUSTOMER_CLAIM_LOCAL_BYPASS_ENABLED: 'true',
+      }).CUSTOMER_CLAIM_LOCAL_BYPASS_ENABLED,
+    ).toBe(true);
+    expect(() =>
+      validateEnvironment({
+        NODE_ENV: 'production',
+        JWT_ACCESS_TOKEN_SECRET: 'a'.repeat(32),
+        CORS_ORIGINS: 'https://app.example.com',
+        CUSTOMER_CLAIM_LOCAL_BYPASS_ENABLED: 'true',
+      }),
+    ).toThrow(
+      'CUSTOMER_CLAIM_LOCAL_BYPASS_ENABLED requires explicit NODE_ENV=development or test.',
+    );
+    expect(() =>
+      validateEnvironment({
+        JWT_ACCESS_TOKEN_SECRET: 'a'.repeat(32),
+        CUSTOMER_CLAIM_LOCAL_BYPASS_ENABLED: 'true',
+      }),
+    ).toThrow(
+      'CUSTOMER_CLAIM_LOCAL_BYPASS_ENABLED requires explicit NODE_ENV=development or test.',
+    );
+  });
+
+  it('fails closed for missing, disabled, contradictory, or unsupported SMS providers', () => {
+    const secret = 'a'.repeat(32);
+
+    expect(() =>
+      validateEnvironment({
+        JWT_ACCESS_TOKEN_SECRET: secret,
+        CUSTOMER_CLAIM_SMS_ENABLED: 'true',
+      }),
+    ).toThrow('CUSTOMER_CLAIM_SMS_ENABLED requires an installed SMS provider.');
+    expect(() =>
+      validateEnvironment({
+        NODE_ENV: 'test',
+        JWT_ACCESS_TOKEN_SECRET: secret,
+        CUSTOMER_CLAIM_SMS_PROVIDER: 'test',
+      }),
+    ).toThrow(
+      'CUSTOMER_CLAIM_SMS_PROVIDER must be disabled when CUSTOMER_CLAIM_SMS_ENABLED is false.',
+    );
+    expect(() =>
+      validateEnvironment({
+        JWT_ACCESS_TOKEN_SECRET: secret,
+        CUSTOMER_CLAIM_SMS_ENABLED: 'true',
+        CUSTOMER_CLAIM_SMS_PROVIDER: 'unknown-provider',
+      }),
+    ).toThrow('CUSTOMER_CLAIM_SMS_PROVIDER must be disabled or test');
+  });
+
+  it('validates Customer claim OTP policy bounds', () => {
+    const secret = 'a'.repeat(32);
+    const config = validateEnvironment({
+      JWT_ACCESS_TOKEN_SECRET: secret,
+      CUSTOMER_CLAIM_OTP_LIFETIME_MINUTES: '10',
+      CUSTOMER_CLAIM_OTP_MAX_ATTEMPTS: '4',
+      CUSTOMER_CLAIM_OTP_RESEND_COOLDOWN_SECONDS: '90',
+      CUSTOMER_CLAIM_OTP_RATE_WINDOW_MINUTES: '30',
+      CUSTOMER_CLAIM_OTP_PHONE_WINDOW_LIMIT: '4',
+      CUSTOMER_CLAIM_OTP_PHONE_DAILY_LIMIT: '12',
+      CUSTOMER_CLAIM_OTP_IP_WINDOW_LIMIT: '30',
+      CUSTOMER_CLAIM_TOKEN_LIFETIME_MINUTES: '15',
+    });
+
+    expect(config.CUSTOMER_CLAIM_OTP_LIFETIME_MINUTES).toBe(10);
+    expect(config.CUSTOMER_CLAIM_OTP_MAX_ATTEMPTS).toBe(4);
+    expect(config.CUSTOMER_CLAIM_OTP_RESEND_COOLDOWN_SECONDS).toBe(90);
+    expect(config.CUSTOMER_CLAIM_OTP_RATE_WINDOW_MINUTES).toBe(30);
+    expect(config.CUSTOMER_CLAIM_OTP_PHONE_WINDOW_LIMIT).toBe(4);
+    expect(config.CUSTOMER_CLAIM_OTP_PHONE_DAILY_LIMIT).toBe(12);
+    expect(config.CUSTOMER_CLAIM_OTP_IP_WINDOW_LIMIT).toBe(30);
+    expect(config.CUSTOMER_CLAIM_TOKEN_LIFETIME_MINUTES).toBe(15);
+    expect(() =>
+      validateEnvironment({
+        JWT_ACCESS_TOKEN_SECRET: secret,
+        CUSTOMER_CLAIM_OTP_LIFETIME_MINUTES: '16',
+      }),
+    ).toThrow(
+      'CUSTOMER_CLAIM_OTP_LIFETIME_MINUTES must be an integer from 1 to 15.',
     );
   });
 

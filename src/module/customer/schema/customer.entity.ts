@@ -8,7 +8,10 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 
-export type CustomerStatus = 'ACTIVE' | 'LOCKED';
+import { AccountStatusEnum } from '../../../common/domain/account.enums';
+import type { AccountStatus } from '../../../common/domain/account.enums';
+
+export type CustomerStatus = AccountStatus;
 
 @Entity('customers')
 @Index('uq_customers_email', ['email'], { unique: true })
@@ -39,9 +42,17 @@ export class Customer {
   tokenVersion: number;
 
   @Column({
+    name: 'phone_verified_at',
+    type: 'datetime',
+    precision: 6,
+    nullable: true,
+  })
+  phoneVerifiedAt: Date | null;
+
+  @Column({
     type: 'enum',
-    enum: ['ACTIVE', 'LOCKED'],
-    default: 'ACTIVE',
+    enum: AccountStatusEnum,
+    default: AccountStatusEnum.ACTIVE,
   })
   status: CustomerStatus;
 

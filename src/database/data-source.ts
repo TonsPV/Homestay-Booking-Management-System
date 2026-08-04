@@ -8,6 +8,7 @@ import { Booking } from '../module/booking/schema/booking.entity';
 import { Amenity } from '../module/amenity/schema/amenity.entity';
 import { RoomCalendar } from '../module/booking/schema/room-calendar.entity';
 import { Customer } from '../module/customer/schema/customer.entity';
+import { CustomerClaimChallenge } from '../module/auth/schema/customer-claim-challenge.entity';
 import { Payment } from '../module/payment/schema/payment.entity';
 import { RoomImage } from '../module/room/schema/room-image.entity';
 import { Room } from '../module/room/schema/room.entity';
@@ -21,6 +22,10 @@ import { AddVnpayRefundManagement1784778000000 } from './migrations/178477800000
 import { HardenRoomCalendarOwnership1784779000000 } from './migrations/1784779000000-HardenRoomCalendarOwnership';
 import { AddCustomerTokenVersion1784780000000 } from './migrations/1784780000000-AddCustomerTokenVersion';
 import { AddAmenities1784781000000 } from './migrations/1784781000000-AddAmenities';
+import { AddDashboardQueryIndexes1784782000000 } from './migrations/1784782000000-AddDashboardQueryIndexes';
+import { AlignAmenityJoinMetadata1784783000000 } from './migrations/1784783000000-AlignAmenityJoinMetadata';
+import { AddCustomerPhoneClaim1784784000000 } from './migrations/1784784000000-AddCustomerPhoneClaim';
+import { AddRoomTypeBedType1784785000000 } from './migrations/1784785000000-AddRoomTypeBedType';
 import { AlignRoomMetadata1784772000000 } from './migrations/1784772000000-AlignRoomMetadata';
 import { AddUserTokenVersion1784773000000 } from './migrations/1784773000000-AddUserTokenVersion';
 import { AlignEntityMetadata1784771000000 } from './migrations/1784771000000-AlignEntityMetadata';
@@ -43,10 +48,20 @@ const AppDataSource = new DataSource({
   password: getRequiredEnv('DB_PASSWORD'),
   database: getRequiredEnv('DB_DATABASE'),
   timezone: 'Z',
+  connectTimeout: getOptionalNumberEnv('DB_CONNECT_TIMEOUT_MS', 5000),
+  poolSize: getOptionalNumberEnv('DB_POOL_SIZE', 10),
+  extra: {
+    waitForConnections: true,
+    queueLimit: getOptionalNumberEnv('DB_POOL_QUEUE_LIMIT', 50),
+    maxIdle: getOptionalNumberEnv('DB_POOL_SIZE', 10),
+    idleTimeout: 60_000,
+    enableKeepAlive: true,
+  },
   entities: [
     Booking,
     Amenity,
     Customer,
+    CustomerClaimChallenge,
     Payment,
     Room,
     RoomCalendar,
@@ -67,6 +82,10 @@ const AppDataSource = new DataSource({
     HardenRoomCalendarOwnership1784779000000,
     AddCustomerTokenVersion1784780000000,
     AddAmenities1784781000000,
+    AddDashboardQueryIndexes1784782000000,
+    AlignAmenityJoinMetadata1784783000000,
+    AddCustomerPhoneClaim1784784000000,
+    AddRoomTypeBedType1784785000000,
   ],
   migrationsTableName: 'typeorm_migrations',
   synchronize: false,
@@ -86,6 +105,22 @@ function getRequiredEnv(key: string): string {
 
 function getRequiredNumberEnv(key: string): number {
   const value = Number(getRequiredEnv(key));
+
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`${key} must be a positive integer.`);
+  }
+
+  return value;
+}
+
+function getOptionalNumberEnv(key: string, defaultValue: number): number {
+  const rawValue = process.env[key];
+
+  if (rawValue === undefined || rawValue.trim().length === 0) {
+    return defaultValue;
+  }
+
+  const value = Number(rawValue);
 
   if (!Number.isInteger(value) || value <= 0) {
     throw new Error(`${key} must be a positive integer.`);

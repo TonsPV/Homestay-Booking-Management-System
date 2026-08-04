@@ -19,8 +19,15 @@ import {
   type AccessTokenPayload,
   CurrentAuth,
 } from '../../common/http';
+import {
+  ApiCommonAuthErrors,
+  ApiCommonMutationErrors,
+  ApiCreatedEnvelope,
+  ApiOkEnvelope,
+} from '../../openapi/api-response.decorators';
 import { AccessTokenGuard } from '../auth/access-token.guard';
 import { BookingService, type BookingResponse } from './booking.service';
+import { BookingDto } from './dto/booking-response.dto';
 import { CancelBookingDto } from './dto/cancel-booking.dto';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { ListBookingsQueryDto } from './dto/list-bookings-query.dto';
@@ -28,11 +35,14 @@ import { ListBookingsQueryDto } from './dto/list-bookings-query.dto';
 @Controller('v1/bookings')
 @UseGuards(AccessTokenGuard, ActorsGuard)
 @Actors('customer')
+@ApiCommonAuthErrors()
 export class BookingController {
   constructor(private readonly bookingService: BookingService) {}
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
+  @ApiCreatedEnvelope(BookingDto)
+  @ApiCommonMutationErrors()
   create(
     @CurrentAuth() auth: AccessTokenPayload,
     @Body() body: CreateBookingDto,
@@ -45,6 +55,7 @@ export class BookingController {
   }
 
   @Get()
+  @ApiOkEnvelope(BookingDto, { isArray: true, paginated: true })
   list(
     @CurrentAuth() auth: AccessTokenPayload,
     @Query() query: ListBookingsQueryDto,
@@ -61,6 +72,7 @@ export class BookingController {
   }
 
   @Get(':id')
+  @ApiOkEnvelope(BookingDto)
   getById(
     @CurrentAuth() auth: AccessTokenPayload,
     @Param('id') id: string,
@@ -73,6 +85,8 @@ export class BookingController {
   }
 
   @Patch(':id/cancel')
+  @ApiOkEnvelope(BookingDto)
+  @ApiCommonMutationErrors()
   cancel(
     @CurrentAuth() auth: AccessTokenPayload,
     @Param('id') id: string,

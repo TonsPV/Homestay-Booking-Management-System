@@ -1,0 +1,75 @@
+name: Backend verification
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: hbms_ci_test
+          MYSQL_USER: property_user
+          MYSQL_PASSWORD: test_password
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uproperty_user -ptest_password --silent"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=12
+          --health-start-period=30s
+
+    env:
+      NODE_ENV: test
+      DB_HOST: 127.0.0.1
+      DB_PORT: 3306
+      DB_USERNAME: property_user
+      DB_PASSWORD: test_password
+      DB_DATABASE: hbms_ci_test
+      DB_POOL_SIZE: 10
+      DB_POOL_QUEUE_LIMIT: 50
+      DB_CONNECT_TIMEOUT_MS: 5000
+      HEALTH_DB_PROBE_TIMEOUT_MS: 1000
+      JWT_ACCESS_TOKEN_SECRET: ci-only-secret-at-least-32-characters-long
+      JWT_ACCESS_TOKEN_EXPIRES_IN: 1h
+      BOOKING_PAYMENT_TIMEOUT_MINUTES: 15
+      BOOKING_MAX_ACTIVE_UNPAID_PER_CUSTOMER: 3
+      BOOKING_MAX_HELD_NIGHTS_PER_CUSTOMER: 30
+      BOOKING_MAX_ADVANCE_DAYS: 3650
+      ROOM_IMAGE_UPLOAD_DIR: .data/test-uploads/room-images
+      VNPAY_ENABLED: true
+      VNPAY_TMN_CODE: TEST0001
+      VNPAY_HASH_SECRET: test-vnpay-secret-at-least-16-characters
+      VNPAY_PAYMENT_URL: https://sandbox.vnpayment.vn/paymentv2/vpcpay.html
+      VNPAY_RETURN_URL: http://localhost:3001/api/v1/payments/vnpay/return
+      VNPAY_FRONTEND_RETURN_URL: ''
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Create test environment file
+        shell: bash
+        run: |
+          cp .env.test.example .env.test
+          sed -i 's/^DB_PASSWORD=.*/DB_PASSWORD=test_password/' .env.test
+          sed -i 's/^DB_DATABASE=.*/DB_DATABASE=hbms_ci_test/' .env.test
+          sed -i 's/^JWT_ACCESS_TOKEN_SECRET=.*/JWT_ACCESS_TOKEN_SECRET=ci-only-secret-at-least-32-characters-long/' .env.test
+      - run: npm run lint
+      - run: npm run build
+      - run: npm run migration:run
+      - run: npm run schema:check
+      - run: npm run data:audit
+      - run: npm run openapi:validate
+      - run: npm run test -- --runInBand
+      - run: npm run test:e2e -- --runInBand
+      - name: Production dependency audit
+        run: npm audit --omit=dev --audit-level=high

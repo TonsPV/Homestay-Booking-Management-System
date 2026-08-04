@@ -1,3 +1,5 @@
+import type { ErrorCode } from './error-codes';
+
 export interface ApiResponsePayload<TData = unknown> {
   data: TData;
   message?: string;
@@ -13,15 +15,34 @@ export interface ApiSuccessResponse<TData = unknown> {
   meta?: Record<string, unknown>;
   path: string;
   timestamp: string;
+  requestId: string;
+}
+
+export interface ApiFieldError {
+  errorCode: ErrorCode;
+  message?: string;
+}
+
+export type ApiFieldErrors = Record<string, ApiFieldError[]>;
+
+export interface ApiErrorDetails {
+  retryable?: boolean;
+  limit?: number;
+  maxAdvanceDays?: number;
+  maxStayNights?: number;
 }
 
 export interface ApiErrorResponse {
   success: false;
   statusCode: number;
+  errorCode: ErrorCode;
   message: string | string[];
+  fieldErrors?: ApiFieldErrors;
+  details?: ApiErrorDetails;
   error: string;
   path: string;
   timestamp: string;
+  requestId: string;
 }
 
 export class ApiResponse {

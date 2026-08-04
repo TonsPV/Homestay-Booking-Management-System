@@ -16,6 +16,14 @@ export class UpdateRoomTypeDto {
   description?: unknown;
 
   @ApiPropertyOptional({
+    example: '1 giường đôi',
+    maxLength: 120,
+    nullable: true,
+    type: String,
+  })
+  bedType?: unknown;
+
+  @ApiPropertyOptional({
     example: 2,
     maximum: 100,
     minimum: 1,

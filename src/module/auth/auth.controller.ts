@@ -7,7 +7,6 @@ import {
   Post,
   UseGuards,
 } from '@nestjs/common';
-
 import {
   ApiResponse,
   ApiResponsePayload,
@@ -16,35 +15,59 @@ import {
   RateLimitGuard,
   type AccessTokenPayload,
 } from '../../common/http';
+import {
+  ApiCommonAuthErrors,
+  ApiCreatedEnvelope,
+  ApiInvalidRequestError,
+  ApiLoginFailureError,
+  ApiOkEnvelope,
+  ApiOkEnvelopeUnion,
+  ApiRateLimitError,
+  ApiRegistrationConflictError,
+} from '../../openapi/api-response.decorators';
 import { AccessTokenGuard } from './access-token.guard';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterCustomerDto } from './dto/register-customer.dto';
+import {
+  AuthLoginResponseDto,
+  AuthMeCustomerResponseDto,
+  AuthMeUserResponseDto,
+  AuthRegistrationAcceptedDto,
+} from './dto/auth-response.dto';
 import type {
-  CustomerResponse,
   LoginResponse,
   MeResponse,
+  RegistrationAcceptedResponse,
 } from './auth.service';
 
 @Controller('v1/auth')
 @UseGuards(RateLimitGuard)
+@ApiRateLimitError()
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post('customers/register')
   @RateLimit({ limit: 5, windowMs: 15 * 60 * 1000 })
   @HttpCode(HttpStatus.CREATED)
+  @ApiCreatedEnvelope(AuthRegistrationAcceptedDto)
+  @ApiInvalidRequestError()
+  @ApiRegistrationConflictError()
   registerCustomer(
     @Body() body: RegisterCustomerDto,
-  ): Promise<ApiResponsePayload<CustomerResponse>> {
+  ): Promise<ApiResponsePayload<RegistrationAcceptedResponse>> {
     return this.authService
       .registerCustomer(body)
-      .then((customer) => ApiResponse.created(customer, 'Dang ky thanh cong.'));
+      .then((result) =>
+        ApiResponse.created(result, 'Dang ky tai khoan thanh cong.'),
+      );
   }
 
   @Post('customers/login')
   @RateLimit({ limit: 10, windowMs: 15 * 60 * 1000 })
   @HttpCode(HttpStatus.OK)
+  @ApiOkEnvelope(AuthLoginResponseDto)
+  @ApiLoginFailureError()
   loginCustomer(
     @Body() body: LoginDto,
   ): Promise<ApiResponsePayload<LoginResponse>> {
@@ -56,6 +79,8 @@ export class AuthController {
   @Post('users/login')
   @RateLimit({ limit: 10, windowMs: 15 * 60 * 1000 })
   @HttpCode(HttpStatus.OK)
+  @ApiOkEnvelope(AuthLoginResponseDto)
+  @ApiLoginFailureError()
   loginUser(
     @Body() body: LoginDto,
   ): Promise<ApiResponsePayload<LoginResponse>> {
@@ -66,6 +91,8 @@ export class AuthController {
 
   @Get('me')
   @UseGuards(AccessTokenGuard)
+  @ApiOkEnvelopeUnion([AuthMeCustomerResponseDto, AuthMeUserResponseDto])
+  @ApiCommonAuthErrors()
   me(
     @CurrentAuth() auth: AccessTokenPayload,
   ): Promise<ApiResponsePayload<MeResponse>> {

@@ -3,13 +3,13 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
-import { AppController } from './app.controller';
-import { AppService } from './app.service';
 import { validateEnvironment } from './config/environment';
+import { HealthModule } from './common/health/health.module';
 import { AuthModule } from './module/auth/auth.module';
 import { AmenityModule } from './module/amenity/amenity.module';
 import { BookingModule } from './module/booking/booking.module';
 import { CustomerModule } from './module/customer/customer.module';
+import { DashboardModule } from './module/dashboard/dashboard.module';
 import { PaymentModule } from './module/payment/payment.module';
 import { RoomModule } from './module/room/room.module';
 import { RoomTypeModule } from './module/room-type/room-type.module';
@@ -23,6 +23,7 @@ import { UserModule } from './module/user/user.module';
       validate: validateEnvironment,
     }),
     ScheduleModule.forRoot(),
+    HealthModule,
 
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
@@ -38,6 +39,17 @@ import { UserModule } from './module/user/user.module';
         password: configService.getOrThrow<string>('DB_PASSWORD'),
         database: configService.getOrThrow<string>('DB_DATABASE'),
         timezone: 'Z',
+        connectTimeout: configService.getOrThrow<number>(
+          'DB_CONNECT_TIMEOUT_MS',
+        ),
+        poolSize: configService.getOrThrow<number>('DB_POOL_SIZE'),
+        extra: {
+          waitForConnections: true,
+          queueLimit: configService.getOrThrow<number>('DB_POOL_QUEUE_LIMIT'),
+          maxIdle: configService.getOrThrow<number>('DB_POOL_SIZE'),
+          idleTimeout: 60_000,
+          enableKeepAlive: true,
+        },
 
         autoLoadEntities: true,
 
@@ -49,13 +61,11 @@ import { UserModule } from './module/user/user.module';
     AmenityModule,
     BookingModule,
     CustomerModule,
+    DashboardModule,
     PaymentModule,
     RoomModule,
     RoomTypeModule,
     UserModule,
   ],
-
-  controllers: [AppController],
-  providers: [AppService],
 })
 export class AppModule {}

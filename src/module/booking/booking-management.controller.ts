@@ -19,8 +19,16 @@ import {
   Roles,
   RolesGuard,
 } from '../../common/http';
+import {
+  ApiCommonAuthErrors,
+  ApiCommonMutationErrors,
+  ApiCreatedEnvelope,
+  ApiOkEnvelope,
+} from '../../openapi/api-response.decorators';
 import { AccessTokenGuard } from '../auth/access-token.guard';
 import { BookingService, type BookingResponse } from './booking.service';
+import { BookingDto, ManagementBookingDto } from './dto/booking-response.dto';
+import type { ManagementBookingResponse } from './booking.types';
 import { CreateManagementBookingDto } from './dto/create-management-booking.dto';
 import { ListManagementBookingsQueryDto } from './dto/list-management-bookings-query.dto';
 import { UpdateBookingStatusDto } from './dto/update-booking-status.dto';
@@ -28,15 +36,18 @@ import { UpdateBookingStatusDto } from './dto/update-booking-status.dto';
 @Controller('v1/management/bookings')
 @UseGuards(AccessTokenGuard, RolesGuard)
 @Roles('ADMIN', 'STAFF')
+@ApiCommonAuthErrors()
 export class BookingManagementController {
   constructor(private readonly bookingService: BookingService) {}
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
+  @ApiCreatedEnvelope(ManagementBookingDto)
+  @ApiCommonMutationErrors()
   create(
     @CurrentAuth() auth: AccessTokenPayload,
     @Body() body: CreateManagementBookingDto,
-  ): Promise<ApiResponsePayload<BookingResponse>> {
+  ): Promise<ApiResponsePayload<ManagementBookingResponse>> {
     return this.bookingService
       .createForManagement(auth.user_id, body)
       .then((booking) =>
@@ -45,6 +56,7 @@ export class BookingManagementController {
   }
 
   @Get()
+  @ApiOkEnvelope(BookingDto, { isArray: true, paginated: true })
   list(
     @Query() query: ListManagementBookingsQueryDto,
   ): Promise<ApiResponsePayload<BookingResponse[]>> {
@@ -60,9 +72,10 @@ export class BookingManagementController {
   }
 
   @Get(':id')
+  @ApiOkEnvelope(ManagementBookingDto)
   getById(
     @Param('id') id: string,
-  ): Promise<ApiResponsePayload<BookingResponse>> {
+  ): Promise<ApiResponsePayload<ManagementBookingResponse>> {
     return this.bookingService
       .getManagement(id)
       .then((booking) =>
@@ -71,10 +84,12 @@ export class BookingManagementController {
   }
 
   @Patch(':id/status')
+  @ApiOkEnvelope(ManagementBookingDto)
+  @ApiCommonMutationErrors()
   updateStatus(
     @Param('id') id: string,
     @Body() body: UpdateBookingStatusDto,
-  ): Promise<ApiResponsePayload<BookingResponse>> {
+  ): Promise<ApiResponsePayload<ManagementBookingResponse>> {
     return this.bookingService
       .updateStatus(id, body)
       .then((booking) =>

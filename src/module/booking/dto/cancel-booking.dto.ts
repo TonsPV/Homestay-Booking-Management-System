@@ -1,7 +1,7 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CancelBookingDto {
-  @ApiProperty({
+  @ApiPropertyOptional({
     example: 'Khách thay đổi kế hoạch.',
     maxLength: 500,
     type: String,

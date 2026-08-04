@@ -24,13 +24,14 @@ export class RoomImageService {
 
   async create(
     roomId: string,
-    body: CreateRoomImageDto,
+    body: CreateRoomImageDto | undefined,
     file?: UploadedRoomImageFile,
   ): Promise<RoomImageResponse> {
     this.validateId(roomId, 'Room id khong hop le.');
-    const sortOrder = this.parseSortOrder(body.sortOrder);
+    const input = body ?? {};
+    const sortOrder = this.parseSortOrder(input.sortOrder);
     const requestedCover = parseBoolean(
-      body.isCover,
+      input.isCover,
       false,
       'Gia tri anh bia khong hop le.',
     );

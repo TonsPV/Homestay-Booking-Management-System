@@ -1,5 +1,13 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
+export enum RoomSearchSort {
+  RECOMMENDED = 'RECOMMENDED',
+  PRICE_ASC = 'PRICE_ASC',
+  PRICE_DESC = 'PRICE_DESC',
+  POPULARITY = 'POPULARITY',
+  NEWEST = 'NEWEST',
+}
+
 export class SearchRoomsQueryDto {
   @ApiProperty({ example: '2026-08-01', format: 'date', type: String })
   checkIn?: unknown;
@@ -34,6 +42,14 @@ export class SearchRoomsQueryDto {
 
   @ApiPropertyOptional({ default: 1, example: 1, minimum: 1, type: Number })
   page?: unknown;
+
+  @ApiPropertyOptional({
+    default: RoomSearchSort.RECOMMENDED,
+    enum: RoomSearchSort,
+    enumName: 'RoomSearchSort',
+    type: String,
+  })
+  sort?: unknown;
 
   @ApiPropertyOptional({
     default: 20,

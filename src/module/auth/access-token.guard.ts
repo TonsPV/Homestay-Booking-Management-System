@@ -31,14 +31,15 @@ export class AccessTokenGuard implements CanActivate {
       );
     }
 
-    const [scheme, token] = authorization.split(' ');
+    const match = /^Bearer ([^\s]+)$/.exec(authorization);
 
-    if (scheme !== 'Bearer' || token === undefined || token.length === 0) {
+    if (match === null) {
       throw new UnauthorizedException(
         'Authorization bearer token is required.',
       );
     }
 
+    const token = match[1];
     const auth = this.accessTokenService.verify(token);
 
     if (auth.actor_type === 'customer') {

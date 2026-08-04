@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import type { Repository } from 'typeorm';
+import type { EntityManager, Repository } from 'typeorm';
 
 import { getMysqlDuplicateKey } from '../../common/database';
 import type {
@@ -66,11 +66,7 @@ export class UserAdminService {
     const email = requireEmail(body.email);
     const phone = optionalNullablePhone(body.phone) ?? null;
     const password = requirePassword(body.password);
-    const requestedRole = this.optionalRole(body.role);
-
-    if (requestedRole === 'ADMIN') {
-      throw new BadRequestException('API nay chi dung de cap tai khoan STAFF.');
-    }
+    this.optionalIssuableRole(body.role);
 
     await this.ensureEmailIsAvailable(email);
 
@@ -139,7 +135,18 @@ export class UserAdminService {
     body: UpdateUserDto,
     currentAdminId: string | undefined,
   ): Promise<AdminUserResponse> {
-    const user = await this.getUser(id);
+    return this.withUserTransaction((repository) =>
+      this.updateUserWithRepository(repository, id, body, currentAdminId),
+    );
+  }
+
+  private async updateUserWithRepository(
+    repository: Repository<User>,
+    id: string,
+    body: UpdateUserDto,
+    currentAdminId: string | undefined,
+  ): Promise<AdminUserResponse> {
+    const user = await this.getUser(id, repository);
     const fullName = optionalTrimmedString(
       body.fullName,
       'Ho ten khong hop le.',
@@ -148,16 +155,26 @@ export class UserAdminService {
     const email = optionalEmail(body.email);
     const phone = optionalNullablePhone(body.phone);
     const password = optionalPassword(body.password);
-    const role = this.optionalRole(body.role);
+    const role = this.optionalIssuableRole(body.role);
+
+    if (
+      fullName === undefined &&
+      email === undefined &&
+      phone === undefined &&
+      password === undefined &&
+      role === undefined
+    ) {
+      throw new BadRequestException('Khong co thong tin user de cap nhat.');
+    }
 
     if (email !== undefined) {
-      await this.ensureEmailIsAvailable(email, user.id);
+      await this.ensureEmailIsAvailable(email, user.id, repository);
       user.email = email;
     }
 
     if (phone !== undefined) {
       if (phone !== null) {
-        await this.ensurePhoneIsAvailable(phone, user.id);
+        await this.ensurePhoneIsAvailable(phone, user.id, repository);
       }
 
       user.phone = phone;
@@ -168,11 +185,7 @@ export class UserAdminService {
     }
 
     if (role !== undefined) {
-      if (
-        currentAdminId !== undefined &&
-        user.id === currentAdminId &&
-        role !== 'ADMIN'
-      ) {
+      if (currentAdminId !== undefined && user.id === currentAdminId) {
         throw new BadRequestException(
           'Admin khong the tu ha quyen tai khoan cua minh.',
         );
@@ -187,7 +200,7 @@ export class UserAdminService {
     }
 
     try {
-      return this.toAdminUserResponse(await this.usersRepository.save(user));
+      return this.toAdminUserResponse(await repository.save(user));
     } catch (error) {
       this.throwUserDuplicateConflict(error);
     }
@@ -198,7 +211,23 @@ export class UserAdminService {
     statusValue: unknown,
     currentAdminId: string | undefined,
   ): Promise<AdminUserResponse> {
-    const user = await this.getUser(id);
+    return this.withUserTransaction((repository) =>
+      this.updateStatusWithRepository(
+        repository,
+        id,
+        statusValue,
+        currentAdminId,
+      ),
+    );
+  }
+
+  private async updateStatusWithRepository(
+    repository: Repository<User>,
+    id: string,
+    statusValue: unknown,
+    currentAdminId: string | undefined,
+  ): Promise<AdminUserResponse> {
+    const user = await this.getUser(id, repository);
     const status = requireAccountStatus(statusValue);
 
     if (
@@ -211,15 +240,46 @@ export class UserAdminService {
       );
     }
 
-    user.status = status;
+    if (user.status !== status) {
+      user.status = status;
+      user.tokenVersion += 1;
+    }
 
-    return this.toAdminUserResponse(await this.usersRepository.save(user));
+    return this.toAdminUserResponse(await repository.save(user));
   }
 
-  private async getUser(id: string): Promise<User> {
+  private async withUserTransaction<T>(
+    operation: (repository: Repository<User>) => Promise<T>,
+  ): Promise<T> {
+    const repository = this.usersRepository as Repository<User> & {
+      manager?: EntityManager;
+    };
+
+    if (repository.manager === undefined) {
+      return operation(this.usersRepository);
+    }
+
+    return repository.manager.transaction((manager) =>
+      operation(manager.getRepository(User)),
+    );
+  }
+
+  private async getUser(
+    id: string,
+    repository: Repository<User> = this.usersRepository,
+  ): Promise<User> {
     this.validateId(id);
 
-    const user = await this.usersRepository.findOneBy({ id });
+    const repositoryWithFindOne = repository as Repository<User> & {
+      findOne?: Repository<User>['findOne'];
+    };
+    const user =
+      typeof repositoryWithFindOne.findOne === 'function'
+        ? await repositoryWithFindOne.findOne({
+            where: { id },
+            lock: { mode: 'pessimistic_write' },
+          })
+        : await repository.findOneBy({ id });
 
     if (user === null) {
       throw new NotFoundException('Khong tim thay user.');
@@ -231,8 +291,9 @@ export class UserAdminService {
   private async ensureEmailIsAvailable(
     email: string,
     currentUserId?: string,
+    repository: Repository<User> = this.usersRepository,
   ): Promise<void> {
-    const existingUserQuery = this.usersRepository
+    const existingUserQuery = repository
       .createQueryBuilder('user')
       .where('user.deletedAt IS NULL')
       .andWhere('LOWER(user.email) = :email', { email });
@@ -251,8 +312,9 @@ export class UserAdminService {
   private async ensurePhoneIsAvailable(
     phone: string,
     currentUserId?: string,
+    repository: Repository<User> = this.usersRepository,
   ): Promise<void> {
-    const existingUserQuery = this.usersRepository
+    const existingUserQuery = repository
       .createQueryBuilder('user')
       .where('user.deletedAt IS NULL')
       .andWhere('user.phone IN (:...phones)', {
@@ -298,6 +360,16 @@ export class UserAdminService {
     }
 
     return value;
+  }
+
+  private optionalIssuableRole(value: unknown): 'STAFF' | undefined {
+    const role = this.optionalRole(value);
+
+    if (role === 'ADMIN') {
+      throw new BadRequestException('API nay chi dung de cap tai khoan STAFF.');
+    }
+
+    return role;
   }
 
   private validateId(id: string): void {

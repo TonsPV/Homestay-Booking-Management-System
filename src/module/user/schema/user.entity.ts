@@ -8,8 +8,17 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 
-export type UserRole = 'STAFF' | 'ADMIN';
-export type UserStatus = 'ACTIVE' | 'LOCKED';
+import {
+  AccountStatusEnum,
+  UserRoleEnum,
+} from '../../../common/domain/account.enums';
+import type {
+  AccountStatus,
+  UserRole as CommonUserRole,
+} from '../../../common/domain/account.enums';
+
+export type UserRole = CommonUserRole;
+export type UserStatus = AccountStatus;
 
 @Entity('users')
 @Index('uq_users_email', ['email'], { unique: true })
@@ -40,15 +49,15 @@ export class User {
 
   @Column({
     type: 'enum',
-    enum: ['STAFF', 'ADMIN'],
-    default: 'STAFF',
+    enum: UserRoleEnum,
+    default: UserRoleEnum.STAFF,
   })
   role: UserRole;
 
   @Column({
     type: 'enum',
-    enum: ['ACTIVE', 'LOCKED'],
-    default: 'ACTIVE',
+    enum: AccountStatusEnum,
+    default: AccountStatusEnum.ACTIVE,
   })
   status: UserStatus;
 

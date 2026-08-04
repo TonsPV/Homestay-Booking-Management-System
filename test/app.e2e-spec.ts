@@ -11,12 +11,15 @@ import type { App } from 'supertest/types';
 
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/common/http';
-import { assertSafeE2eEnvironment } from '../src/config/e2e-environment';
 import migrationDataSource from '../src/database/data-source';
 import { AccessTokenService } from '../src/module/auth/access-token.service';
 import { PasswordHasherService } from '../src/module/auth/password-hasher.service';
 import { Amenity } from '../src/module/amenity/schema/amenity.entity';
-import { Booking } from '../src/module/booking/schema/booking.entity';
+import {
+  Booking,
+  BookingPaymentStatus,
+  BookingStatus,
+} from '../src/module/booking/schema/booking.entity';
 import { RoomCalendar } from '../src/module/booking/schema/room-calendar.entity';
 import { BookingService } from '../src/module/booking/booking.service';
 import { Customer } from '../src/module/customer/schema/customer.entity';
@@ -33,6 +36,7 @@ import { RoomImage } from '../src/module/room/schema/room-image.entity';
 import { Room } from '../src/module/room/schema/room.entity';
 import { User } from '../src/module/user/schema/user.entity';
 import { createOpenApiDocument } from '../src/openapi/openapi';
+import { E2eHarness } from './e2e-harness';
 
 interface ApiResponseBody<TData> {
   success: boolean;
@@ -49,6 +53,7 @@ interface ApiResponseBody<TData> {
   };
   path: string;
   timestamp: string;
+  requestId: string;
 }
 
 interface RoomTypeBody {
@@ -77,12 +82,25 @@ interface UserBody {
 
 interface CustomerBody {
   id: string;
+  fullName: string;
+  email: string | null;
   phone: string;
   status: 'ACTIVE' | 'LOCKED';
 }
 
 interface LoginBody {
   accessToken: string;
+}
+
+interface RegistrationAcceptedBody {
+  accepted: true;
+}
+
+interface ApiErrorBody {
+  success: false;
+  statusCode: number;
+  message: string | string[];
+  error: string;
 }
 
 interface RoomImageBody {
@@ -164,8 +182,23 @@ interface PaymentBody {
   expiresAt: string | null;
 }
 
+interface CustomerPaymentBody {
+  id: string;
+  bookingId: string;
+  amount: string;
+  currency: string;
+  method: string;
+  status: string;
+  gatewayReference: string | null;
+  paidAt: string | null;
+  refundedAt: string | null;
+  expiresAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 interface OnlinePaymentBody {
-  payment: PaymentBody;
+  payment: CustomerPaymentBody;
   paymentUrl: string;
   expiresAt: string;
 }
@@ -185,6 +218,7 @@ describe('Application API (e2e)', () => {
   let roomCalendarRepository: Repository<RoomCalendar>;
   let paymentsRepository: Repository<Payment>;
   let vnPayGatewayService: VnPayGatewayService;
+  let e2eHarness: E2eHarness;
   let adminToken: string;
   let customerToken: string | undefined;
   let staffToken: string | undefined;
@@ -211,10 +245,8 @@ describe('Application API (e2e)', () => {
       .png()
       .toBuffer();
 
-    assertSafeE2eEnvironment(process.env);
-    await migrationDataSource.initialize();
-    await migrationDataSource.runMigrations();
-    await migrationDataSource.destroy();
+    e2eHarness = new E2eHarness(migrationDataSource);
+    await e2eHarness.initialize();
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
@@ -374,17 +406,132 @@ describe('Application API (e2e)', () => {
     expect(process.env.NODE_ENV).toBe('test');
     expect(process.env.DB_DATABASE).toMatch(/_test$/);
 
-    const response = await request(app.getHttpServer()).get('/api').expect(200);
-    const body = response.body as ApiResponseBody<string>;
+    const response = await request(app.getHttpServer())
+      .get('/api/health/live')
+      .set('X-Request-Id', 'e2e-health-request')
+      .expect(200);
+    const body = response.body as ApiResponseBody<{
+      status: string;
+      timestamp: string;
+    }>;
 
     expect(body).toMatchObject({
       success: true,
       statusCode: 200,
       message: 'Thanh cong.',
-      data: 'Hello World!',
-      path: '/api',
+      data: {
+        status: 'ok',
+        timestamp: expect.any(String) as string,
+      },
+      path: '/api/health/live',
+      requestId: 'e2e-health-request',
     });
     expect(body.timestamp).toEqual(expect.any(String));
+    expect(response.headers['x-request-id']).toBe('e2e-health-request');
+    expect(response.headers['x-content-type-options']).toBe('nosniff');
+  });
+
+  it('reports readiness through the real database connection', async () => {
+    const response = await request(app.getHttpServer())
+      .get('/api/health/ready')
+      .expect(200);
+    const body = response.body as ApiResponseBody<{
+      status: string;
+      timestamp: string;
+    }>;
+
+    expect(body).toMatchObject({
+      success: true,
+      statusCode: 200,
+      data: {
+        status: 'ok',
+        timestamp: expect.any(String) as string,
+      },
+      path: '/api/health/ready',
+    });
+    expect(response.headers['x-request-id']).toEqual(expect.any(String));
+  });
+
+  it('applies critical database constraints and query indexes', async () => {
+    const constraints = await dataSource.query<
+      Array<{ constraintName: string }>
+    >(`
+      SELECT CONSTRAINT_NAME AS constraintName
+      FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS
+      WHERE TABLE_SCHEMA = DATABASE()
+    `);
+    const indexes = await dataSource.query<Array<{ indexName: string }>>(`
+      SELECT DISTINCT INDEX_NAME AS indexName
+      FROM INFORMATION_SCHEMA.STATISTICS
+      WHERE TABLE_SCHEMA = DATABASE()
+    `);
+
+    expect(constraints.map(({ constraintName }) => constraintName)).toEqual(
+      expect.arrayContaining([
+        'chk_room_types_base_price',
+        'chk_bookings_date_range',
+        'chk_bookings_guest_count',
+        'chk_bookings_total_amount',
+        'chk_payments_amount',
+        'chk_payments_currency',
+        'chk_room_calendar_status_ownership',
+        'fk_room_calendar_booking',
+        'fk_room_type_amenities_room_type',
+        'fk_room_type_amenities_amenity',
+      ]),
+    );
+    expect(indexes.map(({ indexName }) => indexName)).toEqual(
+      expect.arrayContaining([
+        'uq_room_calendar_room_date',
+        'uq_payments_idempotency',
+        'uq_payments_gateway_reference',
+        'uq_payments_refund_idempotency',
+        'idx_bookings_created_at_status',
+        'idx_payments_status_paid_at',
+        'idx_payments_status_refunded_at',
+        'idx_payments_created_at_status',
+        'idx_room_calendar_status_date',
+      ]),
+    );
+  });
+
+  it('enforces the auth/me token failure matrix against current DB state', async () => {
+    await request(app.getHttpServer()).get('/api/v1/auth/me').expect(401);
+
+    await request(app.getHttpServer())
+      .get('/api/v1/auth/me')
+      .set('Authorization', `Bearer ${adminToken} trailing-data`)
+      .expect(401);
+
+    const response = await request(app.getHttpServer())
+      .get('/api/v1/auth/me')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    const body = response.body as ApiResponseBody<{
+      actorType: 'user';
+      user: UserBody;
+    }>;
+
+    expect(body.data).toMatchObject({
+      actorType: 'user',
+      user: {
+        id: testAdminId,
+        role: 'ADMIN',
+        status: 'ACTIVE',
+      },
+    });
+
+    const revokedToken = app.get(AccessTokenService).sign({
+      actorType: 'user',
+      userId: testAdminId,
+      role: 'ADMIN',
+      tokenVersion: 1,
+    });
+
+    await request(app.getHttpServer())
+      .get('/api/v1/auth/me')
+      .set('Authorization', `Bearer ${revokedToken}`)
+      .expect(401);
   });
 
   it('protects the admin RoomType API', async () => {
@@ -413,6 +560,8 @@ describe('Application API (e2e)', () => {
     const canonicalStaffPhone = `+84${staffPhone.slice(1)}`;
     const initialPassword = 'StrongPassword123!';
     const resetPassword = 'ResetPassword456!';
+
+    await request(app.getHttpServer()).get('/api/v1/users').expect(401);
 
     await request(app.getHttpServer())
       .post('/api/v1/users')
@@ -448,6 +597,27 @@ describe('Application API (e2e)', () => {
     });
 
     await request(app.getHttpServer())
+      .get('/api/v1/users')
+      .set('Authorization', `Bearer ${staffToken}`)
+      .expect(403);
+
+    const listResponse = await request(app.getHttpServer())
+      .get('/api/v1/users')
+      .query({ search: staffEmail, role: 'STAFF', status: 'ACTIVE' })
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    const listBody = listResponse.body as ApiResponseBody<UserBody[]>;
+
+    expect(listBody.data).toEqual([
+      expect.objectContaining({
+        id: testStaffId,
+        phone: canonicalStaffPhone,
+        role: 'STAFF',
+        status: 'ACTIVE',
+      }),
+    ]);
+
+    await request(app.getHttpServer())
       .get('/api/v1/management/rooms')
       .set('Authorization', `Bearer ${staffToken}`)
       .expect(200);
@@ -456,6 +626,18 @@ describe('Application API (e2e)', () => {
       .patch(`/api/v1/users/${testAdminId}`)
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ role: 'STAFF' })
+      .expect(400);
+
+    await request(app.getHttpServer())
+      .patch(`/api/v1/users/${testStaffId}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ role: 'ADMIN' })
+      .expect(400);
+
+    await request(app.getHttpServer())
+      .patch(`/api/v1/users/${testStaffId}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({})
       .expect(400);
 
     await request(app.getHttpServer())
@@ -505,6 +687,21 @@ describe('Application API (e2e)', () => {
 
     staffToken = loginBody.data.accessToken;
 
+    const wrongPasswordResponse = await request(app.getHttpServer())
+      .post('/api/v1/auth/users/login')
+      .send({
+        identifier: canonicalStaffPhone,
+        password: 'WrongPassword123!',
+      })
+      .expect(401);
+    const missingUserResponse = await request(app.getHttpServer())
+      .post('/api/v1/auth/users/login')
+      .send({
+        identifier: `missing-staff-${uniqueSuffix}@example.com`,
+        password: resetPassword,
+      })
+      .expect(401);
+
     await request(app.getHttpServer())
       .get('/api/v1/management/rooms')
       .set('Authorization', `Bearer ${staffToken}`)
@@ -519,33 +716,81 @@ describe('Application API (e2e)', () => {
 
     expect(lockBody.data.status).toBe('LOCKED');
 
+    const lockedUserResponse = await request(app.getHttpServer())
+      .post('/api/v1/auth/users/login')
+      .send({
+        identifier: canonicalStaffPhone,
+        password: resetPassword,
+      })
+      .expect(401);
+
+    expect(toPublicLoginFailure(wrongPasswordResponse.body)).toEqual(
+      toPublicLoginFailure(missingUserResponse.body),
+    );
+    expect(toPublicLoginFailure(lockedUserResponse.body)).toEqual(
+      toPublicLoginFailure(missingUserResponse.body),
+    );
+    expect(toPublicLoginFailure(lockedUserResponse.body)).toEqual({
+      success: false,
+      statusCode: 401,
+      message: 'Thong tin dang nhap khong hop le.',
+      error: 'Unauthorized',
+    });
+
+    await request(app.getHttpServer())
+      .get('/api/v1/management/rooms')
+      .set('Authorization', `Bearer ${staffToken}`)
+      .expect(401);
+
     await request(app.getHttpServer())
       .patch(`/api/v1/users/${testStaffId}/status`)
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ status: 'ACTIVE' })
       .expect(200);
+
+    await request(app.getHttpServer())
+      .get('/api/v1/management/rooms')
+      .set('Authorization', `Bearer ${staffToken}`)
+      .expect(401);
+
+    const activeStaff = await usersRepository.findOneByOrFail({
+      id: testStaffId,
+    });
+
+    expect(activeStaff.tokenVersion).toBe(3);
+    staffToken = app.get(AccessTokenService).sign({
+      actorType: 'user',
+      userId: activeStaff.id,
+      role: activeStaff.role,
+      tokenVersion: activeStaff.tokenVersion,
+    });
   });
 
   it('rate-limits repeated user login attempts', async () => {
-    for (let attempt = 1; attempt <= 9; attempt += 1) {
-      await request(app.getHttpServer())
+    let rateLimitedResponse: Awaited<
+      ReturnType<ReturnType<typeof request>['post']>
+    > | null = null;
+
+    for (let attempt = 1; attempt <= 11; attempt += 1) {
+      const response = await request(app.getHttpServer())
         .post('/api/v1/auth/users/login')
         .send({
           identifier: `missing-${uniqueSuffix}@example.com`,
           password: 'incorrect-password',
-        })
-        .expect(401);
+        });
+
+      if (response.status === 429) {
+        rateLimitedResponse = response;
+        break;
+      }
+
+      expect(response.status).toBe(401);
     }
 
-    const response = await request(app.getHttpServer())
-      .post('/api/v1/auth/users/login')
-      .send({
-        identifier: `missing-${uniqueSuffix}@example.com`,
-        password: 'incorrect-password',
-      })
-      .expect(429);
-
-    expect(response.headers['retry-after']).toEqual(expect.any(String));
+    expect(rateLimitedResponse?.status).toBe(429);
+    expect(rateLimitedResponse?.headers['retry-after']).toEqual(
+      expect.any(String),
+    );
   });
 
   it('manages customer status on the shared customer resource', async () => {
@@ -562,12 +807,45 @@ describe('Application API (e2e)', () => {
         password: 'StrongPassword123!',
       })
       .expect(201);
-    const registerBody = registerResponse.body as ApiResponseBody<CustomerBody>;
+    const registerBody =
+      registerResponse.body as ApiResponseBody<RegistrationAcceptedBody>;
 
-    expect(registerBody.data.phone).toBe(canonicalCustomerPhone);
-    testCustomerId = registerBody.data.id;
+    expect(registerBody).toMatchObject({
+      success: true,
+      statusCode: 201,
+      message: 'Dang ky tai khoan thanh cong.',
+      data: { accepted: true },
+    });
+    const registeredCustomer = await customersRepository.findOneByOrFail({
+      phone: canonicalCustomerPhone,
+    });
+    testCustomerId = registeredCustomer.id;
+
+    await request(app.getHttpServer()).get('/api/v1/customers').expect(401);
 
     await request(app.getHttpServer())
+      .get('/api/v1/customers')
+      .set('Authorization', `Bearer ${requireStaffToken()}`)
+      .expect(403);
+
+    const customerListResponse = await request(app.getHttpServer())
+      .get('/api/v1/customers')
+      .query({ search: canonicalCustomerPhone, status: 'ACTIVE' })
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    const customerListBody = customerListResponse.body as ApiResponseBody<
+      CustomerBody[]
+    >;
+
+    expect(customerListBody.data).toEqual([
+      expect.objectContaining({
+        id: testCustomerId,
+        phone: canonicalCustomerPhone,
+        status: 'ACTIVE',
+      }),
+    ]);
+
+    const duplicatePhoneResponse = await request(app.getHttpServer())
       .post('/api/v1/auth/customers/register')
       .send({
         fullName: 'Duplicate E2E Customer',
@@ -576,6 +854,30 @@ describe('Application API (e2e)', () => {
         password: 'StrongPassword123!',
       })
       .expect(409);
+    const duplicateEmailPhone = `079${String(Date.now()).slice(-7)}`;
+    const duplicateEmailResponse = await request(app.getHttpServer())
+      .post('/api/v1/auth/customers/register')
+      .send({
+        fullName: 'Duplicate Email E2E Customer',
+        email: customerEmail,
+        phone: duplicateEmailPhone,
+        password: 'StrongPassword123!',
+      })
+      .expect(409);
+
+    expect(toPublicRegistrationFailure(duplicatePhoneResponse.body)).toEqual({
+      success: false,
+      statusCode: 409,
+      message: 'Khong the dang ky bang email hoac so dien thoai nay.',
+      error: 'Conflict',
+    });
+    expect(toPublicRegistrationFailure(duplicateEmailResponse.body)).toEqual({
+      success: false,
+      statusCode: 409,
+      message: 'Khong the dang ky bang email hoac so dien thoai nay.',
+      error: 'Conflict',
+    });
+    expect(await customersRepository.countBy({ email: customerEmail })).toBe(1);
 
     const lockResponse = await request(app.getHttpServer())
       .patch(`/api/v1/customers/${testCustomerId}/status`)
@@ -586,11 +888,70 @@ describe('Application API (e2e)', () => {
 
     expect(lockBody.data.status).toBe('LOCKED');
 
+    const lockedCustomerResponse = await request(app.getHttpServer())
+      .post('/api/v1/auth/customers/login')
+      .send({
+        identifier: formattedCustomerPhone,
+        password: 'StrongPassword123!',
+      })
+      .expect(401);
+
     await request(app.getHttpServer())
       .patch(`/api/v1/customers/${testCustomerId}/status`)
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ status: 'ACTIVE' })
       .expect(200);
+
+    const wrongCustomerPasswordResponse = await request(app.getHttpServer())
+      .post('/api/v1/auth/customers/login')
+      .send({
+        identifier: formattedCustomerPhone,
+        password: 'WrongPassword123!',
+      })
+      .expect(401);
+    const missingCustomerResponse = await request(app.getHttpServer())
+      .post('/api/v1/auth/customers/login')
+      .send({
+        identifier: `missing-customer-${uniqueSuffix}@example.com`,
+        password: 'StrongPassword123!',
+      })
+      .expect(401);
+    const passwordlessCustomer = await customersRepository.save(
+      customersRepository.create({
+        fullName: 'E2E Passwordless Customer',
+        email: `passwordless-${uniqueSuffix}@example.com`,
+        phone: `+8497${String(Date.now()).slice(-7)}`,
+        passwordHash: null,
+        status: 'ACTIVE',
+      }),
+    );
+    counterCustomerIds.push(passwordlessCustomer.id);
+    const passwordlessCustomerResponse = await request(app.getHttpServer())
+      .post('/api/v1/auth/customers/login')
+      .send({
+        identifier: passwordlessCustomer.email,
+        password: 'StrongPassword123!',
+      })
+      .expect(401);
+    const customerFailureContract = {
+      success: false,
+      statusCode: 401,
+      message: 'Thong tin dang nhap khong hop le.',
+      error: 'Unauthorized',
+    };
+
+    expect(toPublicLoginFailure(lockedCustomerResponse.body)).toEqual(
+      customerFailureContract,
+    );
+    expect(toPublicLoginFailure(wrongCustomerPasswordResponse.body)).toEqual(
+      customerFailureContract,
+    );
+    expect(toPublicLoginFailure(missingCustomerResponse.body)).toEqual(
+      customerFailureContract,
+    );
+    expect(toPublicLoginFailure(passwordlessCustomerResponse.body)).toEqual(
+      customerFailureContract,
+    );
 
     const loginResponse = await request(app.getHttpServer())
       .post('/api/v1/auth/customers/login')
@@ -602,10 +963,59 @@ describe('Application API (e2e)', () => {
     const loginBody = loginResponse.body as ApiResponseBody<LoginBody>;
     customerToken = loginBody.data.accessToken;
 
+    const authMeResponse = await request(app.getHttpServer())
+      .get('/api/v1/auth/me')
+      .set('Authorization', `Bearer ${customerToken}`)
+      .expect(200);
+    const authMeBody = authMeResponse.body as ApiResponseBody<{
+      actorType: 'customer';
+      customer: CustomerBody;
+    }>;
+
+    expect(authMeBody.data).toMatchObject({
+      actorType: 'customer',
+      customer: {
+        id: testCustomerId,
+        status: 'ACTIVE',
+      },
+    });
+
+    await request(app.getHttpServer())
+      .get('/api/v1/users')
+      .set('Authorization', `Bearer ${customerToken}`)
+      .expect(403);
+
     await request(app.getHttpServer())
       .get('/api/v1/customers/me')
       .set('Authorization', `Bearer ${customerToken}`)
       .expect(200);
+
+    await request(app.getHttpServer())
+      .get('/api/v1/customers/me')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(403);
+
+    await request(app.getHttpServer())
+      .patch('/api/v1/customers/me')
+      .set('Authorization', `Bearer ${customerToken}`)
+      .send({})
+      .expect(400);
+
+    const updateProfileResponse = await request(app.getHttpServer())
+      .patch('/api/v1/customers/me')
+      .set('Authorization', `Bearer ${customerToken}`)
+      .send({ fullName: 'Updated E2E Customer', email: null })
+      .expect(200);
+    const updateProfileBody =
+      updateProfileResponse.body as ApiResponseBody<CustomerBody>;
+
+    expect(updateProfileBody.data).toMatchObject({
+      id: testCustomerId,
+      fullName: 'Updated E2E Customer',
+      email: null,
+      phone: canonicalCustomerPhone,
+      status: 'ACTIVE',
+    });
 
     await request(app.getHttpServer())
       .patch(`/api/v1/customers/${testCustomerId}/status`)
@@ -616,7 +1026,7 @@ describe('Application API (e2e)', () => {
     await request(app.getHttpServer())
       .get('/api/v1/bookings')
       .set('Authorization', `Bearer ${customerToken}`)
-      .expect(403);
+      .expect(401);
 
     await request(app.getHttpServer())
       .patch(`/api/v1/customers/${testCustomerId}/status`)
@@ -624,12 +1034,29 @@ describe('Application API (e2e)', () => {
       .send({ status: 'ACTIVE' })
       .expect(200);
 
+    await request(app.getHttpServer())
+      .get('/api/v1/customers/me')
+      .set('Authorization', `Bearer ${customerToken}`)
+      .expect(401);
+
+    const statusReloginResponse = await request(app.getHttpServer())
+      .post('/api/v1/auth/customers/login')
+      .send({
+        identifier: formattedCustomerPhone,
+        password: 'StrongPassword123!',
+      })
+      .expect(200);
+    const statusReloginBody =
+      statusReloginResponse.body as ApiResponseBody<LoginBody>;
+
+    customerToken = statusReloginBody.data.accessToken;
+
     const customerBeforePasswordChange =
       await customersRepository.findOneByOrFail({
         id: testCustomerId,
       });
 
-    expect(customerBeforePasswordChange.tokenVersion).toBe(0);
+    expect(customerBeforePasswordChange.tokenVersion).toBe(4);
 
     await request(app.getHttpServer())
       .patch('/api/v1/customers/me/password')
@@ -642,7 +1069,7 @@ describe('Application API (e2e)', () => {
     expect(
       (await customersRepository.findOneByOrFail({ id: testCustomerId }))
         .tokenVersion,
-    ).toBe(0);
+    ).toBe(4);
 
     await request(app.getHttpServer())
       .patch('/api/v1/customers/me/password')
@@ -688,7 +1115,7 @@ describe('Application API (e2e)', () => {
       .where('customer.id = :id', { id: testCustomerId })
       .getOneOrFail();
 
-    expect(customerAfterPasswordChange.tokenVersion).toBe(1);
+    expect(customerAfterPasswordChange.tokenVersion).toBe(5);
     await expect(
       app
         .get(PasswordHasherService)
@@ -697,6 +1124,87 @@ describe('Application API (e2e)', () => {
           customerAfterPasswordChange.passwordHash,
         ),
     ).resolves.toBe(true);
+  });
+
+  it('keeps customer lock and token revocation when a stale profile update resumes', async () => {
+    const raceCustomer = await customersRepository.save(
+      customersRepository.create({
+        fullName: 'E2E Profile Race Customer',
+        email: `e2e-profile-race-${uniqueSuffix}@example.com`,
+        phone: `+8495${String(Date.now()).slice(-7)}`,
+        passwordHash: null,
+        status: 'ACTIVE',
+      }),
+    );
+    counterCustomerIds.push(raceCustomer.id);
+    const raceCustomerToken = app.get(AccessTokenService).sign({
+      actorType: 'customer',
+      customerId: raceCustomer.id,
+      tokenVersion: raceCustomer.tokenVersion,
+    });
+    const originalFindOneBy =
+      customersRepository.findOneBy.bind(customersRepository);
+    let observedProfileRead = () => undefined;
+    const profileReadObserved = new Promise<void>((resolveRead) => {
+      observedProfileRead = resolveRead;
+    });
+    let releaseProfileRead = () => undefined;
+    const profileReadRelease = new Promise<void>((resolveRelease) => {
+      releaseProfileRead = resolveRelease;
+    });
+    let targetCustomerReadCount = 0;
+    const findOneBySpy = jest
+      .spyOn(customersRepository, 'findOneBy')
+      .mockImplementation(async (where) => {
+        const customer = await originalFindOneBy(where);
+
+        if (where.id === raceCustomer.id) {
+          targetCustomerReadCount += 1;
+
+          if (targetCustomerReadCount === 2) {
+            observedProfileRead();
+            await profileReadRelease;
+          }
+        }
+
+        return customer;
+      });
+    const pendingProfileResponse = request(app.getHttpServer())
+      .patch('/api/v1/customers/me')
+      .set('Authorization', `Bearer ${raceCustomerToken}`)
+      .send({ fullName: 'Stale Profile Update' })
+      .then((response) => response);
+
+    try {
+      await profileReadObserved;
+      await request(app.getHttpServer())
+        .patch(`/api/v1/customers/${raceCustomer.id}/status`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ status: 'LOCKED' })
+        .expect(200);
+      releaseProfileRead();
+
+      const profileResponse = await pendingProfileResponse;
+
+      expect(profileResponse.status).toBe(409);
+    } finally {
+      releaseProfileRead();
+      findOneBySpy.mockRestore();
+    }
+
+    const persistedCustomer = await customersRepository.findOneByOrFail({
+      id: raceCustomer.id,
+    });
+
+    expect(persistedCustomer).toMatchObject({
+      fullName: 'E2E Profile Race Customer',
+      status: 'LOCKED',
+      tokenVersion: raceCustomer.tokenVersion + 1,
+    });
+    await request(app.getHttpServer())
+      .get('/api/v1/customers/me')
+      .set('Authorization', `Bearer ${raceCustomerToken}`)
+      .expect(401);
   });
 
   it('creates a RoomType and rejects duplicate names', async () => {
@@ -745,6 +1253,12 @@ describe('Application API (e2e)', () => {
     await request(app.getHttpServer())
       .patch(`/api/v1/admin/room-types/${id}`)
       .set('Authorization', `Bearer ${adminToken}`)
+      .send({ maxGuests: 101 })
+      .expect(400);
+
+    await request(app.getHttpServer())
+      .patch(`/api/v1/admin/room-types/${id}`)
+      .set('Authorization', `Bearer ${adminToken}`)
       .send({})
       .expect(400);
 
@@ -780,6 +1294,10 @@ describe('Application API (e2e)', () => {
     await request(app.getHttpServer())
       .get('/api/v1/admin/amenities')
       .set('Authorization', `Bearer ${requireCustomerToken()}`)
+      .expect(403);
+    await request(app.getHttpServer())
+      .get('/api/v1/admin/amenities')
+      .set('Authorization', `Bearer ${requireStaffToken()}`)
       .expect(403);
 
     for (const [index, name] of amenityNames.entries()) {
@@ -848,6 +1366,17 @@ describe('Application API (e2e)', () => {
     expect(publicListBody.data).toHaveLength(3);
 
     const deletedAmenityId = testAmenityIds[1];
+    await request(app.getHttpServer())
+      .delete(`/api/v1/admin/amenities/${deletedAmenityId}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(409);
+
+    await request(app.getHttpServer())
+      .put(`/api/v1/admin/room-types/${roomTypeId}/amenities`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ amenityIds: [testAmenityIds[0]] })
+      .expect(200);
+
     const deleteResponse = await request(app.getHttpServer())
       .delete(`/api/v1/admin/amenities/${deletedAmenityId}`)
       .set('Authorization', `Bearer ${adminToken}`)
@@ -858,6 +1387,28 @@ describe('Application API (e2e)', () => {
     await request(app.getHttpServer())
       .get(`/api/v1/amenities/${deletedAmenityId}`)
       .expect(404);
+
+    const deletedAdminResponse = await request(app.getHttpServer())
+      .get(`/api/v1/admin/amenities/${deletedAmenityId}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    const deletedAdminBody =
+      deletedAdminResponse.body as ApiResponseBody<AmenityBody>;
+
+    expect(deletedAdminBody.data.deletedAt).toEqual(expect.any(String));
+
+    const deletedListResponse = await request(app.getHttpServer())
+      .get('/api/v1/admin/amenities')
+      .query({ includeDeleted: true, search: uniqueSuffix })
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    const deletedListBody = deletedListResponse.body as ApiResponseBody<
+      AmenityBody[]
+    >;
+
+    expect(deletedListBody.data.map((amenity) => amenity.id)).toContain(
+      deletedAmenityId,
+    );
 
     const hiddenRelationResponse = await request(app.getHttpServer())
       .get(`/api/v1/room-types/${roomTypeId}`)
@@ -871,6 +1422,12 @@ describe('Application API (e2e)', () => {
     await request(app.getHttpServer())
       .patch(`/api/v1/admin/amenities/${deletedAmenityId}/restore`)
       .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+
+    await request(app.getHttpServer())
+      .put(`/api/v1/admin/room-types/${roomTypeId}/amenities`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ amenityIds: testAmenityIds.slice(0, 2) })
       .expect(200);
 
     const restoredResponse = await request(app.getHttpServer())
@@ -963,11 +1520,27 @@ describe('Application API (e2e)', () => {
 
     const listResponse = await request(app.getHttpServer())
       .get('/api/v1/rooms')
-      .query({ search: testRoomNumber })
+      .query({ search: uniqueSuffix })
       .expect(200);
     const listBody = listResponse.body as ApiResponseBody<RoomBody[]>;
 
     expect(listBody.data.map((room) => room.id)).toContain(testRoomId);
+    expect(listBody.data[0]).not.toHaveProperty('roomNumber');
+    expect(listBody.data[0]).not.toHaveProperty('status');
+    expect(listBody.data[0]).not.toHaveProperty('createdAt');
+    expect(listBody.data[0]).not.toHaveProperty('updatedAt');
+
+    const managementDetailResponse = await request(app.getHttpServer())
+      .get(`/api/v1/management/rooms/${testRoomId}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    const managementDetailBody =
+      managementDetailResponse.body as ApiResponseBody<RoomBody>;
+
+    expect(managementDetailBody.data).toMatchObject({
+      roomNumber: testRoomNumber,
+      status: 'READY',
+    });
 
     const updateResponse = await request(app.getHttpServer())
       .patch(`/api/v1/rooms/${testRoomId}`)
@@ -978,6 +1551,61 @@ describe('Application API (e2e)', () => {
 
     expect(updateBody.data.description).toBeNull();
     expect(updateBody.data.name).toBe(`Updated E2E Room ${uniqueSuffix}`);
+  });
+
+  it('prevents a stale STAFF room transition from overwriting ADMIN HIDDEN', async () => {
+    const roomId = requireTestRoomId();
+    const originalFindOneBy = roomsRepository.findOneBy.bind(roomsRepository);
+    let observedStaffRead = () => undefined;
+    const staffReadObserved = new Promise<void>((resolveRead) => {
+      observedStaffRead = resolveRead;
+    });
+    let releaseStaffRead = () => undefined;
+    const staffReadRelease = new Promise<void>((resolveRelease) => {
+      releaseStaffRead = resolveRelease;
+    });
+    const findOneBySpy = jest
+      .spyOn(roomsRepository, 'findOneBy')
+      .mockImplementationOnce(async (where) => {
+        const room = await originalFindOneBy(where);
+
+        observedStaffRead();
+        await staffReadRelease;
+        return room;
+      });
+    const pendingStaffResponse = request(app.getHttpServer())
+      .patch(`/api/v1/rooms/${roomId}/status`)
+      .set('Authorization', `Bearer ${requireStaffToken()}`)
+      .send({ status: 'CLEANING' })
+      .then((response) => response);
+
+    try {
+      await staffReadObserved;
+      await request(app.getHttpServer())
+        .patch(`/api/v1/rooms/${roomId}/status`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ status: 'HIDDEN' })
+        .expect(200);
+      releaseStaffRead();
+
+      const staffResponse = await pendingStaffResponse;
+
+      expect(staffResponse.status).toBe(409);
+    } finally {
+      releaseStaffRead();
+      findOneBySpy.mockRestore();
+    }
+
+    expect(await roomsRepository.findOneByOrFail({ id: roomId })).toMatchObject(
+      {
+        status: 'HIDDEN',
+      },
+    );
+    await request(app.getHttpServer())
+      .patch(`/api/v1/rooms/${roomId}/status`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ status: 'READY' })
+      .expect(200);
   });
 
   it('filters rooms that contain every selected active amenity', async () => {
@@ -1161,6 +1789,46 @@ describe('Application API (e2e)', () => {
     expect(searchBody.data.map((room) => room.id)).toContain(roomId);
 
     await request(app.getHttpServer())
+      .get('/api/v1/management/rooms/available')
+      .query({
+        checkIn: '2030-06-01',
+        checkOut: '2030-06-03',
+        guests: 2,
+      })
+      .expect(401);
+
+    await request(app.getHttpServer())
+      .get('/api/v1/management/rooms/available')
+      .query({
+        checkIn: '2030-06-01',
+        checkOut: '2030-06-03',
+        guests: 2,
+      })
+      .set('Authorization', `Bearer ${requireCustomerToken()}`)
+      .expect(403);
+
+    const managementAvailabilityResponse = await request(app.getHttpServer())
+      .get('/api/v1/management/rooms/available')
+      .query({
+        checkIn: '2030-06-01',
+        checkOut: '2030-06-03',
+        guests: 2,
+      })
+      .set('Authorization', `Bearer ${requireStaffToken()}`)
+      .expect(200);
+    const managementAvailabilityBody =
+      managementAvailabilityResponse.body as ApiResponseBody<RoomBody[]>;
+    const availableRoom = managementAvailabilityBody.data.find(
+      (room) => room.id === roomId,
+    );
+
+    expect(availableRoom).toMatchObject({
+      id: roomId,
+      roomNumber: testRoomNumber,
+      status: 'READY',
+    });
+
+    await request(app.getHttpServer())
       .get('/api/v1/rooms/search')
       .query({
         checkIn: '2030-06-03',
@@ -1247,6 +1915,23 @@ describe('Application API (e2e)', () => {
       .set('Authorization', `Bearer ${requireStaffToken()}`)
       .send({ status: 'CLEANING' })
       .expect(200);
+
+    const cleaningPublicResponse = await request(app.getHttpServer())
+      .get(`/api/v1/rooms/${roomId}`)
+      .expect(200);
+
+    expect(cleaningPublicResponse.body).not.toHaveProperty('data.roomNumber');
+    expect(cleaningPublicResponse.body).not.toHaveProperty('data.status');
+
+    const cleaningManagementResponse = await request(app.getHttpServer())
+      .get(`/api/v1/management/rooms/${roomId}`)
+      .set('Authorization', `Bearer ${requireStaffToken()}`)
+      .expect(200);
+
+    expect(cleaningManagementResponse.body).toHaveProperty(
+      'data.status',
+      'CLEANING',
+    );
 
     await request(app.getHttpServer())
       .patch(`/api/v1/rooms/${roomId}/status`)
@@ -1655,6 +2340,87 @@ describe('Application API (e2e)', () => {
     expect(availableAgainBody.data.map((room) => room.id)).toContain(roomId);
   });
 
+  it('atomically caps concurrent unpaid holds for one customer', async () => {
+    const quotaCustomer = await customersRepository.save(
+      customersRepository.create({
+        fullName: 'E2E Booking Quota Customer',
+        email: `e2e-booking-quota-${uniqueSuffix}@example.com`,
+        phone: `+8496${String(Date.now()).slice(-7)}`,
+        passwordHash: null,
+        status: 'ACTIVE',
+      }),
+    );
+    counterCustomerIds.push(quotaCustomer.id);
+    const quotaCustomerToken = app.get(AccessTokenService).sign({
+      actorType: 'customer',
+      customerId: quotaCustomer.id,
+      tokenVersion: quotaCustomer.tokenVersion,
+    });
+    const roomId = requireTestRoomId();
+    const bookingRanges = [
+      ['2034-04-01', '2034-04-03'],
+      ['2034-04-04', '2034-04-06'],
+      ['2034-04-07', '2034-04-09'],
+      ['2034-04-10', '2034-04-12'],
+    ];
+
+    const responses = await Promise.all(
+      bookingRanges.map(([checkInDate, checkOutDate]) =>
+        request(app.getHttpServer())
+          .post('/api/v1/bookings')
+          .set('Authorization', `Bearer ${quotaCustomerToken}`)
+          .send({
+            roomId,
+            checkInDate,
+            checkOutDate,
+            guestCount: 1,
+          }),
+      ),
+    );
+
+    expect(responses.map((response) => response.status).sort()).toEqual([
+      201, 201, 201, 409,
+    ]);
+    const successfulBookingIds = responses
+      .filter((response) => response.status === 201)
+      .map(
+        (response) => (response.body as ApiResponseBody<BookingBody>).data.id,
+      );
+
+    expect(
+      await bookingsRepository.countBy({
+        customerId: quotaCustomer.id,
+        status: BookingStatus.PENDING_PAYMENT,
+        paymentStatus: BookingPaymentStatus.UNPAID,
+      }),
+    ).toBe(3);
+
+    await request(app.getHttpServer())
+      .patch(`/api/v1/bookings/${successfulBookingIds[0]}/cancel`)
+      .set('Authorization', `Bearer ${quotaCustomerToken}`)
+      .send({ reason: 'Release one quota slot.' })
+      .expect(200);
+
+    await request(app.getHttpServer())
+      .post('/api/v1/bookings')
+      .set('Authorization', `Bearer ${quotaCustomerToken}`)
+      .send({
+        roomId,
+        checkInDate: '2034-04-13',
+        checkOutDate: '2034-04-15',
+        guestCount: 1,
+      })
+      .expect(201);
+
+    expect(
+      await bookingsRepository.countBy({
+        customerId: quotaCustomer.id,
+        status: BookingStatus.PENDING_PAYMENT,
+        paymentStatus: BookingPaymentStatus.UNPAID,
+      }),
+    ).toBe(3);
+  });
+
   it('allows staff to create and manage a counter booking', async () => {
     const roomId = requireTestRoomId();
     const checkInDate = getVietnamDate(0);
@@ -1836,6 +2602,12 @@ describe('Application API (e2e)', () => {
         status: 'OCCUPIED',
       },
     );
+    const occupiedPublicResponse = await request(app.getHttpServer())
+      .get(`/api/v1/rooms/${roomId}`)
+      .expect(200);
+
+    expect(occupiedPublicResponse.body).not.toHaveProperty('data.roomNumber');
+    expect(occupiedPublicResponse.body).not.toHaveProperty('data.status');
 
     await request(app.getHttpServer())
       .patch(`/api/v1/management/bookings/${createBody.data.id}/status`)
@@ -1859,6 +2631,12 @@ describe('Application API (e2e)', () => {
         status: 'CLEANING',
       },
     );
+    const checkoutPublicResponse = await request(app.getHttpServer())
+      .get(`/api/v1/rooms/${roomId}`)
+      .expect(200);
+
+    expect(checkoutPublicResponse.body).not.toHaveProperty('data.roomNumber');
+    expect(checkoutPublicResponse.body).not.toHaveProperty('data.status');
   });
 
   it('records an idempotent payment, protects paid cancellation, and refunds', async () => {
@@ -1947,10 +2725,36 @@ describe('Application API (e2e)', () => {
       .set('Authorization', `Bearer ${requireCustomerToken()}`)
       .expect(200);
     const customerPaymentsBody =
-      customerPaymentsResponse.body as ApiResponseBody<PaymentBody[]>;
+      customerPaymentsResponse.body as ApiResponseBody<CustomerPaymentBody[]>;
 
     expect(customerPaymentsBody.data).toHaveLength(1);
     expect(customerPaymentsBody.data[0].id).toBe(firstPaymentBody.data.id);
+    const { paidAt, createdAt, updatedAt, ...customerPayment } =
+      customerPaymentsBody.data[0];
+
+    expect(paidAt).toEqual(expect.any(String));
+    expect(createdAt).toEqual(expect.any(String));
+    expect(updatedAt).toEqual(expect.any(String));
+    expect(customerPayment).toEqual({
+      id: firstPaymentBody.data.id,
+      bookingId,
+      amount: createBody.data.totalAmount,
+      currency: 'VND',
+      method: 'BANK_TRANSFER',
+      status: 'SUCCESS',
+      gatewayReference: null,
+      refundedAt: null,
+      expiresAt: null,
+    });
+    expect(customerPaymentsBody.data[0]).not.toHaveProperty('createdByUserId');
+    expect(customerPaymentsBody.data[0]).not.toHaveProperty('createdByUser');
+    expect(customerPaymentsBody.data[0]).not.toHaveProperty(
+      'gatewayTransactionId',
+    );
+    expect(customerPaymentsBody.data[0]).not.toHaveProperty('refundRequestId');
+    expect(customerPaymentsBody.data[0]).not.toHaveProperty(
+      'refundLastQueriedAt',
+    );
 
     await request(app.getHttpServer())
       .patch(`/api/v1/bookings/${bookingId}/cancel`)
@@ -2050,9 +2854,11 @@ describe('Application API (e2e)', () => {
       currency: 'VND',
       method: 'VNPAY',
       status: 'PENDING',
-      gatewayName: 'VNPAY',
-      createdByUserId: null,
     });
+    expect(payment).not.toHaveProperty('gatewayName');
+    expect(payment).not.toHaveProperty('createdByUserId');
+    expect(payment).not.toHaveProperty('gatewayTransactionId');
+    expect(payment).not.toHaveProperty('refundRequestId');
     expect(gatewayReference).toEqual(expect.any(String));
     expect(paymentUrl.origin + paymentUrl.pathname).toBe(
       'https://sandbox.vnpayment.vn/paymentv2/vpcpay.html',
@@ -2912,65 +3718,98 @@ describe('Application API (e2e)', () => {
     expect(await roomsRepository.findOneBy({ id: roomId })).toBeNull();
   });
 
+  it('protects dashboard metrics and serves staff with real aggregates', async () => {
+    const path =
+      '/api/v1/management/dashboard/summary?from=2026-07-01&to=2026-07-31';
+
+    await request(app.getHttpServer()).get(path).expect(401);
+    await request(app.getHttpServer())
+      .get(path)
+      .set('Authorization', `Bearer ${requireCustomerToken()}`)
+      .expect(403);
+
+    const response = await request(app.getHttpServer())
+      .get(path)
+      .set('Authorization', `Bearer ${requireStaffToken()}`)
+      .expect(200);
+    const body = response.body as ApiResponseBody<{
+      fromDate: string;
+      toDate: string;
+      revenue: { total: number };
+      totalRefunded: number;
+      occupancy: { occupancyRate: number };
+    }>;
+
+    expect(body.data).toMatchObject({
+      fromDate: '2026-07-01',
+      toDate: '2026-07-31',
+      revenue: { total: expect.any(Number) as number },
+      totalRefunded: expect.any(Number) as number,
+      occupancy: { occupancyRate: expect.any(Number) as number },
+    });
+  });
+
   afterAll(async () => {
-    if (roomCalendarRepository !== undefined && testRoomId !== undefined) {
-      await roomCalendarRepository.delete({ roomId: testRoomId });
-    }
-
-    if (bookingsRepository !== undefined && testRoomId !== undefined) {
-      await dataSource.query(
-        `DELETE payment
-         FROM payments payment
-         INNER JOIN bookings booking ON booking.id = payment.booking_id
-         WHERE booking.room_id = ?`,
-        [testRoomId],
-      );
-      await bookingsRepository.delete({ roomId: testRoomId });
-    }
-
-    if (roomImagesRepository !== undefined && testRoomId !== undefined) {
-      await clearManagedRoomImages(testRoomId);
-    }
-
-    if (roomsRepository !== undefined && testRoomId !== undefined) {
-      await roomsRepository.delete(testRoomId);
-    }
-
-    if (dataSource !== undefined && testRoomNumber !== undefined) {
-      await dataSource.query('DELETE FROM rooms WHERE room_number = ?', [
-        testRoomNumber,
-      ]);
-    }
-
-    if (roomTypesRepository !== undefined && testRoomTypeId !== undefined) {
-      await roomTypesRepository.delete(testRoomTypeId);
-    }
-
-    if (amenitiesRepository !== undefined && testAmenityIds.length > 0) {
-      await amenitiesRepository.delete(testAmenityIds);
-    }
-
-    if (customersRepository !== undefined && testCustomerId !== undefined) {
-      await customersRepository.delete(testCustomerId);
-    }
-
-    if (customersRepository !== undefined) {
-      for (const customerId of counterCustomerIds) {
-        await customersRepository.delete(customerId);
+    await e2eHarness.cleanup(async () => {
+      if (roomCalendarRepository !== undefined && testRoomId !== undefined) {
+        await roomCalendarRepository.delete({ roomId: testRoomId });
       }
-    }
 
-    if (usersRepository !== undefined && testAdminId !== undefined) {
-      await usersRepository.delete(testAdminId);
-    }
+      if (bookingsRepository !== undefined && testRoomId !== undefined) {
+        await dataSource.query(
+          `DELETE payment
+           FROM payments payment
+           INNER JOIN bookings booking ON booking.id = payment.booking_id
+           WHERE booking.room_id = ?`,
+          [testRoomId],
+        );
+        await bookingsRepository.delete({ roomId: testRoomId });
+      }
 
-    if (usersRepository !== undefined && testStaffId !== undefined) {
-      await usersRepository.delete(testStaffId);
-    }
+      if (roomImagesRepository !== undefined && testRoomId !== undefined) {
+        await clearManagedRoomImages(testRoomId);
+      }
 
-    if (app !== undefined) {
-      await app.close();
-    }
+      if (roomsRepository !== undefined && testRoomId !== undefined) {
+        await roomsRepository.delete(testRoomId);
+      }
+
+      if (dataSource !== undefined && testRoomNumber !== undefined) {
+        await dataSource.query('DELETE FROM rooms WHERE room_number = ?', [
+          testRoomNumber,
+        ]);
+      }
+
+      if (roomTypesRepository !== undefined && testRoomTypeId !== undefined) {
+        await roomTypesRepository.delete(testRoomTypeId);
+      }
+
+      if (amenitiesRepository !== undefined && testAmenityIds.length > 0) {
+        await amenitiesRepository.delete(testAmenityIds);
+      }
+
+      if (customersRepository !== undefined && testCustomerId !== undefined) {
+        await customersRepository.delete(testCustomerId);
+      }
+
+      if (customersRepository !== undefined) {
+        for (const customerId of counterCustomerIds) {
+          await customersRepository.delete(customerId);
+        }
+      }
+
+      if (usersRepository !== undefined && testAdminId !== undefined) {
+        await usersRepository.delete(testAdminId);
+      }
+
+      if (usersRepository !== undefined && testStaffId !== undefined) {
+        await usersRepository.delete(testStaffId);
+      }
+
+      if (app !== undefined) {
+        await app.close();
+      }
+    });
   });
 
   async function createPaidVnPayBooking(
@@ -2979,7 +3818,7 @@ describe('Application API (e2e)', () => {
     idempotencyKey: string,
   ): Promise<{
     bookingId: string;
-    payment: PaymentBody;
+    payment: CustomerPaymentBody;
     transactionId: string;
   }> {
     const bookingResponse = await request(app.getHttpServer())
@@ -3039,7 +3878,9 @@ describe('Application API (e2e)', () => {
       .get(`/api/v1/bookings/${booking.data.id}/payments`)
       .set('Authorization', `Bearer ${requireCustomerToken()}`)
       .expect(200);
-    const listBody = listResponse.body as ApiResponseBody<PaymentBody[]>;
+    const listBody = listResponse.body as ApiResponseBody<
+      CustomerPaymentBody[]
+    >;
 
     return {
       bookingId: booking.data.id,
@@ -3088,6 +3929,21 @@ describe('Application API (e2e)', () => {
     }
 
     return customerToken;
+  }
+
+  function toPublicLoginFailure(body: unknown): ApiErrorBody {
+    const errorBody = body as ApiErrorBody;
+
+    return {
+      success: errorBody.success,
+      statusCode: errorBody.statusCode,
+      message: errorBody.message,
+      error: errorBody.error,
+    };
+  }
+
+  function toPublicRegistrationFailure(body: unknown): ApiErrorBody {
+    return toPublicLoginFailure(body);
   }
 
   function getVietnamDate(dayOffset: number): string {

@@ -36,6 +36,7 @@ export enum BookingPaymentStatus {
 @Index('idx_bookings_status', ['status'])
 @Index('idx_bookings_payment_status', ['paymentStatus'])
 @Index('idx_bookings_payment_expires_at', ['paymentExpiresAt'])
+@Index('idx_bookings_created_at_status', ['createdAt', 'status'])
 @Check('chk_bookings_date_range', 'check_in_date < check_out_date')
 @Check('chk_bookings_guest_count', 'guest_count > 0')
 @Check('chk_bookings_total_amount', 'total_amount >= 0')

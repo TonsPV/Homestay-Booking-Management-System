@@ -1,5 +1,10 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
+import {
+  AccountStatusEnum,
+  UserRoleEnum,
+} from '../../../common/domain/account.enums';
+
 export class ListUsersQueryDto {
   @ApiPropertyOptional({ default: 1, example: 1, minimum: 1, type: Number })
   page?: unknown;
@@ -17,14 +22,14 @@ export class ListUsersQueryDto {
   search?: unknown;
 
   @ApiPropertyOptional({
-    enum: ['STAFF', 'ADMIN'],
+    enum: UserRoleEnum,
     example: 'STAFF',
     type: String,
   })
   role?: unknown;
 
   @ApiPropertyOptional({
-    enum: ['ACTIVE', 'LOCKED'],
+    enum: AccountStatusEnum,
     example: 'ACTIVE',
     type: String,
   })

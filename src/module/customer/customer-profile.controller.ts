@@ -1,12 +1,5 @@
 import { Body, Controller, Get, Patch, UseGuards } from '@nestjs/common';
-import {
-  ApiBadRequestResponse,
-  ApiBearerAuth,
-  ApiOkResponse,
-  ApiOperation,
-  ApiTags,
-  ApiUnauthorizedResponse,
-} from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import {
   Actors,
@@ -16,13 +9,19 @@ import {
   CurrentAuth,
   type AccessTokenPayload,
 } from '../../common/http';
+import {
+  ApiCommonAuthErrors,
+  ApiCommonMutationErrors,
+  ApiOkEnvelope,
+} from '../../openapi/api-response.decorators';
 import { AccessTokenGuard } from '../auth/access-token.guard';
+import { AuthCustomerDto } from '../auth/dto/auth-response.dto';
 import { CustomerProfileService } from './customer-profile.service';
 import type { CustomerProfileResponse } from './customer-profile.service';
 import { CustomerCredentialService } from './customer-credential.service';
 import type { CustomerCredentialResult } from './customer-credential.service';
 import { ChangeCustomerPasswordDto } from './dto/change-customer-password.dto';
-import { CustomerCredentialEnvelopeDto } from './dto/customer-credential-response.dto';
+import { CustomerCredentialResultDto } from './dto/customer-credential-response.dto';
 import { UpdateCustomerProfileDto } from './dto/update-customer-profile.dto';
 
 @Controller('v1/customers')
@@ -30,6 +29,7 @@ import { UpdateCustomerProfileDto } from './dto/update-customer-profile.dto';
 @Actors('customer')
 @ApiTags('Customer Profile')
 @ApiBearerAuth()
+@ApiCommonAuthErrors()
 export class CustomerProfileController {
   constructor(
     private readonly customerProfileService: CustomerProfileService,
@@ -37,6 +37,7 @@ export class CustomerProfileController {
   ) {}
 
   @Get('me')
+  @ApiOkEnvelope(AuthCustomerDto)
   me(
     @CurrentAuth() auth: AccessTokenPayload,
   ): Promise<ApiResponsePayload<CustomerProfileResponse>> {
@@ -48,6 +49,8 @@ export class CustomerProfileController {
   }
 
   @Patch('me')
+  @ApiOkEnvelope(AuthCustomerDto)
+  @ApiCommonMutationErrors()
   updateMe(
     @CurrentAuth() auth: AccessTokenPayload,
     @Body() body: UpdateCustomerProfileDto,
@@ -63,11 +66,8 @@ export class CustomerProfileController {
   @ApiOperation({
     summary: 'Change the authenticated Customer password and revoke old tokens',
   })
-  @ApiOkResponse({ type: CustomerCredentialEnvelopeDto })
-  @ApiBadRequestResponse({
-    description: 'Current password or new password is invalid.',
-  })
-  @ApiUnauthorizedResponse({ description: 'Customer token is invalid.' })
+  @ApiOkEnvelope(CustomerCredentialResultDto)
+  @ApiCommonMutationErrors()
   changePassword(
     @CurrentAuth() auth: AccessTokenPayload,
     @Body() body: ChangeCustomerPasswordDto,

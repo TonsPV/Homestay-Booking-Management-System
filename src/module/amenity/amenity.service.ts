@@ -1,6 +1,6 @@
 import {
   BadRequestException,
-  ConflictException,
+  HttpStatus,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -8,7 +8,11 @@ import { InjectRepository } from '@nestjs/typeorm';
 import type { Repository } from 'typeorm';
 
 import { getMysqlDuplicateKey } from '../../common/database';
-import type { PaginationMeta } from '../../common/http';
+import {
+  AppHttpException,
+  ErrorCode,
+  type PaginationMeta,
+} from '../../common/http';
 import {
   optionalNullableTrimmedString,
   optionalSearch,
@@ -149,6 +153,14 @@ export class AmenityService {
   async softDelete(id: string): Promise<AdminAmenityResponse> {
     const amenity = await this.getActiveAmenity(id);
 
+    if (await this.isAssignedToRoomType(amenity.id)) {
+      throw new AppHttpException(
+        HttpStatus.CONFLICT,
+        ErrorCode.AMENITY_IN_USE,
+        'Khong the xoa tien nghi dang duoc loai phong su dung.',
+      );
+    }
+
     return this.toAdminResponse(
       await this.amenitiesRepository.softRemove(amenity),
     );
@@ -257,10 +269,20 @@ export class AmenityService {
     }
 
     if ((await query.getOne()) !== null) {
-      throw new ConflictException(
+      throw new AppHttpException(
+        HttpStatus.CONFLICT,
+        ErrorCode.AMENITY_NAME_ALREADY_EXISTS,
         'Ten tien nghi da ton tai, ke ca trong du lieu da xoa.',
       );
     }
+  }
+
+  private async isAssignedToRoomType(id: string): Promise<boolean> {
+    return this.amenitiesRepository
+      .createQueryBuilder('amenity')
+      .innerJoin('amenity.roomTypes', 'roomType')
+      .where('amenity.id = :id', { id })
+      .getExists();
   }
 
   private throwDuplicateConflict(error: unknown): never {
@@ -268,7 +290,9 @@ export class AmenityService {
       throw error;
     }
 
-    throw new ConflictException(
+    throw new AppHttpException(
+      HttpStatus.CONFLICT,
+      ErrorCode.AMENITY_NAME_ALREADY_EXISTS,
       'Ten tien nghi da ton tai, ke ca trong du lieu da xoa.',
     );
   }

@@ -1,5 +1,7 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
+import { AccountStatusEnum } from '../../../common/domain/account.enums';
+
 export class ListCustomersQueryDto {
   @ApiPropertyOptional({ default: 1, example: 1, minimum: 1, type: Number })
   page?: unknown;
@@ -17,7 +19,7 @@ export class ListCustomersQueryDto {
   search?: unknown;
 
   @ApiPropertyOptional({
-    enum: ['ACTIVE', 'LOCKED'],
+    enum: AccountStatusEnum,
     example: 'ACTIVE',
     type: String,
   })

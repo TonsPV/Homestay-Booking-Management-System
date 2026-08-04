@@ -2,7 +2,9 @@ import { Controller, Get, Param, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 
 import { ApiResponse, type ApiResponsePayload } from '../../common/http';
+import { ApiOkEnvelope } from '../../openapi/api-response.decorators';
 import { AmenityService, type AmenityResponse } from './amenity.service';
+import { AmenityDto } from './dto/amenity-response.dto';
 import { ListAmenitiesQueryDto } from './dto/list-amenities-query.dto';
 
 @Controller('v1/amenities')
@@ -11,6 +13,7 @@ export class AmenityController {
   constructor(private readonly amenityService: AmenityService) {}
 
   @Get()
+  @ApiOkEnvelope(AmenityDto, { isArray: true, paginated: true })
   list(
     @Query() query: ListAmenitiesQueryDto,
   ): Promise<ApiResponsePayload<AmenityResponse[]>> {
@@ -26,6 +29,7 @@ export class AmenityController {
   }
 
   @Get(':id')
+  @ApiOkEnvelope(AmenityDto)
   getById(
     @Param('id') id: string,
   ): Promise<ApiResponsePayload<AmenityResponse>> {

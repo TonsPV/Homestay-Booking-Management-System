@@ -8,6 +8,7 @@ import type { AccessTokenPayload, AccessTokenSubject } from '../../common/http';
 export class AccessTokenService {
   private readonly algorithm = 'HS256';
   private readonly tokenType = 'JWT';
+  private readonly maxClockSkewSeconds = 60;
 
   constructor(private readonly configService: ConfigService) {}
 
@@ -77,6 +78,13 @@ export class AccessTokenService {
     const payload = this.decodeJson(encodedPayload);
     const accessTokenPayload = this.toAccessTokenPayload(payload);
     const now = Math.floor(Date.now() / 1000);
+
+    if (
+      accessTokenPayload.iat > now + this.maxClockSkewSeconds ||
+      accessTokenPayload.exp <= accessTokenPayload.iat
+    ) {
+      throw new UnauthorizedException('Invalid access token.');
+    }
 
     if (accessTokenPayload.exp <= now) {
       throw new UnauthorizedException('Access token has expired.');
@@ -165,6 +173,10 @@ export class AccessTokenService {
       const customerId = this.readString(payload, 'customer_id');
       const tokenVersion = this.readTokenVersion(payload, 'token_version');
 
+      if (sub !== `customer:${customerId}`) {
+        throw new UnauthorizedException('Invalid access token.');
+      }
+
       return {
         sub,
         actor_type: actorType,
@@ -178,6 +190,10 @@ export class AccessTokenService {
     const userId = this.readString(payload, 'user_id');
     const role = this.readOptionalRole(payload, 'role');
     const tokenVersion = this.readTokenVersion(payload, 'token_version');
+
+    if (sub !== `user:${userId}`) {
+      throw new UnauthorizedException('Invalid access token.');
+    }
 
     return {
       sub,

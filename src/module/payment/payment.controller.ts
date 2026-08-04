@@ -21,23 +21,36 @@ import {
   ReqContext,
   type RequestContext,
 } from '../../common/http';
+import {
+  ApiCommonAuthErrors,
+  ApiCommonMutationErrors,
+  ApiCreatedEnvelope,
+  ApiOkEnvelope,
+} from '../../openapi/api-response.decorators';
 import { AccessTokenGuard } from '../auth/access-token.guard';
 import { CreateVnpayPaymentDto } from './dto/create-vnpay-payment.dto';
 import { ListPaymentsQueryDto } from './dto/list-payments-query.dto';
 import {
+  CustomerPaymentDto,
+  OnlinePaymentDto,
+} from './dto/payment-response.dto';
+import {
+  type CustomerPaymentResponse,
   type OnlinePaymentResponse,
   PaymentService,
-  type PaymentResponse,
 } from './payment.service';
 
 @Controller('v1/bookings/:bookingId/payments')
 @UseGuards(AccessTokenGuard, ActorsGuard)
 @Actors('customer')
+@ApiCommonAuthErrors()
 export class PaymentController {
   constructor(private readonly paymentService: PaymentService) {}
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
+  @ApiCreatedEnvelope(OnlinePaymentDto)
+  @ApiCommonMutationErrors()
   createVnPayPayment(
     @CurrentAuth() auth: AccessTokenPayload,
     @Param('bookingId') bookingId: string,
@@ -59,11 +72,12 @@ export class PaymentController {
   }
 
   @Get()
+  @ApiOkEnvelope(CustomerPaymentDto, { isArray: true, paginated: true })
   list(
     @CurrentAuth() auth: AccessTokenPayload,
     @Param('bookingId') bookingId: string,
     @Query() query: ListPaymentsQueryDto,
-  ): Promise<ApiResponsePayload<PaymentResponse[]>> {
+  ): Promise<ApiResponsePayload<CustomerPaymentResponse[]>> {
     return this.paymentService
       .listForCustomer(auth.customer_id, bookingId, query)
       .then((result) =>

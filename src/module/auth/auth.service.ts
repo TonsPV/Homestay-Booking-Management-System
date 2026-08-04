@@ -1,8 +1,8 @@
 import {
   BadRequestException,
   ConflictException,
-  ForbiddenException,
   Injectable,
+  Logger,
   UnauthorizedException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -23,9 +23,20 @@ import {
 import { AccessTokenService } from './access-token.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterCustomerDto } from './dto/register-customer.dto';
-import { Customer } from '../customer/schema/customer.entity';
-import { User } from '../user/schema/user.entity';
+import {
+  Customer,
+  type CustomerStatus,
+} from '../customer/schema/customer.entity';
+import {
+  User,
+  type UserRole,
+  type UserStatus,
+} from '../user/schema/user.entity';
 import { PasswordHasherService } from './password-hasher.service';
+import {
+  LocalCustomerClaimResult,
+  LocalCustomerClaimService,
+} from './local-customer-claim.service';
 
 interface NormalizedRegisterCustomerInput {
   fullName: string;
@@ -44,7 +55,7 @@ export interface CustomerResponse {
   fullName: string;
   email: string | null;
   phone: string;
-  status: string;
+  status: CustomerStatus;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -54,8 +65,8 @@ export interface UserResponse {
   fullName: string;
   email: string;
   phone: string | null;
-  role: string;
-  status: string;
+  role: UserRole;
+  status: UserStatus;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -67,6 +78,10 @@ export interface LoginResponse {
   actorType: 'customer' | 'user';
   customer?: CustomerResponse;
   user?: UserResponse;
+}
+
+export interface RegistrationAcceptedResponse {
+  accepted: true;
 }
 
 export type MeResponse =
@@ -81,6 +96,8 @@ export type MeResponse =
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     @InjectRepository(Customer)
     private readonly customersRepository: Repository<Customer>,
@@ -88,33 +105,35 @@ export class AuthService {
     private readonly usersRepository: Repository<User>,
     private readonly passwordHasherService: PasswordHasherService,
     private readonly accessTokenService: AccessTokenService,
+    private readonly localCustomerClaimService: LocalCustomerClaimService,
   ) {}
 
-  async registerCustomer(body: RegisterCustomerDto): Promise<CustomerResponse> {
+  async registerCustomer(
+    body: RegisterCustomerDto,
+  ): Promise<RegistrationAcceptedResponse> {
     const input = this.normalizeRegisterCustomerInput(body);
+    const [passwordHash, existingEmail, existingPhone] = await Promise.all([
+      this.passwordHasherService.hash(input.password),
+      this.customersRepository.findOneBy({
+        email: input.email ?? '__registration_without_email__',
+      }),
+      this.customersRepository
+        .createQueryBuilder('customer')
+        .where('customer.phone IN (:...phones)', {
+          phones: getVietnamesePhoneLookupVariants(input.phone),
+        })
+        .getOne(),
+    ]);
 
-    if (input.email !== null) {
-      const existingEmail = await this.customersRepository.findOneBy({
-        email: input.email,
-      });
-
-      if (existingEmail !== null) {
-        throw new ConflictException('Email da duoc su dung.');
+    if (existingEmail !== null || existingPhone !== null) {
+      if (await this.tryLocalPasswordlessClaim(input, passwordHash)) {
+        return { accepted: true };
       }
+
+      this.logRegistrationDuplicate(existingEmail, existingPhone);
+      throw this.registrationConflictException();
     }
 
-    const existingPhone = await this.customersRepository
-      .createQueryBuilder('customer')
-      .where('customer.phone IN (:...phones)', {
-        phones: getVietnamesePhoneLookupVariants(input.phone),
-      })
-      .getOne();
-
-    if (existingPhone !== null) {
-      throw new ConflictException('So dien thoai da duoc su dung.');
-    }
-
-    const passwordHash = await this.passwordHasherService.hash(input.password);
     const customer = this.customersRepository.create({
       fullName: input.fullName,
       email: input.email,
@@ -122,15 +141,27 @@ export class AuthService {
       passwordHash,
       status: 'ACTIVE',
     });
-    let savedCustomer: Customer;
-
     try {
-      savedCustomer = await this.customersRepository.save(customer);
+      await this.customersRepository.save(customer);
     } catch (error) {
-      this.throwCustomerDuplicateConflict(error);
+      const duplicateKey = getMysqlDuplicateKey(error);
+
+      if (duplicateKey === undefined) {
+        throw error;
+      }
+
+      this.logger.warn(
+        `Customer registration rejected. reason=${this.getDuplicateReason(duplicateKey)}`,
+      );
+
+      if (await this.tryLocalPasswordlessClaim(input, passwordHash)) {
+        return { accepted: true };
+      }
+
+      throw this.registrationConflictException();
     }
 
-    return this.toCustomerResponse(savedCustomer);
+    return { accepted: true };
   }
 
   async loginCustomer(body: LoginDto): Promise<LoginResponse> {
@@ -138,27 +169,22 @@ export class AuthService {
     const identifier = this.normalizeIdentifier(input.identifier);
     const customer = await this.findCustomerForLogin(identifier);
 
-    if (customer === null) {
-      throw new UnauthorizedException('Thong tin dang nhap khong dung.');
-    }
-
-    if (customer.status === 'LOCKED') {
-      throw new ForbiddenException('Tai khoan bi khoa.');
-    }
-
-    if (customer.passwordHash === null) {
-      throw new ForbiddenException(
-        'Khach chua co mat khau. Vui long tao mat khau hoac lien he ho tro.',
-      );
-    }
-
-    const passwordMatches = await this.passwordHasherService.verify(
+    const passwordMatches = await this.passwordHasherService.verifyOrDummy(
       input.password,
-      customer.passwordHash,
+      customer?.passwordHash ?? null,
     );
 
-    if (!passwordMatches) {
-      throw new UnauthorizedException('Thong tin dang nhap khong dung.');
+    if (
+      customer === null ||
+      customer.status !== 'ACTIVE' ||
+      customer.passwordHash === null ||
+      !passwordMatches
+    ) {
+      this.logAuthenticationFailure(
+        'customer',
+        this.getCustomerLoginFailureReason(customer, passwordMatches),
+      );
+      throw this.invalidLoginException();
     }
 
     return {
@@ -179,21 +205,17 @@ export class AuthService {
     const identifier = this.normalizeIdentifier(input.identifier);
     const user = await this.findUserForLogin(identifier);
 
-    if (user === null) {
-      throw new UnauthorizedException('Thong tin dang nhap khong dung.');
-    }
-
-    if (user.status === 'LOCKED') {
-      throw new ForbiddenException('Tai khoan bi khoa.');
-    }
-
-    const passwordMatches = await this.passwordHasherService.verify(
+    const passwordMatches = await this.passwordHasherService.verifyOrDummy(
       input.password,
-      user.passwordHash,
+      user?.passwordHash ?? null,
     );
 
-    if (!passwordMatches) {
-      throw new UnauthorizedException('Thong tin dang nhap khong dung.');
+    if (user === null || user.status !== 'ACTIVE' || !passwordMatches) {
+      this.logAuthenticationFailure(
+        'user',
+        this.getUserLoginFailureReason(user, passwordMatches),
+      );
+      throw this.invalidLoginException();
     }
 
     return {
@@ -348,22 +370,104 @@ export class AuthService {
     return normalizePhone(identifier) ?? identifier;
   }
 
-  private throwCustomerDuplicateConflict(error: unknown): never {
-    const duplicateKey = getMysqlDuplicateKey(error);
+  private logAuthenticationFailure(
+    actorType: 'customer' | 'user',
+    reason: string,
+  ): void {
+    this.logger.warn(
+      `Authentication rejected. actorType=${actorType} reason=${reason}`,
+    );
+  }
 
-    if (duplicateKey === undefined) {
-      throw error;
+  private getCustomerLoginFailureReason(
+    customer: Customer | null,
+    passwordMatches: boolean,
+  ): string {
+    if (customer === null) {
+      return 'account_not_found';
     }
 
+    if (customer.status !== 'ACTIVE') {
+      return 'account_not_active';
+    }
+
+    if (customer.passwordHash === null) {
+      return 'password_not_configured';
+    }
+
+    return passwordMatches ? 'unknown' : 'password_mismatch';
+  }
+
+  private getUserLoginFailureReason(
+    user: User | null,
+    passwordMatches: boolean,
+  ): string {
+    if (user === null) {
+      return 'account_not_found';
+    }
+
+    if (user.status !== 'ACTIVE') {
+      return 'account_not_active';
+    }
+
+    return passwordMatches ? 'unknown' : 'password_mismatch';
+  }
+
+  private invalidLoginException(): UnauthorizedException {
+    return new UnauthorizedException('Thong tin dang nhap khong hop le.');
+  }
+
+  private registrationConflictException(): ConflictException {
+    return new ConflictException(
+      'Khong the dang ky bang email hoac so dien thoai nay.',
+    );
+  }
+
+  private async tryLocalPasswordlessClaim(
+    input: NormalizedRegisterCustomerInput,
+    passwordHash: string,
+  ): Promise<boolean> {
+    const result =
+      await this.localCustomerClaimService.claimPasswordlessCustomer({
+        phone: input.phone,
+        email: input.email,
+        passwordHash,
+      });
+
+    if (result !== LocalCustomerClaimResult.CLAIMED) {
+      return false;
+    }
+
+    this.logger.warn(
+      'Passwordless Customer claimed through development/test bypass.',
+    );
+    return true;
+  }
+
+  private logRegistrationDuplicate(
+    existingEmail: Customer | null,
+    existingPhone: Customer | null,
+  ): void {
+    const reason =
+      existingEmail !== null && existingPhone !== null
+        ? 'duplicate_email_and_phone'
+        : existingEmail !== null
+          ? 'duplicate_email'
+          : 'duplicate_phone';
+
+    this.logger.warn(`Customer registration rejected. reason=${reason}`);
+  }
+
+  private getDuplicateReason(duplicateKey: string): string {
     if (duplicateKey.includes('email')) {
-      throw new ConflictException('Email da duoc su dung.');
+      return 'duplicate_email_race';
     }
 
     if (duplicateKey.includes('phone')) {
-      throw new ConflictException('So dien thoai da duoc su dung.');
+      return 'duplicate_phone_race';
     }
 
-    throw new ConflictException('Thong tin customer da ton tai.');
+    return 'duplicate_identifier_race';
   }
 
   private toCustomerResponse(customer: Customer): CustomerResponse {

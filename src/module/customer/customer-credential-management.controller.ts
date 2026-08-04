@@ -1,15 +1,5 @@
 import { Body, Controller, Param, Patch, UseGuards } from '@nestjs/common';
-import {
-  ApiBadRequestResponse,
-  ApiBearerAuth,
-  ApiConflictResponse,
-  ApiForbiddenResponse,
-  ApiNotFoundResponse,
-  ApiOkResponse,
-  ApiOperation,
-  ApiTags,
-  ApiUnauthorizedResponse,
-} from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import {
   ApiResponse,
@@ -17,12 +7,17 @@ import {
   Roles,
   RolesGuard,
 } from '../../common/http';
+import {
+  ApiCommonAuthErrors,
+  ApiCommonMutationErrors,
+  ApiOkEnvelope,
+} from '../../openapi/api-response.decorators';
 import { AccessTokenGuard } from '../auth/access-token.guard';
 import {
   CustomerCredentialService,
   type CustomerCredentialResult,
 } from './customer-credential.service';
-import { CustomerCredentialEnvelopeDto } from './dto/customer-credential-response.dto';
+import { CustomerCredentialResultDto } from './dto/customer-credential-response.dto';
 import { SetInitialCustomerPasswordDto } from './dto/set-initial-customer-password.dto';
 
 @Controller('v1/management/customers')
@@ -30,8 +25,7 @@ import { SetInitialCustomerPasswordDto } from './dto/set-initial-customer-passwo
 @Roles('ADMIN', 'STAFF')
 @ApiTags('Management Customers')
 @ApiBearerAuth()
-@ApiUnauthorizedResponse({ description: 'Authentication is required.' })
-@ApiForbiddenResponse({ description: 'ADMIN or STAFF role is required.' })
+@ApiCommonAuthErrors()
 export class CustomerCredentialManagementController {
   constructor(
     private readonly customerCredentialService: CustomerCredentialService,
@@ -39,12 +33,10 @@ export class CustomerCredentialManagementController {
 
   @Patch(':id/initial-password')
   @ApiOperation({
-    summary: 'Set the first password for a counter-created Customer',
+    summary: 'Set the first password for an eligible Customer',
   })
-  @ApiOkResponse({ type: CustomerCredentialEnvelopeDto })
-  @ApiBadRequestResponse({ description: 'Customer id or password is invalid.' })
-  @ApiNotFoundResponse({ description: 'Customer does not exist.' })
-  @ApiConflictResponse({ description: 'Customer already has a password.' })
+  @ApiOkEnvelope(CustomerCredentialResultDto)
+  @ApiCommonMutationErrors()
   setInitialPassword(
     @Param('id') id: string,
     @Body() body: SetInitialCustomerPasswordDto,

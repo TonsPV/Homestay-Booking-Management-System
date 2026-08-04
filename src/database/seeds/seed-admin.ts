@@ -22,6 +22,10 @@ interface SeedAdminInput {
 }
 
 async function main(): Promise<void> {
+  assertSeedAdminEnvironment(
+    process.env.NODE_ENV,
+    process.argv.includes('--allow-production'),
+  );
   const input = getSeedAdminInput();
   const dataSource = new DataSource({
     type: 'mysql',
@@ -75,6 +79,20 @@ async function main(): Promise<void> {
   }
 }
 
+export function assertSeedAdminEnvironment(
+  nodeEnvironment: string | undefined,
+  allowProduction: boolean,
+): void {
+  if (
+    nodeEnvironment?.trim().toLowerCase() === 'production' &&
+    !allowProduction
+  ) {
+    throw new Error(
+      'Refusing to seed an admin in production without --allow-production.',
+    );
+  }
+}
+
 function getSeedAdminInput(): SeedAdminInput {
   return {
     fullName: requireTrimmedString(
@@ -108,10 +126,12 @@ function getRequiredNumberEnv(key: string): number {
   return value;
 }
 
-void main().catch((error: unknown) => {
-  const message =
-    error instanceof Error ? error.message : 'Unknown seed error.';
+if (require.main === module) {
+  void main().catch((error: unknown) => {
+    const message =
+      error instanceof Error ? error.message : 'Unknown seed error.';
 
-  console.error(`Seed admin failed: ${message}`);
-  process.exitCode = 1;
-});
+    console.error(`Seed admin failed: ${message}`);
+    process.exitCode = 1;
+  });
+}

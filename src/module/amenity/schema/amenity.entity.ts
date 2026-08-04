@@ -9,7 +9,7 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 
-import { RoomType } from '../../room-type/schema/room-type.entity';
+import type { RoomType } from '../../room-type/schema/room-type.entity';
 
 @Entity('amenities')
 @Index('uq_amenities_name', ['name'], { unique: true })
@@ -23,7 +23,7 @@ export class Amenity {
   @Column({ type: 'varchar', length: 500, nullable: true })
   description: string | null;
 
-  @ManyToMany(() => RoomType, (roomType) => roomType.amenities)
+  @ManyToMany('RoomType', (roomType: RoomType) => roomType.amenities)
   roomTypes: RoomType[];
 
   @CreateDateColumn({ name: 'created_at', type: 'datetime' })

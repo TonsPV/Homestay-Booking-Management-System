@@ -1,7 +1,7 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class RefundPaymentDto {
-  @ApiProperty({
+  @ApiPropertyOptional({
     example: 'Customer requested a refund.',
     maxLength: 500,
     type: String,
