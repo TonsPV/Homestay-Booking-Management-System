@@ -1,4 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
+import { Allow } from 'class-validator';
 
 export class UpdateAmenityDto {
   @ApiPropertyOptional({
@@ -6,6 +7,7 @@ export class UpdateAmenityDto {
     maxLength: 120,
     type: String,
   })
+  @Allow()
   name?: unknown;
 
   @ApiPropertyOptional({
@@ -14,5 +16,6 @@ export class UpdateAmenityDto {
     nullable: true,
     type: String,
   })
+  @Allow()
   description?: unknown;
 }

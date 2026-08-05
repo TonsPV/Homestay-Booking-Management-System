@@ -1,9 +1,11 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
+import { Allow } from 'class-validator';
 
 import { PaymentMethod, PaymentStatus } from '../schema/payment.entity';
 
 export class ListPaymentsQueryDto {
   @ApiPropertyOptional({ default: 1, example: 1, minimum: 1, type: Number })
+  @Allow()
   page?: unknown;
 
   @ApiPropertyOptional({
@@ -13,6 +15,7 @@ export class ListPaymentsQueryDto {
     minimum: 1,
     type: Number,
   })
+  @Allow()
   limit?: unknown;
 
   @ApiPropertyOptional({
@@ -20,6 +23,7 @@ export class ListPaymentsQueryDto {
     example: PaymentStatus.SUCCESS,
     type: String,
   })
+  @Allow()
   status?: unknown;
 
   @ApiPropertyOptional({
@@ -27,5 +31,6 @@ export class ListPaymentsQueryDto {
     example: PaymentMethod.VNPAY,
     type: String,
   })
+  @Allow()
   method?: unknown;
 }

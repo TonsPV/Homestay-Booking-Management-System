@@ -32,7 +32,7 @@ describe('Common HTTP workflow (e2e)', () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
-    app = moduleFixture.createNestApplication();
+    app = moduleFixture.createNestApplication({ bodyParser: false });
     configureApp(app);
     await app.init();
     customers = app.get(DataSource).getRepository(Customer);
@@ -99,9 +99,9 @@ describe('Common HTTP workflow (e2e)', () => {
     });
   });
 
-  it('characterizes the current unknown-field policy at a DTO boundary', async () => {
+  it('rejects unknown fields at the global DTO validation boundary', async () => {
     const email = `common-http-${suffix}@example.com`;
-    const response = await request(app.getHttpServer())
+    await request(app.getHttpServer())
       .post('/api/v1/auth/customers/register')
       .send({
         fullName: 'Common HTTP Customer',
@@ -110,17 +110,37 @@ describe('Common HTTP workflow (e2e)', () => {
         password: 'StrongPassword123!',
         unexpectedField: 'ignored-by-current-boundary',
       })
+      .expect(400);
+
+    const validEmail = `common-http-valid-${suffix}@example.com`;
+    const valid = await request(app.getHttpServer())
+      .post('/api/v1/auth/customers/register')
+      .send({
+        fullName: 'Common HTTP Customer',
+        email: validEmail,
+        phone: '090' + String(Date.now() + 1).slice(-7),
+        password: 'StrongPassword123!',
+      })
       .expect(201);
 
-    expect(response.body).toMatchObject({
+    expect(valid.body).toMatchObject({
       success: true,
       statusCode: 201,
       data: { accepted: true },
     });
-    const customer = await customers.findOneByOrFail({ email });
+    const customer = await customers.findOneByOrFail({ email: validEmail });
     customerIds.push(customer.id);
-    // Current controllers/services ignore unknown JSON keys; no unexpected
-    // field is persisted. Whether to reject them globally is a policy decision.
-    expect(customer).not.toHaveProperty('unexpectedField');
+  });
+
+  it('rejects JSON bodies over the configured parser limit', async () => {
+    const response = await request(app.getHttpServer())
+      .post('/api/v1/auth/customers/register')
+      .send({
+        fullName: 'x'.repeat(1_100_000),
+        phone: '0901234567',
+        password: 'StrongPassword123!',
+      });
+
+    expect(response.status).toBe(413);
   });
 });

@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Allow } from 'class-validator';
 
 import { BookingStatus } from '../schema/booking.entity';
 
@@ -8,6 +9,7 @@ export class UpdateBookingStatusDto {
     example: BookingStatus.CONFIRMED,
     type: String,
   })
+  @Allow()
   status!: unknown;
 
   @ApiPropertyOptional({
@@ -17,5 +19,6 @@ export class UpdateBookingStatusDto {
     maxLength: 500,
     type: String,
   })
+  @Allow()
   cancellationReason?: unknown;
 }

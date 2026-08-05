@@ -1,7 +1,9 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
+import { Allow } from 'class-validator';
 
 export class ListAmenitiesQueryDto {
   @ApiPropertyOptional({ default: 1, example: 1, minimum: 1, type: Number })
+  @Allow()
   page?: unknown;
 
   @ApiPropertyOptional({
@@ -11,13 +13,16 @@ export class ListAmenitiesQueryDto {
     minimum: 1,
     type: Number,
   })
+  @Allow()
   limit?: unknown;
 
   @ApiPropertyOptional({ example: 'wifi', type: String })
+  @Allow()
   search?: unknown;
 }
 
 export class AdminListAmenitiesQueryDto extends ListAmenitiesQueryDto {
   @ApiPropertyOptional({ default: false, example: true, type: Boolean })
+  @Allow()
   includeDeleted?: unknown;
 }

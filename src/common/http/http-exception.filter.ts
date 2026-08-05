@@ -30,12 +30,9 @@ export class HttpExceptionFilter implements ExceptionFilter {
     const http = host.switchToHttp();
     const request = http.getRequest<AppRequest>();
     const response = http.getResponse<Response>();
-    const statusCode =
-      exception instanceof HttpException
-        ? exception.getStatus()
-        : HttpStatus.INTERNAL_SERVER_ERROR;
+    const statusCode = this.getStatusCode(exception);
 
-    if (!(exception instanceof HttpException)) {
+    if (!(exception instanceof HttpException) && statusCode >= 500) {
       this.logUnexpectedException(exception, request);
     }
 
@@ -76,6 +73,10 @@ export class HttpExceptionFilter implements ExceptionFilter {
 
   private getMessage(exception: unknown): string | string[] {
     if (!(exception instanceof HttpException)) {
+      if (this.getStatusCode(exception) === 413) {
+        return 'Request body too large.';
+      }
+
       return 'Internal server error.';
     }
 
@@ -102,7 +103,9 @@ export class HttpExceptionFilter implements ExceptionFilter {
 
   private getError(exception: unknown, statusCode: number): string {
     if (!(exception instanceof HttpException)) {
-      return 'Internal Server Error';
+      return statusCode === 500
+        ? 'Internal Server Error'
+        : (HttpStatus[statusCode] ?? 'Internal Server Error');
     }
 
     const response = exception.getResponse();
@@ -134,6 +137,38 @@ export class HttpExceptionFilter implements ExceptionFilter {
     }
 
     return getFallbackErrorCode(statusCode);
+  }
+
+  private getStatusCode(exception: unknown): number {
+    if (exception instanceof HttpException) {
+      return exception.getStatus();
+    }
+
+    if (exception === null || typeof exception !== 'object') {
+      return HttpStatus.INTERNAL_SERVER_ERROR;
+    }
+
+    if (
+      'statusCode' in exception &&
+      typeof exception.statusCode === 'number' &&
+      Number.isInteger(exception.statusCode) &&
+      exception.statusCode >= 400 &&
+      exception.statusCode <= 599
+    ) {
+      return exception.statusCode;
+    }
+
+    if ('code' in exception && typeof exception.code === 'string') {
+      if (exception.code === 'LIMIT_FILE_SIZE') {
+        return HttpStatus.PAYLOAD_TOO_LARGE;
+      }
+
+      if (exception.code.startsWith('LIMIT_')) {
+        return HttpStatus.BAD_REQUEST;
+      }
+    }
+
+    return HttpStatus.INTERNAL_SERVER_ERROR;
   }
 
   private getFieldErrors(exception: unknown): ApiFieldErrors | undefined {

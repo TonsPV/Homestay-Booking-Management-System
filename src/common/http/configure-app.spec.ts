@@ -42,6 +42,26 @@ describe('configureApp', () => {
     });
   });
 
+  it('fails closed when production is bootstrapped without a CORS allowlist', () => {
+    const configService = {
+      get: jest.fn().mockImplementation((key: string) => {
+        if (key === 'NODE_ENV') {
+          return 'production';
+        }
+
+        if (key === 'CORS_ORIGINS') {
+          return [];
+        }
+
+        return undefined;
+      }),
+    };
+
+    expect(() => configureApp(createApp(configService).value)).toThrow(
+      'CORS_ORIGINS must be configured in production.',
+    );
+  });
+
   it('serves optimized room images with immutable cache settings', () => {
     const configService = {
       get: jest.fn().mockImplementation((key: string) => {
@@ -67,6 +87,13 @@ describe('configureApp', () => {
         prefix: '/media/room-images/',
       }),
     );
+    expect(app.useBodyParser).toHaveBeenCalledWith('json', {
+      limit: '1mb',
+    });
+    expect(app.useBodyParser).toHaveBeenCalledWith('urlencoded', {
+      extended: true,
+      limit: '1mb',
+    });
   });
 
   it('propagates a bounded request id to the response', () => {
@@ -156,10 +183,12 @@ function createApp(configService: { get: jest.Mock }): {
   value: INestApplication;
   enableCors: jest.Mock;
   useStaticAssets: jest.Mock;
+  useBodyParser: jest.Mock;
   use: jest.Mock;
 } {
   const enableCors = jest.fn();
   const useStaticAssets = jest.fn();
+  const useBodyParser = jest.fn();
   const use = jest.fn();
   const value = {
     get: jest.fn((token: unknown) => {
@@ -172,11 +201,13 @@ function createApp(configService: { get: jest.Mock }): {
     setGlobalPrefix: jest.fn(),
     enableCors,
     useStaticAssets,
+    useBodyParser,
     use,
+    useGlobalPipes: jest.fn(),
     useGlobalInterceptors: jest.fn(),
     useGlobalFilters: jest.fn(),
     enableShutdownHooks: jest.fn(),
   } as unknown as INestApplication;
 
-  return { value, enableCors, useStaticAssets, use };
+  return { value, enableCors, useStaticAssets, useBodyParser, use };
 }

@@ -1,4 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { Allow } from 'class-validator';
 
 import { RoomStatus } from '../schema/room.entity';
 
@@ -8,5 +9,6 @@ export class UpdateRoomStatusDto {
     example: RoomStatus.MAINTENANCE,
     type: String,
   })
+  @Allow()
   status?: unknown;
 }

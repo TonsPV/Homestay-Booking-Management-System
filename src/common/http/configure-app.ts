@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import type { INestApplication } from '@nestjs/common';
+import { ValidationPipe, type INestApplication } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import helmet from 'helmet';
@@ -19,7 +19,13 @@ const REQUEST_ID_PATTERN = /^[A-Za-z0-9._:-]{1,200}$/;
 export function configureApp(app: INestApplication): void {
   const configService = app.get(ConfigService);
   const corsOrigins = configService.get<string[]>('CORS_ORIGINS') ?? [];
+  const nodeEnvironment =
+    configService.get<string>('NODE_ENV')?.toLowerCase() ?? 'development';
   const expressApp = app as NestExpressApplication;
+
+  if (nodeEnvironment === 'production' && corsOrigins.length === 0) {
+    throw new Error('CORS_ORIGINS must be configured in production.');
+  }
 
   expressApp.use(helmet());
   expressApp.use(
@@ -37,8 +43,21 @@ export function configureApp(app: INestApplication): void {
     },
   );
 
+  if (typeof expressApp.useBodyParser === 'function') {
+    expressApp.useBodyParser('json', {
+      limit: configService.get<string>('HTTP_JSON_BODY_LIMIT') ?? '1mb',
+    });
+    expressApp.useBodyParser('urlencoded', {
+      extended: true,
+      limit: configService.get<string>('HTTP_URLENCODED_BODY_LIMIT') ?? '1mb',
+    });
+  }
+
   expressApp.useStaticAssets(resolveRoomImageUploadDirectory(configService), {
     dotfiles: 'deny',
+    // RoomImageStorageService writes a fresh UUID filename for every upload
+    // and never overwrites an existing object, so long-lived immutable caching
+    // is safe for the managed image URLs.
     immutable: true,
     index: false,
     maxAge: 31_536_000_000,
@@ -53,6 +72,16 @@ export function configureApp(app: INestApplication): void {
     exposedHeaders: ['Retry-After', 'X-Request-Id'],
     origin: corsOrigins.length === 0 ? true : corsOrigins,
   });
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
+      transformOptions: {
+        enableImplicitConversion: false,
+      },
+    }),
+  );
   app.useGlobalInterceptors(new ApiResponseInterceptor());
   app.useGlobalFilters(new HttpExceptionFilter());
   app.enableShutdownHooks();

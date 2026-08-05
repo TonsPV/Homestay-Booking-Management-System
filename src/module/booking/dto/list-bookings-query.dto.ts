@@ -1,9 +1,11 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
+import { Allow } from 'class-validator';
 
 import { BookingStatus } from '../schema/booking.entity';
 
 export class ListBookingsQueryDto {
   @ApiPropertyOptional({ default: 1, example: 1, minimum: 1, type: Number })
+  @Allow()
   page?: unknown;
 
   @ApiPropertyOptional({
@@ -13,6 +15,7 @@ export class ListBookingsQueryDto {
     minimum: 1,
     type: Number,
   })
+  @Allow()
   limit?: unknown;
 
   @ApiPropertyOptional({
@@ -20,5 +23,6 @@ export class ListBookingsQueryDto {
     example: BookingStatus.CONFIRMED,
     type: String,
   })
+  @Allow()
   status?: unknown;
 }

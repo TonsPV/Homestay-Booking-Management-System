@@ -8285,10 +8285,6 @@
             "type": "string",
             "example": "1"
           },
-          "roomNumber": {
-            "type": "string",
-            "example": "101"
-          },
           "name": {
             "type": "string",
             "example": "Deluxe Room"
@@ -8310,7 +8306,6 @@
         "required": [
           "id",
           "roomTypeId",
-          "roomNumber",
           "name",
           "description",
           "roomType",

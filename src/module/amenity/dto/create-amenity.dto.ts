@@ -1,7 +1,9 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Allow } from 'class-validator';
 
 export class CreateAmenityDto {
   @ApiProperty({ example: 'Wi-Fi', maxLength: 120, type: String })
+  @Allow()
   name?: unknown;
 
   @ApiPropertyOptional({
@@ -10,5 +12,6 @@ export class CreateAmenityDto {
     nullable: true,
     type: String,
   })
+  @Allow()
   description?: unknown;
 }

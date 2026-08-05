@@ -1,4 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
+import { Allow } from 'class-validator';
 
 export class UpdateRoomDto {
   @ApiPropertyOptional({
@@ -6,9 +7,11 @@ export class UpdateRoomDto {
     pattern: '^[1-9][0-9]*$',
     type: String,
   })
+  @Allow()
   roomTypeId?: unknown;
 
   @ApiPropertyOptional({ example: '101', maxLength: 50, type: String })
+  @Allow()
   roomNumber?: unknown;
 
   @ApiPropertyOptional({
@@ -16,6 +19,7 @@ export class UpdateRoomDto {
     maxLength: 120,
     type: String,
   })
+  @Allow()
   name?: unknown;
 
   @ApiPropertyOptional({
@@ -23,5 +27,6 @@ export class UpdateRoomDto {
     nullable: true,
     type: String,
   })
+  @Allow()
   description?: unknown;
 }

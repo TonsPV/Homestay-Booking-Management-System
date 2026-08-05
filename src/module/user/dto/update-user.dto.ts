@@ -1,4 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
+import { Allow } from 'class-validator';
 
 import { UserRoleEnum } from '../../../common/domain/account.enums';
 
@@ -8,6 +9,7 @@ export class UpdateUserDto {
     maxLength: 120,
     type: String,
   })
+  @Allow()
   fullName?: unknown;
 
   @ApiPropertyOptional({
@@ -15,6 +17,7 @@ export class UpdateUserDto {
     maxLength: 160,
     type: String,
   })
+  @Allow()
   email?: unknown;
 
   @ApiPropertyOptional({
@@ -22,6 +25,7 @@ export class UpdateUserDto {
     nullable: true,
     type: String,
   })
+  @Allow()
   phone?: unknown;
 
   @ApiPropertyOptional({
@@ -31,6 +35,7 @@ export class UpdateUserDto {
     type: String,
     writeOnly: true,
   })
+  @Allow()
   password?: unknown;
 
   @ApiPropertyOptional({
@@ -38,5 +43,6 @@ export class UpdateUserDto {
     example: 'STAFF',
     type: String,
   })
+  @Allow()
   role?: unknown;
 }

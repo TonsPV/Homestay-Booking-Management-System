@@ -49,9 +49,6 @@ export class PublicRoomDto {
   @ApiProperty({ example: '1' })
   roomTypeId!: string;
 
-  @ApiProperty({ example: '101' })
-  roomNumber!: string;
-
   @ApiProperty({ example: 'Deluxe Room' })
   name!: string;
 

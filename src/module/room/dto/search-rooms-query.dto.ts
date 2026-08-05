@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Allow } from 'class-validator';
 
 export enum RoomSearchSort {
   RECOMMENDED = 'RECOMMENDED',
@@ -10,12 +11,15 @@ export enum RoomSearchSort {
 
 export class SearchRoomsQueryDto {
   @ApiProperty({ example: '2026-08-01', format: 'date', type: String })
+  @Allow()
   checkIn?: unknown;
 
   @ApiProperty({ example: '2026-08-03', format: 'date', type: String })
+  @Allow()
   checkOut?: unknown;
 
   @ApiProperty({ example: 2, minimum: 1, type: Number })
+  @Allow()
   guests?: unknown;
 
   @ApiPropertyOptional({
@@ -23,6 +27,7 @@ export class SearchRoomsQueryDto {
     pattern: '^[1-9][0-9]*$',
     type: String,
   })
+  @Allow()
   roomTypeId?: unknown;
 
   @ApiPropertyOptional({
@@ -32,15 +37,19 @@ export class SearchRoomsQueryDto {
     items: { pattern: '^[1-9][0-9]*$', type: 'string' },
     type: [String],
   })
+  @Allow()
   amenityIds?: unknown;
 
   @ApiPropertyOptional({ example: '500000.00', type: String })
+  @Allow()
   minPrice?: unknown;
 
   @ApiPropertyOptional({ example: '1500000.00', type: String })
+  @Allow()
   maxPrice?: unknown;
 
   @ApiPropertyOptional({ default: 1, example: 1, minimum: 1, type: Number })
+  @Allow()
   page?: unknown;
 
   @ApiPropertyOptional({
@@ -49,6 +58,7 @@ export class SearchRoomsQueryDto {
     enumName: 'RoomSearchSort',
     type: String,
   })
+  @Allow()
   sort?: unknown;
 
   @ApiPropertyOptional({
@@ -58,5 +68,6 @@ export class SearchRoomsQueryDto {
     minimum: 1,
     type: Number,
   })
+  @Allow()
   limit?: unknown;
 }

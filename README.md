@@ -20,6 +20,9 @@ too short.
 NODE_ENV=development
 APP_PORT=3000
 CORS_ORIGINS=http://localhost:5173
+SWAGGER_ENABLED=false
+HTTP_JSON_BODY_LIMIT=1mb
+HTTP_URLENCODED_BODY_LIMIT=1mb
 DB_HOST=127.0.0.1
 DB_PORT=3306
 DB_USERNAME=property_user
@@ -48,6 +51,9 @@ Production startup requires a non-empty allowlist. When VNPay is enabled in
 production, `VNPAY_RETURN_URL` must also be a public HTTPS URL.
 `VNPAY_FRONTEND_RETURN_URL` is optional. When configured, the verified backend
 Return endpoint responds with a redirect to that frontend result page.
+Swagger UI and its JSON endpoint are controlled by `SWAGGER_ENABLED`; production
+defaults to disabled. JSON and URL-encoded request bodies are bounded by the
+two `HTTP_*_BODY_LIMIT` settings.
 
 ## Install And Run
 
@@ -471,8 +477,8 @@ Use [`docs/BACKEND_AUDIT_AND_ROADMAP.md`](docs/BACKEND_AUDIT_AND_ROADMAP.md)
 for the verified module-readiness audit, remaining business gaps, and the
 recommended implementation order before expanding the domain.
 
-The runtime OpenAPI documentation is available at `/api/docs`, with the raw
-document at `/api/docs-json`. The committed snapshot is
+When `SWAGGER_ENABLED=true`, runtime OpenAPI documentation is available at
+`/api/docs`, with the raw document at `/api/docs-json`. The committed snapshot is
 [`docs/openapi.json`](docs/openapi.json). Regenerate it after a contract change:
 
 ```bash

@@ -1,4 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
+import { Allow } from 'class-validator';
 
 export class UpdateRoomTypeDto {
   @ApiPropertyOptional({
@@ -6,6 +7,7 @@ export class UpdateRoomTypeDto {
     maxLength: 120,
     type: String,
   })
+  @Allow()
   name?: unknown;
 
   @ApiPropertyOptional({
@@ -13,6 +15,7 @@ export class UpdateRoomTypeDto {
     nullable: true,
     type: String,
   })
+  @Allow()
   description?: unknown;
 
   @ApiPropertyOptional({
@@ -21,6 +24,7 @@ export class UpdateRoomTypeDto {
     nullable: true,
     type: String,
   })
+  @Allow()
   bedType?: unknown;
 
   @ApiPropertyOptional({
@@ -29,6 +33,7 @@ export class UpdateRoomTypeDto {
     minimum: 1,
     type: Number,
   })
+  @Allow()
   maxGuests?: unknown;
 
   @ApiPropertyOptional({
@@ -36,5 +41,6 @@ export class UpdateRoomTypeDto {
     pattern: '^\\d+(?:\\.\\d{1,2})?$',
     type: String,
   })
+  @Allow()
   basePrice?: unknown;
 }

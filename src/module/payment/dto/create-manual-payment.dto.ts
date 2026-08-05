@@ -1,4 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { Allow } from 'class-validator';
 
 import { PaymentMethod } from '../schema/payment.entity';
 
@@ -8,5 +9,6 @@ export class CreateManualPaymentDto {
     example: PaymentMethod.CASH,
     type: String,
   })
+  @Allow()
   method?: unknown;
 }

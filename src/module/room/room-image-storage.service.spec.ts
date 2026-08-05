@@ -60,6 +60,20 @@ describe('RoomImageStorageService', () => {
     );
   });
 
+  it('creates a new versioned URL when an image is replaced', async () => {
+    const firstUrl = await service.store(
+      '7',
+      createUpload(await createPng(), 'image/png'),
+    );
+    const secondUrl = await service.store(
+      '7',
+      createUpload(await createPng(), 'image/png'),
+    );
+
+    expect(secondUrl).not.toBe(firstUrl);
+    expect(secondUrl).toMatch(/^\/media\/room-images\/7\/[0-9a-f-]{36}\.webp$/);
+  });
+
   it('rejects a declared MIME type that does not match the decoded image', async () => {
     const input = await createPng();
 

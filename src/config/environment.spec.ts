@@ -25,6 +25,9 @@ describe('validateEnvironment', () => {
     expect(config.BOOKING_MAX_HELD_NIGHTS_PER_CUSTOMER).toBe(30);
     expect(config.BOOKING_MAX_ADVANCE_DAYS).toBe(365);
     expect(config.EXPIRATION_SCHEDULERS_ENABLED).toBe(true);
+    expect(config.SWAGGER_ENABLED).toBe(true);
+    expect(config.HTTP_JSON_BODY_LIMIT).toBe('1mb');
+    expect(config.HTTP_URLENCODED_BODY_LIMIT).toBe('1mb');
     expect(config.CUSTOMER_CLAIM_SMS_ENABLED).toBe(false);
     expect(config.CUSTOMER_CLAIM_LOCAL_BYPASS_ENABLED).toBe(false);
     expect(config.CUSTOMER_CLAIM_SMS_PROVIDER).toBe('disabled');
@@ -325,6 +328,33 @@ describe('validateEnvironment', () => {
         CORS_ORIGINS: 'https://staff.example.com/path',
       }),
     ).toThrow('Invalid CORS origin');
+  });
+
+  it('parses Swagger and body-parser settings without treating strings as booleans', () => {
+    const config = validateEnvironment({
+      JWT_ACCESS_TOKEN_SECRET: 'a'.repeat(32),
+      NODE_ENV: 'production',
+      CORS_ORIGINS: 'https://app.example.com',
+      SWAGGER_ENABLED: 'false',
+      HTTP_JSON_BODY_LIMIT: ' 2MB ',
+      HTTP_URLENCODED_BODY_LIMIT: '512kb',
+    });
+
+    expect(config.SWAGGER_ENABLED).toBe(false);
+    expect(config.HTTP_JSON_BODY_LIMIT).toBe('2mb');
+    expect(config.HTTP_URLENCODED_BODY_LIMIT).toBe('512kb');
+    expect(() =>
+      validateEnvironment({
+        JWT_ACCESS_TOKEN_SECRET: 'a'.repeat(32),
+        HTTP_JSON_BODY_LIMIT: '1.5mb',
+      }),
+    ).toThrow('HTTP_JSON_BODY_LIMIT must be a size');
+    expect(() =>
+      validateEnvironment({
+        JWT_ACCESS_TOKEN_SECRET: 'a'.repeat(32),
+        HTTP_URLENCODED_BODY_LIMIT: '51mb',
+      }),
+    ).toThrow('HTTP_URLENCODED_BODY_LIMIT must be greater than zero');
   });
 
   it('requires deployable CORS and VNPay URLs in production', () => {

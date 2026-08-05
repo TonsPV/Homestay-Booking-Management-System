@@ -1,4 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
+import { Allow } from 'class-validator';
 
 import {
   AccountStatusEnum,
@@ -7,6 +8,7 @@ import {
 
 export class ListUsersQueryDto {
   @ApiPropertyOptional({ default: 1, example: 1, minimum: 1, type: Number })
+  @Allow()
   page?: unknown;
 
   @ApiPropertyOptional({
@@ -16,9 +18,11 @@ export class ListUsersQueryDto {
     minimum: 1,
     type: Number,
   })
+  @Allow()
   limit?: unknown;
 
   @ApiPropertyOptional({ example: 'staff@example.com', type: String })
+  @Allow()
   search?: unknown;
 
   @ApiPropertyOptional({
@@ -26,6 +30,7 @@ export class ListUsersQueryDto {
     example: 'STAFF',
     type: String,
   })
+  @Allow()
   role?: unknown;
 
   @ApiPropertyOptional({
@@ -33,5 +38,6 @@ export class ListUsersQueryDto {
     example: 'ACTIVE',
     type: String,
   })
+  @Allow()
   status?: unknown;
 }

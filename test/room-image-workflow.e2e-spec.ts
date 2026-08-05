@@ -7,6 +7,7 @@ import sharp from 'sharp';
 
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/common/http';
+import { ROOM_IMAGE_MAX_FILE_SIZE } from '../src/config/room-image-storage';
 import migrationDataSource from '../src/database/data-source';
 import { AccessTokenService } from '../src/module/auth/access-token.service';
 import { PasswordHasherService } from '../src/module/auth/password-hasher.service';
@@ -117,6 +118,14 @@ describe('Room image/storage workflow (e2e)', () => {
         contentType: 'image/png',
       })
       .expect(400);
+    await request(app.getHttpServer())
+      .post(`/api/v1/rooms/${room.id}/images`)
+      .set('Authorization', 'Bearer ' + adminToken)
+      .attach('file', Buffer.alloc(ROOM_IMAGE_MAX_FILE_SIZE + 1), {
+        filename: 'too-large.png',
+        contentType: 'image/png',
+      })
+      .expect(413);
 
     const first = await upload(room.id, png, 'first.png');
     expect(first.isCover).toBe(true);

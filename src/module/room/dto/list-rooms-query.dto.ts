@@ -1,7 +1,9 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
+import { Allow } from 'class-validator';
 
 export class ListRoomsQueryDto {
   @ApiPropertyOptional({ default: 1, example: 1, minimum: 1, type: Number })
+  @Allow()
   page?: unknown;
 
   @ApiPropertyOptional({
@@ -11,9 +13,11 @@ export class ListRoomsQueryDto {
     minimum: 1,
     type: Number,
   })
+  @Allow()
   limit?: unknown;
 
   @ApiPropertyOptional({ example: '101', type: String })
+  @Allow()
   search?: unknown;
 
   @ApiPropertyOptional({
@@ -21,5 +25,6 @@ export class ListRoomsQueryDto {
     pattern: '^[1-9][0-9]*$',
     type: String,
   })
+  @Allow()
   roomTypeId?: unknown;
 }

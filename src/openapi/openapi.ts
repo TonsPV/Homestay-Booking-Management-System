@@ -1,4 +1,5 @@
 import type { INestApplication } from '@nestjs/common';
+import type { ConfigService } from '@nestjs/config';
 import {
   DocumentBuilder,
   type OpenAPIObject,
@@ -25,11 +26,34 @@ export function createOpenApiDocument(app: INestApplication): OpenAPIObject {
   });
 }
 
-export function configureOpenApi(app: INestApplication): void {
+export interface OpenApiRuntimeOptions {
+  persistAuthorization?: boolean;
+}
+
+export function configureOpenApiIfEnabled(
+  app: INestApplication,
+  configService: Pick<ConfigService, 'getOrThrow'>,
+): boolean {
+  if (!configService.getOrThrow<boolean>('SWAGGER_ENABLED')) {
+    return false;
+  }
+
+  configureOpenApi(app, {
+    persistAuthorization:
+      configService.getOrThrow<string>('NODE_ENV') !== 'production',
+  });
+
+  return true;
+}
+
+export function configureOpenApi(
+  app: INestApplication,
+  options: OpenApiRuntimeOptions = {},
+): void {
   SwaggerModule.setup('api/docs', app, createOpenApiDocument(app), {
     jsonDocumentUrl: 'api/docs-json',
     swaggerOptions: {
-      persistAuthorization: true,
+      persistAuthorization: options.persistAuthorization ?? false,
     },
   });
 }

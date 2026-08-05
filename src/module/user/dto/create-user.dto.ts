@@ -1,9 +1,11 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Allow } from 'class-validator';
 
 import { UserRoleEnum } from '../../../common/domain/account.enums';
 
 export class CreateUserDto {
   @ApiProperty({ example: 'Nguyen Van Staff', maxLength: 120, type: String })
+  @Allow()
   fullName?: unknown;
 
   @ApiProperty({
@@ -11,6 +13,7 @@ export class CreateUserDto {
     maxLength: 160,
     type: String,
   })
+  @Allow()
   email?: unknown;
 
   @ApiPropertyOptional({
@@ -18,6 +21,7 @@ export class CreateUserDto {
     nullable: true,
     type: String,
   })
+  @Allow()
   phone?: unknown;
 
   @ApiProperty({
@@ -27,6 +31,7 @@ export class CreateUserDto {
     type: String,
     writeOnly: true,
   })
+  @Allow()
   password?: unknown;
 
   @ApiPropertyOptional({
@@ -35,5 +40,6 @@ export class CreateUserDto {
     example: 'STAFF',
     type: String,
   })
+  @Allow()
   role?: unknown;
 }

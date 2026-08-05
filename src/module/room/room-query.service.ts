@@ -406,7 +406,6 @@ export class RoomQueryService {
     return {
       id: room.id,
       roomTypeId: room.roomTypeId,
-      roomNumber: room.roomNumber,
       name: room.name,
       description: room.description,
       roomType: {

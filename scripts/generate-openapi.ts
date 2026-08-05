@@ -11,6 +11,7 @@ import { assertOpenApiResponseSchemas } from '../src/openapi/openapi-contract';
 async function generateOpenApi(): Promise<void> {
   const app = await NestFactory.create(AppModule, {
     abortOnError: false,
+    bodyParser: false,
     logger: false,
   });
 

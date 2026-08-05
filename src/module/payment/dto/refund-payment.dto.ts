@@ -1,4 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
+import { Allow } from 'class-validator';
 
 export class RefundPaymentDto {
   @ApiPropertyOptional({
@@ -6,5 +7,6 @@ export class RefundPaymentDto {
     maxLength: 500,
     type: String,
   })
+  @Allow()
   reason?: unknown;
 }

@@ -1,4 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
+import { Allow } from 'class-validator';
 
 export class CreateVnpayPaymentDto {
   @ApiPropertyOptional({
@@ -6,6 +7,7 @@ export class CreateVnpayPaymentDto {
     example: 'VNBANK',
     type: String,
   })
+  @Allow()
   bankCode?: unknown;
 
   @ApiPropertyOptional({
@@ -14,5 +16,6 @@ export class CreateVnpayPaymentDto {
     example: 'vn',
     type: String,
   })
+  @Allow()
   locale?: unknown;
 }

@@ -62,3 +62,18 @@ report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 .env.*
 !.env.example
 !.env.test.example
+
+# Local AI coding agents and generated agent metadata
+.agents/
+.agent/
+.codex/
+.claude/
+.cursor/
+.continue/
+
+# Agent-specific local instruction files
+AGENTS.local.md
+CLAUDE.local.md
+
+# Aider local files
+.aider*

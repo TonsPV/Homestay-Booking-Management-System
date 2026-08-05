@@ -1,4 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { Allow } from 'class-validator';
 
 export class ChangeCustomerPasswordDto {
   @ApiProperty({
@@ -7,6 +8,7 @@ export class ChangeCustomerPasswordDto {
     type: String,
     writeOnly: true,
   })
+  @Allow()
   currentPassword?: unknown;
 
   @ApiProperty({
@@ -16,5 +18,6 @@ export class ChangeCustomerPasswordDto {
     type: String,
     writeOnly: true,
   })
+  @Allow()
   newPassword?: unknown;
 }

@@ -99,6 +99,21 @@ export function validateEnvironment(
     'EXPIRATION_SCHEDULERS_ENABLED',
     true,
   );
+  const swaggerEnabled = readOptionalBoolean(
+    config,
+    'SWAGGER_ENABLED',
+    nodeEnvironment !== 'production',
+  );
+  const httpJsonBodyLimit = readBodyLimit(
+    config,
+    'HTTP_JSON_BODY_LIMIT',
+    '1mb',
+  );
+  const httpUrlencodedBodyLimit = readBodyLimit(
+    config,
+    'HTTP_URLENCODED_BODY_LIMIT',
+    '1mb',
+  );
   const customerClaimSmsEnabled = readOptionalBoolean(
     config,
     'CUSTOMER_CLAIM_SMS_ENABLED',
@@ -274,6 +289,9 @@ export function validateEnvironment(
     BOOKING_MAX_HELD_NIGHTS_PER_CUSTOMER: bookingMaxHeldNightsPerCustomer,
     BOOKING_MAX_ADVANCE_DAYS: bookingMaxAdvanceDays,
     EXPIRATION_SCHEDULERS_ENABLED: expirationSchedulersEnabled,
+    SWAGGER_ENABLED: swaggerEnabled,
+    HTTP_JSON_BODY_LIMIT: httpJsonBodyLimit,
+    HTTP_URLENCODED_BODY_LIMIT: httpUrlencodedBodyLimit,
     CUSTOMER_CLAIM_SMS_ENABLED: customerClaimSmsEnabled,
     CUSTOMER_CLAIM_LOCAL_BYPASS_ENABLED: customerClaimLocalBypassEnabled,
     CUSTOMER_CLAIM_SMS_PROVIDER: customerClaimSmsProvider,
@@ -376,6 +394,39 @@ function readOptionalBoolean(
   }
 
   throw new Error(`${key} must be true or false.`);
+}
+
+function readBodyLimit(
+  config: Record<string, unknown>,
+  key: string,
+  defaultValue: string,
+): string {
+  const value = readOptionalString(config, key, defaultValue).toLowerCase();
+
+  if (!/^\d+(?:b|kb|mb|gb)$/.test(value)) {
+    throw new Error(`${key} must be a size such as 100kb, 1mb, or 1gb.`);
+  }
+
+  const match = /^(\d+)(b|kb|mb|gb)$/.exec(value);
+  const amount = Number(match?.[1]);
+  const unit = match?.[2];
+  const multipliers: Record<string, number> = {
+    b: 1,
+    kb: 1024,
+    mb: 1024 ** 2,
+    gb: 1024 ** 3,
+  };
+
+  if (
+    unit === undefined ||
+    !Number.isSafeInteger(amount) ||
+    amount <= 0 ||
+    amount * multipliers[unit] > 50 * 1024 ** 2
+  ) {
+    throw new Error(`${key} must be greater than zero and no more than 50mb.`);
+  }
+
+  return value;
 }
 
 function readCorsOrigins(config: Record<string, unknown>): string[] {

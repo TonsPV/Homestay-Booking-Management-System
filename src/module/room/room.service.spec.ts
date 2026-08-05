@@ -87,7 +87,7 @@ describe('RoomService', () => {
     );
     const result = await service.list({ page: 1, limit: 10 });
 
-    expect(result.items[0]).toHaveProperty('roomNumber', 'A-101');
+    expect(result.items[0]).not.toHaveProperty('roomNumber');
     expect(result.items[0]).not.toHaveProperty('status');
     expect(result.items[0]).not.toHaveProperty('createdAt');
     expect(result.items[0]).not.toHaveProperty('updatedAt');

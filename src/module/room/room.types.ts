@@ -63,7 +63,6 @@ export interface ManagementRoomResponse extends RoomResponse {
 export interface PublicRoomResponse {
   id: string;
   roomTypeId: string;
-  roomNumber: string;
   name: string;
   description: string | null;
   roomType: RoomResponse['roomType'];

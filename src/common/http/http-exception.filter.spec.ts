@@ -60,6 +60,32 @@ describe('HttpExceptionFilter', () => {
     );
   });
 
+  it('maps body-parser size errors to a safe 413 envelope without an internal-error log', () => {
+    const logger = jest.spyOn(Logger.prototype, 'error').mockImplementation();
+    const filter = new HttpExceptionFilter();
+    const fixture = createHost();
+
+    filter.catch(
+      {
+        statusCode: 413,
+        type: 'entity.too.large',
+        message: 'request entity too large',
+      },
+      fixture.host,
+    );
+
+    expect(fixture.status).toHaveBeenCalledWith(413);
+    expect(fixture.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        statusCode: 413,
+        errorCode: ErrorCode.COMMON_PAYLOAD_TOO_LARGE,
+        message: 'Request body too large.',
+        error: 'PAYLOAD_TOO_LARGE',
+      }),
+    );
+    expect(logger).not.toHaveBeenCalled();
+  });
+
   it('preserves a stable business error code from an application exception', () => {
     const filter = new HttpExceptionFilter();
     const fixture = createHost();
