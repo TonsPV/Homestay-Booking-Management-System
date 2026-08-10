@@ -290,7 +290,7 @@ describe('Application API (e2e)', () => {
 
   it('matches the committed OpenAPI contract snapshot', () => {
     const snapshot = JSON.parse(
-      readFileSync(resolve(process.cwd(), 'docs/openapi.json'), 'utf8'),
+      readFileSync(resolve(process.cwd(), 'openapi/openapi.json'), 'utf8'),
     ) as unknown;
 
     expect(createOpenApiDocument(app)).toEqual(snapshot);

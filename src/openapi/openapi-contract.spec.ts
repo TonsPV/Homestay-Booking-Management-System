@@ -14,7 +14,7 @@ import {
 describe('OpenAPI response contract', () => {
   it('requires an application/json schema for every documented response', () => {
     const document = JSON.parse(
-      readFileSync(resolve(process.cwd(), 'docs/openapi.json'), 'utf8'),
+      readFileSync(resolve(process.cwd(), 'openapi/openapi.json'), 'utf8'),
     ) as OpenAPIObject;
 
     expect(() => assertOpenApiSuccessSchemas(document)).not.toThrow();
@@ -23,7 +23,7 @@ describe('OpenAPI response contract', () => {
 
   it('preserves nullable scalar response fields as scalars', () => {
     const document = JSON.parse(
-      readFileSync(resolve(process.cwd(), 'docs/openapi.json'), 'utf8'),
+      readFileSync(resolve(process.cwd(), 'openapi/openapi.json'), 'utf8'),
     ) as OpenAPIObject;
     const schemas = document.components?.schemas as Record<
       string,
@@ -68,7 +68,7 @@ describe('OpenAPI response contract', () => {
 
   it('locks the stable error taxonomy and structured error fields', () => {
     const document = JSON.parse(
-      readFileSync(resolve(process.cwd(), 'docs/openapi.json'), 'utf8'),
+      readFileSync(resolve(process.cwd(), 'openapi/openapi.json'), 'utf8'),
     ) as OpenAPIObject;
     type SchemaFixture = {
       additionalProperties?: boolean | SchemaFixture;
@@ -174,7 +174,7 @@ describe('OpenAPI response contract', () => {
 
   it('documents payment idempotency, gateway failures and VNPay callbacks', () => {
     const document = JSON.parse(
-      readFileSync(resolve(process.cwd(), 'docs/openapi.json'), 'utf8'),
+      readFileSync(resolve(process.cwd(), 'openapi/openapi.json'), 'utf8'),
     ) as OpenAPIObject;
     const operations = [
       document.paths['/api/v1/bookings/{bookingId}/payments']?.post,
