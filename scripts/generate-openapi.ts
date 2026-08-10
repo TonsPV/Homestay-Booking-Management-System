@@ -18,7 +18,7 @@ async function generateOpenApi(): Promise<void> {
   try {
     configureApp(app);
 
-    const outputDirectory = resolve(process.cwd(), 'docs');
+    const outputDirectory = resolve(process.cwd(), 'openapi');
     const outputPath = resolve(outputDirectory, 'openapi.json');
 
     await mkdir(outputDirectory, { recursive: true });
@@ -32,7 +32,7 @@ async function generateOpenApi(): Promise<void> {
 
       if (committedDocument !== serializedDocument) {
         throw new Error(
-          'docs/openapi.json is stale. Run npm run openapi:generate and commit the result.',
+          'openapi/openapi.json is stale. Run npm run openapi:generate and commit the result.',
         );
       }
 

@@ -464,22 +464,12 @@ responses remain pending for `queryDr` reconciliation; the same key never
 sends a second refund. Booking transitions are blocked while reconciliation
 is pending.
 
-See [`docs/VNPAY_TESTING.md`](docs/VNPAY_TESTING.md) for the Sandbox card flow,
-public IPN tunnel setup, and expected callback behavior.
-
 ## Frontend Integration
-
-Use [`docs/FRONTEND_ROADMAP.md`](docs/FRONTEND_ROADMAP.md) as the living
-handoff contract for Frontend work. Update its module readiness table and
-handoff checklist whenever a Backend module is completed or changed.
-
-Use [`docs/BACKEND_AUDIT_AND_ROADMAP.md`](docs/BACKEND_AUDIT_AND_ROADMAP.md)
-for the verified module-readiness audit, remaining business gaps, and the
-recommended implementation order before expanding the domain.
 
 When `SWAGGER_ENABLED=true`, runtime OpenAPI documentation is available at
 `/api/docs`, with the raw document at `/api/docs-json`. The committed snapshot is
-[`docs/openapi.json`](docs/openapi.json). Regenerate it after a contract change:
+[`openapi/openapi.json`](openapi/openapi.json). Regenerate it after a contract
+change:
 
 ```bash
 npm run openapi:generate

@@ -53,10 +53,16 @@ describe('Common HTTP workflow (e2e)', () => {
   });
 
   it('propagates safe request IDs, shared envelopes, Helmet and CORS headers', async () => {
+    const allowedOrigin = process.env.CORS_ORIGINS?.split(',')[0]?.trim();
+
+    if (allowedOrigin === undefined || allowedOrigin.length === 0) {
+      throw new Error('CORS_ORIGINS must provide an allowed E2E origin.');
+    }
+
     const valid = await request(app.getHttpServer())
       .get('/api/health/live')
       .set('X-Request-Id', 'common-http-id')
-      .set('Origin', 'http://frontend.example')
+      .set('Origin', allowedOrigin)
       .expect(200);
     const validBody = valid.body as ResponseBody<{ status: string }>;
 
@@ -70,9 +76,7 @@ describe('Common HTTP workflow (e2e)', () => {
     });
     expect(valid.headers['x-request-id']).toBe('common-http-id');
     expect(valid.headers['x-content-type-options']).toBe('nosniff');
-    expect(valid.headers['access-control-allow-origin']).toBe(
-      'http://frontend.example',
-    );
+    expect(valid.headers['access-control-allow-origin']).toBe(allowedOrigin);
 
     const invalid = await request(app.getHttpServer())
       .get('/api/health/live')
