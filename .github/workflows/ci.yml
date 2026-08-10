@@ -1,12 +1,18 @@
 name: Backend verification
 
 on:
-  push:
   pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
 
 jobs:
   verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     services:
       mysql:
         image: mysql:8.4
@@ -41,6 +47,7 @@ jobs:
       BOOKING_MAX_ACTIVE_UNPAID_PER_CUSTOMER: 3
       BOOKING_MAX_HELD_NIGHTS_PER_CUSTOMER: 30
       BOOKING_MAX_ADVANCE_DAYS: 3650
+      EXPIRATION_SCHEDULERS_ENABLED: false
       ROOM_IMAGE_UPLOAD_DIR: .data/test-uploads/room-images
       VNPAY_ENABLED: true
       VNPAY_TMN_CODE: TEST0001
@@ -51,6 +58,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -68,8 +78,20 @@ jobs:
       - run: npm run migration:run
       - run: npm run schema:check
       - run: npm run data:audit
-      - run: npm run openapi:validate
-      - run: npm run test -- --runInBand
+      - run: npm test -- --runInBand
       - run: npm run test:e2e -- --runInBand
+      - run: npm run openapi:check
+      - run: npm run openapi:validate
+      - name: Check committed whitespace
+        shell: bash
+        run: |
+          git diff --check
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            git diff --check "${{ github.event.pull_request.base.sha }}...${{ github.sha }}"
+          elif [ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]; then
+            git diff --check "${{ github.event.before }}..${{ github.sha }}"
+          else
+            git show --check --format= "${{ github.sha }}"
+          fi
       - name: Production dependency audit
         run: npm audit --omit=dev --audit-level=high
