@@ -18,6 +18,8 @@ import {
   type ApiResponsePayload,
   type AccessTokenPayload,
   CurrentAuth,
+  ReqContext,
+  type RequestContext,
 } from '../../common/http';
 import {
   ApiCommonAuthErrors,
@@ -45,10 +47,13 @@ export class BookingController {
   @ApiCommonMutationErrors()
   create(
     @CurrentAuth() auth: AccessTokenPayload,
+    @ReqContext() context: RequestContext,
     @Body() body: CreateBookingDto,
   ): Promise<ApiResponsePayload<BookingResponse>> {
     return this.bookingService
-      .createForCustomer(auth.customer_id, body)
+      .createForCustomer(auth.customer_id, body, {
+        requestId: context.requestId,
+      })
       .then((booking) =>
         ApiResponse.created(booking, 'Tao booking thanh cong.'),
       );
@@ -90,10 +95,13 @@ export class BookingController {
   cancel(
     @CurrentAuth() auth: AccessTokenPayload,
     @Param('id') id: string,
+    @ReqContext() context: RequestContext,
     @Body() body: CancelBookingDto,
   ): Promise<ApiResponsePayload<BookingResponse>> {
     return this.bookingService
-      .cancelForCustomer(auth.customer_id, id, body)
+      .cancelForCustomer(auth.customer_id, id, body, {
+        requestId: context.requestId,
+      })
       .then((booking) => ApiResponse.ok(booking, 'Huy booking thanh cong.'));
   }
 }

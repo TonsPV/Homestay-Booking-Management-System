@@ -68,7 +68,13 @@ const VNPAY_TRANSACTION_ENDPOINT = '/merchant_webapi/api/transaction';
 
 @Injectable()
 export class VnPayGatewayService {
-  constructor(private readonly configService: ConfigService) {}
+  private readonly requestTimeoutMs: number;
+
+  constructor(private readonly configService: ConfigService) {
+    this.requestTimeoutMs = this.configService.getOrThrow<number>(
+      'VNPAY_REQUEST_TIMEOUT_MS',
+    );
+  }
 
   isEnabled(): boolean {
     return this.configService.get<boolean>('VNPAY_ENABLED') === true;
@@ -171,36 +177,48 @@ export class VnPayGatewayService {
       VNPAY_TRANSACTION_ENDPOINT,
       configuration.paymentUrl,
     );
-    const httpResponse = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
+    const httpResponse = await withVnPayDeadline(
+      fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(this.requestTimeoutMs),
+      }),
+      this.requestTimeoutMs,
+    );
 
     if (!httpResponse.ok) {
       throw new Error(`VNPay refund HTTP error: ${httpResponse.status}`);
     }
 
-    return normalizeRawRefundResponse(
-      await httpResponse.json(),
-      configuration.hashSecret,
-    );
+    return normalizeRawRefundResponse(await httpResponse.json(), {
+      hashSecret: configuration.hashSecret,
+      tmnCode: configuration.tmnCode,
+      transactionReference: input.transactionReference,
+    });
   }
 
   async queryTransaction(
     input: VnPayTransactionOperationInput,
   ): Promise<VnPayGatewayOperationResult> {
-    const response = await createVnPayClient(this.getConfiguration()).queryDr({
-      vnp_CreateDate: Number(formatVnPayDate(input.createdAt)),
-      vnp_IpAddr: normalizeIpAddress(input.ipAddress),
-      vnp_OrderInfo: input.orderInfo,
-      vnp_RequestId: input.requestId,
-      vnp_TransactionDate: requireVnPayDate(input.transactionDate),
-      vnp_TransactionNo: requireVnPayTransactionNumber(input.transactionId),
-      vnp_TxnRef: input.transactionReference,
-    });
+    const configuration = this.getConfiguration();
+    const response = await withVnPayDeadline(
+      createVnPayClient(configuration).queryDr({
+        vnp_CreateDate: Number(formatVnPayDate(input.createdAt)),
+        vnp_IpAddr: normalizeIpAddress(input.ipAddress),
+        vnp_OrderInfo: input.orderInfo,
+        vnp_RequestId: input.requestId,
+        vnp_TransactionDate: requireVnPayDate(input.transactionDate),
+        vnp_TransactionNo: requireVnPayTransactionNumber(input.transactionId),
+        vnp_TxnRef: input.transactionReference,
+      }),
+      this.requestTimeoutMs,
+    );
 
-    return normalizeOperationResponse(response);
+    return normalizeOperationResponse(response, {
+      tmnCode: configuration.tmnCode,
+      transactionReference: input.transactionReference,
+    });
   }
 
   getTmnCode(): string {
@@ -311,9 +329,25 @@ function requireVnPayTransactionNumber(value: string): number {
 
 function normalizeOperationResponse(
   response: QueryDrResponse,
+  expected: Pick<VnPayConfiguration, 'tmnCode'> & {
+    transactionReference: string;
+  },
 ): VnPayGatewayOperationResult {
+  const rawResponse = response as unknown as Record<string, unknown>;
+  const responseTmnCode = optionalString(rawResponse.vnp_TmnCode);
+  const responseSecureHash = optionalString(rawResponse.vnp_SecureHash);
+  // QueryDr does not require vnp_TmnCode in its response schema. The VNPay
+  // client verifies the response with the configured merchant secret; when
+  // the provider returns the merchant code, correlate it explicitly as well.
+  const matchesGatewayIdentity =
+    optionalString(response.vnp_TxnRef) === expected.transactionReference &&
+    (responseTmnCode === null || responseTmnCode === expected.tmnCode);
+  const hasSignedResponse =
+    responseSecureHash !== null && responseSecureHash.trim().length > 0;
+
   return {
-    isVerified: response.isVerified,
+    isVerified:
+      response.isVerified && hasSignedResponse && matchesGatewayIdentity,
     isSuccess: response.isSuccess,
     responseCode: optionalString(response.vnp_ResponseCode),
     transactionStatus: optionalString(response.vnp_TransactionStatus),
@@ -330,7 +364,9 @@ function normalizeOperationResponse(
 
 function normalizeRawRefundResponse(
   value: unknown,
-  hashSecret: string,
+  expected: Pick<VnPayConfiguration, 'hashSecret' | 'tmnCode'> & {
+    transactionReference: string;
+  },
 ): VnPayGatewayOperationResult {
   if (!isRecord(value)) {
     throw new Error('VNPay refund response is invalid.');
@@ -356,11 +392,15 @@ function normalizeRawRefundResponse(
     .join('|')
     .replace(/undefined/g, '');
   const responseCode = optionalString(value.vnp_ResponseCode);
+  const matchesGatewayIdentity =
+    optionalString(value.vnp_TmnCode) === expected.tmnCode &&
+    optionalString(value.vnp_TxnRef) === expected.transactionReference;
 
   return {
     isVerified:
       receivedHash !== null &&
-      createPipeSignature(signData, hashSecret) === receivedHash,
+      createPipeSignature(signData, expected.hashSecret) === receivedHash &&
+      matchesGatewayIdentity,
     isSuccess: responseCode === '00',
     responseCode,
     transactionStatus: optionalString(value.vnp_TransactionStatus),
@@ -380,6 +420,27 @@ function createPipeSignature(data: string, hashSecret: string): string {
     hashAlgorithm: HashAlgorithm.SHA512,
     bufferEncode: 'utf8',
   });
+}
+
+async function withVnPayDeadline<T>(
+  operation: Promise<T>,
+  timeoutMs: number,
+): Promise<T> {
+  let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timeoutHandle = setTimeout(
+      () => reject(new Error('VNPay request timed out.')),
+      timeoutMs,
+    );
+  });
+
+  try {
+    return await Promise.race([operation, timeout]);
+  } finally {
+    if (timeoutHandle !== undefined) {
+      clearTimeout(timeoutHandle);
+    }
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -10,6 +10,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
+import { ApiHeader } from '@nestjs/swagger';
 
 import {
   Actors,
@@ -25,6 +26,7 @@ import {
   ApiCommonAuthErrors,
   ApiCommonMutationErrors,
   ApiCreatedEnvelope,
+  ApiExternalServiceUnavailableError,
   ApiOkEnvelope,
 } from '../../openapi/api-response.decorators';
 import { AccessTokenGuard } from '../auth/access-token.guard';
@@ -51,6 +53,12 @@ export class PaymentController {
   @HttpCode(HttpStatus.CREATED)
   @ApiCreatedEnvelope(OnlinePaymentDto)
   @ApiCommonMutationErrors()
+  @ApiExternalServiceUnavailableError()
+  @ApiHeader({
+    name: 'Idempotency-Key',
+    required: true,
+    description: 'Unique key for this payment creation request.',
+  })
   createVnPayPayment(
     @CurrentAuth() auth: AccessTokenPayload,
     @Param('bookingId') bookingId: string,

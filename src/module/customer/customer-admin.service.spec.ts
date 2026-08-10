@@ -2,6 +2,7 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import type { Repository } from 'typeorm';
 
 import { ErrorCode } from '../../common/http';
+import { AuditActorType } from '../audit/schema/audit-log.entity';
 import { CustomerAdminService } from './customer-admin.service';
 import { Customer } from './schema/customer.entity';
 
@@ -12,6 +13,7 @@ describe('CustomerAdminService', () => {
     save: jest.Mock;
   };
   let service: CustomerAdminService;
+  const auditLogService = { record: jest.fn() };
   const credentialPolicy = {
     evaluate: jest.fn((customer: Customer | null) => ({
       canSetInitialPassword: customer?.passwordHash === null,
@@ -37,9 +39,12 @@ describe('CustomerAdminService', () => {
       canSetInitialPassword: false,
       reasonCode: ErrorCode.CUSTOMER_INITIAL_PASSWORD_ALREADY_CONFIGURED,
     });
+    auditLogService.record.mockReset();
+    auditLogService.record.mockResolvedValue(undefined);
     service = new CustomerAdminService(
       repository as unknown as Repository<Customer>,
       credentialPolicy as never,
+      auditLogService,
     );
   });
 
@@ -98,6 +103,43 @@ describe('CustomerAdminService', () => {
     await service.updateStatus('10', 'ACTIVE');
 
     expect(customer.tokenVersion).toBe(2);
+    expect(auditLogService.record).not.toHaveBeenCalled();
+  });
+
+  it('writes account audit in the same transaction on a real transition', async () => {
+    const customer = customerFixture({ tokenVersion: 2 });
+    const transactionalRepository = {
+      findOneBy: jest.fn().mockResolvedValue(customer),
+      save: jest.fn((value: Customer) => Promise.resolve(value)),
+    };
+    const manager = {
+      getRepository: jest.fn().mockReturnValue(transactionalRepository),
+    };
+    const transaction = jest.fn((operation: (value: unknown) => unknown) =>
+      operation(manager),
+    );
+    Object.assign(repository, { manager: { transaction } });
+    service = new CustomerAdminService(
+      repository as unknown as Repository<Customer>,
+      credentialPolicy as never,
+      auditLogService,
+    );
+
+    await service.updateStatus('10', 'LOCKED', {
+      actorType: AuditActorType.USER,
+      actorId: '7',
+      requestId: 'req-lock',
+    });
+
+    expect(auditLogService.record).toHaveBeenCalledWith(
+      manager,
+      expect.objectContaining({
+        actorId: '7',
+        entityId: '10',
+        requestId: 'req-lock',
+        metadata: { fromStatus: 'ACTIVE', toStatus: 'LOCKED' },
+      }),
+    );
   });
 
   it('rejects invalid and missing customer ids', async () => {

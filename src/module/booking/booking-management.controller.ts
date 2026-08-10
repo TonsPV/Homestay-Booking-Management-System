@@ -16,6 +16,8 @@ import {
   type ApiResponsePayload,
   type AccessTokenPayload,
   CurrentAuth,
+  ReqContext,
+  type RequestContext,
   Roles,
   RolesGuard,
 } from '../../common/http';
@@ -46,10 +48,13 @@ export class BookingManagementController {
   @ApiCommonMutationErrors()
   create(
     @CurrentAuth() auth: AccessTokenPayload,
+    @ReqContext() context: RequestContext,
     @Body() body: CreateManagementBookingDto,
   ): Promise<ApiResponsePayload<ManagementBookingResponse>> {
     return this.bookingService
-      .createForManagement(auth.user_id, body)
+      .createForManagement(auth.user_id, body, {
+        requestId: context.requestId,
+      })
       .then((booking) =>
         ApiResponse.created(booking, 'Tao booking tai quay thanh cong.'),
       );
@@ -87,11 +92,15 @@ export class BookingManagementController {
   @ApiOkEnvelope(ManagementBookingDto)
   @ApiCommonMutationErrors()
   updateStatus(
+    @CurrentAuth() auth: AccessTokenPayload,
     @Param('id') id: string,
+    @ReqContext() context: RequestContext,
     @Body() body: UpdateBookingStatusDto,
   ): Promise<ApiResponsePayload<ManagementBookingResponse>> {
     return this.bookingService
-      .updateStatus(id, body)
+      .updateStatus(id, body, auth.user_id, {
+        requestId: context.requestId,
+      })
       .then((booking) =>
         ApiResponse.ok(booking, 'Cap nhat trang thai booking thanh cong.'),
       );

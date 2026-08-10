@@ -102,7 +102,7 @@ describe('RoomImageService', () => {
       roomId: '1',
       imageUrl: 'https://example.com/room-2.jpg',
       sortOrder: 1,
-      isCover: false,
+      isCover: true,
     };
     const roomQuery = {
       setLock: jest.fn().mockReturnThis(),
@@ -117,7 +117,6 @@ describe('RoomImageService', () => {
       findOne: jest.fn().mockResolvedValue({ id: '2', roomId: '1' }),
       findOneBy: jest.fn().mockResolvedValue(image),
       update: jest.fn().mockResolvedValue({ affected: 1 }),
-      save: jest.fn().mockImplementation((value: unknown) => value),
     };
     const manager = {
       getRepository: jest.fn((entity: unknown) => {
@@ -153,6 +152,10 @@ describe('RoomImageService', () => {
     expect(imagesRepository.update).toHaveBeenCalledWith(
       { roomId: '1' },
       { isCover: false },
+    );
+    expect(imagesRepository.update).toHaveBeenCalledWith(
+      { id: '2', roomId: '1' },
+      { isCover: true },
     );
   });
 

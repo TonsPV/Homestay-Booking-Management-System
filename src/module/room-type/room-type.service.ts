@@ -1,14 +1,19 @@
 import {
   BadRequestException,
   ConflictException,
+  HttpStatus,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, type Repository } from 'typeorm';
+import type { EntityManager, Repository } from 'typeorm';
 
 import { getMysqlDuplicateKey } from '../../common/database';
-import type { PaginationMeta } from '../../common/http';
+import {
+  AppHttpException,
+  ErrorCode,
+  type PaginationMeta,
+} from '../../common/http';
 import {
   optionalDecimalAmount,
   optionalNullableTrimmedString,
@@ -27,8 +32,17 @@ import {
   ListRoomTypesQueryDto,
 } from './dto/list-room-types-query.dto';
 import { UpdateRoomTypeDto } from './dto/update-room-type.dto';
+import {
+  BedType,
+  MAX_BED_QUANTITY,
+  MAX_BED_TYPES,
+  sortBedConfigurations,
+  type BedConfiguration,
+} from './bed-configuration';
 import { RoomType } from './schema/room-type.entity';
+import { RoomTypeBed } from './schema/room-type-bed.entity';
 import { Amenity } from '../amenity/schema/amenity.entity';
+import { Room } from '../room/schema/room.entity';
 
 export interface RoomTypeAmenityResponse {
   id: string;
@@ -41,6 +55,7 @@ export interface RoomTypeResponse {
   name: string;
   description: string | null;
   bedType: string | null;
+  beds: BedConfiguration[];
   maxGuests: number;
   basePrice: string;
   amenities: RoomTypeAmenityResponse[];
@@ -100,6 +115,7 @@ export class RoomTypeService {
   }
 
   async create(body: CreateRoomTypeDto): Promise<AdminRoomTypeResponse> {
+    this.rejectLegacyAndNormalizedBeds(body.bedType, body.beds);
     const name = requireTrimmedString(
       body.name,
       'Ten loai phong khong hop le.',
@@ -117,6 +133,7 @@ export class RoomTypeService {
         'Loai giuong khong hop le.',
         120,
       ) ?? null;
+    const beds = this.normalizeBeds(body.beds);
     const maxGuests = requirePositiveInt(
       body.maxGuests,
       'So khach toi da khong hop le.',
@@ -129,18 +146,28 @@ export class RoomTypeService {
 
     await this.ensureNameIsAvailable(name);
 
-    const roomType = this.roomTypesRepository.create({
-      name,
-      description,
-      bedType,
-      maxGuests,
-      basePrice,
-    });
-
     try {
-      return this.toAdminResponse(
-        await this.roomTypesRepository.save(roomType),
+      const roomType = await this.roomTypesRepository.manager.transaction(
+        async (manager) => {
+          const roomType = manager.getRepository(RoomType).create({
+            name,
+            description,
+            bedType,
+            maxGuests,
+            basePrice,
+          });
+          const savedRoomType = await manager
+            .getRepository(RoomType)
+            .save(roomType);
+
+          if (beds !== undefined) {
+            await this.replaceBeds(manager, savedRoomType.id, beds);
+          }
+
+          return this.getRoomTypeForManager(manager, savedRoomType.id, false);
+        },
       );
+      return this.toAdminResponse(roomType);
     } catch (error) {
       this.throwRoomTypeDuplicateConflict(error);
     }
@@ -150,7 +177,7 @@ export class RoomTypeService {
     id: string,
     body: UpdateRoomTypeDto,
   ): Promise<AdminRoomTypeResponse> {
-    const roomType = await this.getActiveRoomType(id);
+    this.rejectLegacyAndNormalizedBeds(body.bedType, body.beds);
     const name = optionalTrimmedString(
       body.name,
       'Ten loai phong khong hop le.',
@@ -166,6 +193,7 @@ export class RoomTypeService {
       'Loai giuong khong hop le.',
       120,
     );
+    const beds = this.normalizeBeds(body.beds);
     const maxGuests =
       body.maxGuests === undefined
         ? undefined
@@ -183,6 +211,7 @@ export class RoomTypeService {
       name === undefined &&
       description === undefined &&
       bedType === undefined &&
+      beds === undefined &&
       maxGuests === undefined &&
       basePrice === undefined
     ) {
@@ -190,62 +219,161 @@ export class RoomTypeService {
     }
 
     if (name !== undefined) {
-      await this.ensureNameIsAvailable(name, roomType.id);
-      roomType.name = name;
-    }
-
-    if (description !== undefined) {
-      roomType.description = description;
-    }
-
-    if (bedType !== undefined) {
-      roomType.bedType = bedType;
-    }
-
-    if (maxGuests !== undefined) {
-      roomType.maxGuests = maxGuests;
-    }
-
-    if (basePrice !== undefined) {
-      roomType.basePrice = basePrice;
+      await this.ensureNameIsAvailable(name, id);
     }
 
     try {
-      return this.toAdminResponse(
-        await this.roomTypesRepository.save(roomType),
+      const roomType = await this.roomTypesRepository.manager.transaction(
+        async (manager) => {
+          const roomType = await this.getLockedActiveRoomTypeForMutation(
+            manager,
+            id,
+          );
+
+          if (name !== undefined) {
+            roomType.name = name;
+          }
+
+          if (description !== undefined) {
+            roomType.description = description;
+          }
+
+          if (bedType !== undefined) {
+            roomType.bedType = bedType;
+          }
+
+          if (maxGuests !== undefined) {
+            roomType.maxGuests = maxGuests;
+          }
+
+          if (basePrice !== undefined) {
+            roomType.basePrice = basePrice;
+          }
+
+          await manager.getRepository(RoomType).save(roomType);
+
+          if (beds !== undefined) {
+            await this.replaceBeds(manager, roomType.id, beds);
+          }
+
+          return this.getRoomTypeForManager(manager, roomType.id, false);
+        },
       );
+      return this.toAdminResponse(roomType);
     } catch (error) {
       this.throwRoomTypeDuplicateConflict(error);
     }
   }
 
   async softDelete(id: string): Promise<AdminRoomTypeResponse> {
-    const roomType = await this.getActiveRoomType(id);
+    this.validateId(id);
+    await this.roomTypesRepository.manager.transaction(async (manager) => {
+      const roomType = await this.getLockedActiveRoomTypeForMutation(
+        manager,
+        id,
+      );
 
-    if (await this.hasActiveRooms(roomType.id)) {
-      throw new ConflictException(
-        'Khong the xoa loai phong dang duoc phong su dung.',
+      if (await this.hasActiveRooms(manager, roomType.id)) {
+        throw new AppHttpException(
+          HttpStatus.CONFLICT,
+          ErrorCode.ROOM_TYPE_IN_USE,
+          'Khong the xoa loai phong dang duoc phong su dung.',
+        );
+      }
+
+      await manager.getRepository(RoomType).softRemove(roomType);
+    });
+
+    return this.getAdmin(id);
+  }
+
+  private async getLockedActiveRoomTypeForMutation(
+    manager: EntityManager,
+    id: string,
+  ): Promise<RoomType> {
+    const roomType = await manager
+      .getRepository(RoomType)
+      .createQueryBuilder('roomType')
+      .withDeleted()
+      .where('roomType.id = :id', { id })
+      .setLock('pessimistic_write')
+      .getOne();
+
+    if (roomType === null || roomType.deletedAt !== null) {
+      throw new NotFoundException('Khong tim thay loai phong.');
+    }
+
+    return roomType;
+  }
+
+  private async getLockedActiveAmenities(
+    manager: EntityManager,
+    amenityIds: string[],
+  ): Promise<Amenity[]> {
+    if (amenityIds.length === 0) {
+      return [];
+    }
+
+    const amenities = await manager
+      .getRepository(Amenity)
+      .createQueryBuilder('amenity')
+      .withDeleted()
+      .where('amenity.id IN (:...amenityIds)', {
+        amenityIds: this.sortIds(amenityIds),
+      })
+      .orderBy('amenity.id', 'ASC')
+      .setLock('pessimistic_write')
+      .getMany();
+
+    if (
+      amenities.length !== amenityIds.length ||
+      amenities.some((amenity) => amenity.deletedAt !== null)
+    ) {
+      throw new BadRequestException(
+        'Danh sach tien nghi chua id khong ton tai hoac da bi xoa.',
       );
     }
 
-    return this.toAdminResponse(
-      await this.roomTypesRepository.softRemove(roomType),
+    return amenities;
+  }
+
+  private sortIds(ids: string[]): string[] {
+    return [...ids].sort(
+      (left, right) => left.length - right.length || left.localeCompare(right),
     );
   }
 
   async restore(id: string): Promise<AdminRoomTypeResponse> {
-    const roomType = await this.getRoomTypeWithDeleted(id);
-
-    if (roomType.deletedAt === null) {
-      throw new BadRequestException('Loai phong chua bi xoa.');
-    }
-
-    await this.ensureNameIsAvailable(roomType.name, roomType.id);
-
+    this.validateId(id);
     try {
-      return this.toAdminResponse(
-        await this.roomTypesRepository.recover(roomType),
-      );
+      await this.roomTypesRepository.manager.transaction(async (manager) => {
+        const amenityIds = await this.getRoomTypeAmenityIds(manager, id);
+        const amenities = await this.getLockedAmenitiesIncludingDeleted(
+          manager,
+          amenityIds,
+        );
+        const roomType = await this.getLockedDeletedRoomTypeForRestore(
+          manager,
+          id,
+        );
+
+        await this.ensureNameIsAvailable(roomType.name, roomType.id, manager);
+
+        const staleAmenityIds = amenities
+          .filter((amenity) => amenity.deletedAt !== null)
+          .map((amenity) => amenity.id);
+        if (staleAmenityIds.length > 0) {
+          await this.removeRoomTypeAmenityRelations(
+            manager,
+            roomType.id,
+            staleAmenityIds,
+          );
+        }
+
+        await manager.getRepository(RoomType).recover(roomType);
+      });
+
+      return this.getAdmin(id);
     } catch (error) {
       this.throwRoomTypeDuplicateConflict(error);
     }
@@ -259,30 +387,14 @@ export class RoomTypeService {
     const amenityIds = this.requireAmenityIds(body.amenityIds);
 
     await this.roomTypesRepository.manager.transaction(async (manager) => {
-      const roomType = await manager
-        .getRepository(RoomType)
-        .createQueryBuilder('roomType')
-        .where('roomType.id = :id', { id })
-        .andWhere('roomType.deletedAt IS NULL')
-        .setLock('pessimistic_write')
-        .getOne();
-
-      if (roomType === null) {
-        throw new NotFoundException('Khong tim thay loai phong.');
-      }
-
-      const amenities =
-        amenityIds.length === 0
-          ? []
-          : await manager.getRepository(Amenity).findBy({
-              id: In(amenityIds),
-            });
-
-      if (amenities.length !== amenityIds.length) {
-        throw new BadRequestException(
-          'Danh sach tien nghi chua id khong ton tai hoac da bi xoa.',
-        );
-      }
+      const amenities = await this.getLockedActiveAmenities(
+        manager,
+        amenityIds,
+      );
+      const roomType = await this.getLockedActiveRoomTypeForMutation(
+        manager,
+        id,
+      );
 
       roomType.amenities = amenities.sort((left, right) =>
         left.name.localeCompare(right.name),
@@ -308,9 +420,11 @@ export class RoomTypeService {
         'amenity',
         'amenity.deletedAt IS NULL',
       )
+      .leftJoinAndSelect('roomType.beds', 'bed')
       .orderBy('roomType.createdAt', 'DESC')
       .addOrderBy('roomType.id', 'DESC')
       .addOrderBy('amenity.name', 'ASC')
+      .addOrderBy('bed.bedType', 'ASC')
       .skip(skip)
       .take(limit);
 
@@ -343,8 +457,10 @@ export class RoomTypeService {
         'amenity',
         'amenity.deletedAt IS NULL',
       )
+      .leftJoinAndSelect('roomType.beds', 'bed')
       .where('roomType.id = :id', { id })
       .orderBy('amenity.name', 'ASC')
+      .addOrderBy('bed.bedType', 'ASC')
       .getOne();
 
     if (roomType === null) {
@@ -365,8 +481,10 @@ export class RoomTypeService {
         'amenity',
         'amenity.deletedAt IS NULL',
       )
+      .leftJoinAndSelect('roomType.beds', 'bed')
       .where('roomType.id = :id', { id })
       .orderBy('amenity.name', 'ASC')
+      .addOrderBy('bed.bedType', 'ASC')
       .getOne();
 
     if (roomType === null) {
@@ -376,11 +494,95 @@ export class RoomTypeService {
     return roomType;
   }
 
+  private async getRoomTypeAmenityIds(
+    manager: EntityManager,
+    roomTypeId: string,
+  ): Promise<string[]> {
+    const rows = await manager
+      .createQueryBuilder()
+      .select('roomTypeAmenity.amenity_id', 'amenityId')
+      .from('room_type_amenities', 'roomTypeAmenity')
+      .where('roomTypeAmenity.room_type_id = :roomTypeId', { roomTypeId })
+      .orderBy('roomTypeAmenity.amenity_id', 'ASC')
+      .getRawMany<{ amenityId: string | number }>();
+
+    return this.sortIds(rows.map((row) => String(row.amenityId)));
+  }
+
+  private async getLockedAmenitiesIncludingDeleted(
+    manager: EntityManager,
+    amenityIds: string[],
+  ): Promise<Amenity[]> {
+    if (amenityIds.length === 0) {
+      return [];
+    }
+
+    const sortedAmenityIds = this.sortIds(amenityIds);
+    const amenities = await manager
+      .getRepository(Amenity)
+      .createQueryBuilder('amenity')
+      .withDeleted()
+      .where('amenity.id IN (:...amenityIds)', {
+        amenityIds: sortedAmenityIds,
+      })
+      .orderBy('amenity.id', 'ASC')
+      .setLock('pessimistic_write')
+      .getMany();
+
+    if (amenities.length !== sortedAmenityIds.length) {
+      throw new NotFoundException('Khong tim thay tien nghi cua loai phong.');
+    }
+
+    return amenities;
+  }
+
+  private async getLockedDeletedRoomTypeForRestore(
+    manager: EntityManager,
+    id: string,
+  ): Promise<RoomType> {
+    const roomType = await manager
+      .getRepository(RoomType)
+      .createQueryBuilder('roomType')
+      .withDeleted()
+      .where('roomType.id = :id', { id })
+      .setLock('pessimistic_write')
+      .getOne();
+
+    if (roomType === null) {
+      throw new NotFoundException('Khong tim thay loai phong.');
+    }
+
+    if (roomType.deletedAt === null) {
+      throw new BadRequestException('Loai phong chua bi xoa.');
+    }
+
+    return roomType;
+  }
+
+  private async removeRoomTypeAmenityRelations(
+    manager: EntityManager,
+    roomTypeId: string,
+    amenityIds: string[],
+  ): Promise<void> {
+    await manager
+      .createQueryBuilder()
+      .delete()
+      .from('room_type_amenities')
+      .where('room_type_id = :roomTypeId', { roomTypeId })
+      .andWhere('amenity_id IN (:...amenityIds)', { amenityIds })
+      .execute();
+  }
+
   private async ensureNameIsAvailable(
     name: string,
     currentRoomTypeId?: string,
+    manager: EntityManager = this.roomTypesRepository.manager,
   ): Promise<void> {
-    const query = this.roomTypesRepository
+    const roomTypesRepository =
+      manager === this.roomTypesRepository.manager
+        ? this.roomTypesRepository
+        : manager.getRepository(RoomType);
+    const query = roomTypesRepository
       .createQueryBuilder('roomType')
       .withDeleted()
       .where('roomType.name = :name', { name });
@@ -398,17 +600,151 @@ export class RoomTypeService {
     }
   }
 
-  private async hasActiveRooms(roomTypeId: string): Promise<boolean> {
-    const room = await this.roomTypesRepository.manager
-      .createQueryBuilder()
-      .select('room.id', 'id')
-      .from('rooms', 'room')
-      .where('room.room_type_id = :roomTypeId', { roomTypeId })
-      .andWhere('room.deleted_at IS NULL')
-      .limit(1)
-      .getRawOne<{ id: string }>();
+  private async getRoomTypeForManager(
+    manager: EntityManager,
+    id: string,
+    includeDeleted: boolean,
+  ): Promise<RoomType> {
+    this.validateId(id);
 
-    return room !== undefined && room !== null;
+    const query = manager
+      .getRepository(RoomType)
+      .createQueryBuilder('roomType')
+      .leftJoinAndSelect(
+        'roomType.amenities',
+        'amenity',
+        'amenity.deletedAt IS NULL',
+      )
+      .leftJoinAndSelect('roomType.beds', 'bed')
+      .where('roomType.id = :id', { id })
+      .orderBy('amenity.name', 'ASC')
+      .addOrderBy('bed.bedType', 'ASC');
+
+    if (includeDeleted) {
+      query.withDeleted();
+    } else {
+      query.andWhere('roomType.deletedAt IS NULL');
+    }
+
+    const roomType = await query.getOne();
+
+    if (roomType === null) {
+      throw new NotFoundException('Khong tim thay loai phong.');
+    }
+
+    return roomType;
+  }
+
+  private async replaceBeds(
+    manager: EntityManager,
+    roomTypeId: string,
+    beds: BedConfiguration[],
+  ): Promise<void> {
+    const bedsRepository = manager.getRepository(RoomTypeBed);
+
+    await bedsRepository.delete({ roomTypeId });
+
+    if (beds.length > 0) {
+      await bedsRepository.save(
+        beds.map((bed) =>
+          bedsRepository.create({
+            roomTypeId,
+            bedType: bed.type,
+            quantity: bed.quantity,
+          }),
+        ),
+      );
+    }
+  }
+
+  private rejectLegacyAndNormalizedBeds(
+    legacyValue: unknown,
+    normalizedValue: unknown,
+  ): void {
+    if (legacyValue !== undefined && normalizedValue !== undefined) {
+      throw new BadRequestException(
+        'Khong the gui dong thoi bedType va beds. Hay dung beds.',
+      );
+    }
+  }
+
+  private normalizeBeds(value: unknown): BedConfiguration[] | undefined {
+    if (value === undefined) {
+      return undefined;
+    }
+
+    if (!Array.isArray(value) || value.length > MAX_BED_TYPES) {
+      throw new BadRequestException(
+        `beds phai la mang toi da ${MAX_BED_TYPES} phan tu.`,
+      );
+    }
+
+    const seenTypes = new Set<BedType>();
+    const beds: BedConfiguration[] = [];
+
+    for (const item of value) {
+      if (item === null || typeof item !== 'object' || Array.isArray(item)) {
+        throw new BadRequestException('Cau hinh giuong khong hop le.');
+      }
+
+      const record = item as Record<string, unknown>;
+      const unknownKeys = Object.keys(record).filter(
+        (key) => key !== 'type' && key !== 'quantity',
+      );
+
+      if (unknownKeys.length > 0) {
+        throw new BadRequestException('Cau hinh giuong khong hop le.');
+      }
+
+      const type = record.type;
+      const quantity = record.quantity;
+
+      if (
+        typeof type !== 'string' ||
+        !Object.values(BedType).includes(type as BedType)
+      ) {
+        throw new BadRequestException('Loai giuong khong hop le.');
+      }
+
+      if (
+        typeof quantity !== 'number' ||
+        !Number.isSafeInteger(quantity) ||
+        quantity < 1 ||
+        quantity > MAX_BED_QUANTITY
+      ) {
+        throw new BadRequestException('So luong giuong khong hop le.');
+      }
+
+      const bedType = type as BedType;
+
+      if (seenTypes.has(bedType)) {
+        throw new BadRequestException(
+          'Moi loai giuong chi duoc xuat hien mot lan.',
+        );
+      }
+
+      seenTypes.add(bedType);
+      beds.push({ type: bedType, quantity });
+    }
+
+    return sortBedConfigurations(beds);
+  }
+
+  private async hasActiveRooms(
+    manager: EntityManager,
+    roomTypeId: string,
+  ): Promise<boolean> {
+    const room = await manager
+      .getRepository(Room)
+      .createQueryBuilder('room')
+      .select('room.id')
+      .where('room.roomTypeId = :roomTypeId', { roomTypeId })
+      .andWhere('room.deletedAt IS NULL')
+      .orderBy('room.id', 'ASC')
+      .setLock('pessimistic_write')
+      .getOne();
+
+    return room !== null;
   }
 
   private throwRoomTypeDuplicateConflict(error: unknown): never {
@@ -453,6 +789,7 @@ export class RoomTypeService {
       name: roomType.name,
       description: roomType.description,
       bedType: roomType.bedType,
+      beds: this.toBedConfigurations(roomType),
       maxGuests: roomType.maxGuests,
       basePrice: roomType.basePrice,
       amenities: (roomType.amenities ?? []).map((amenity) => ({
@@ -463,6 +800,15 @@ export class RoomTypeService {
       createdAt: roomType.createdAt,
       updatedAt: roomType.updatedAt,
     };
+  }
+
+  private toBedConfigurations(roomType: RoomType): BedConfiguration[] {
+    return sortBedConfigurations(
+      (roomType.beds ?? []).map((bed) => ({
+        type: bed.bedType,
+        quantity: bed.quantity,
+      })),
+    );
   }
 
   private toAdminResponse(roomType: RoomType): AdminRoomTypeResponse {

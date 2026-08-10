@@ -249,6 +249,8 @@ function paymentFixture(overrides: Partial<Payment> = {}): Payment {
     currency: 'VND',
     method: PaymentMethod.CASH,
     status: PaymentStatus.SUCCESS,
+    reviewReason: null,
+    reviewCanonicalPaymentId: null,
     gatewayName: null,
     gatewayReference: null,
     gatewayTransactionId: null,

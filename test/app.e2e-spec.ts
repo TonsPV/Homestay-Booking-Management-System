@@ -5,7 +5,7 @@ import { type INestApplication } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Test, type TestingModule } from '@nestjs/testing';
 import sharp from 'sharp';
-import { DataSource, type Repository } from 'typeorm';
+import { DataSource, type EntityManager, type Repository } from 'typeorm';
 import request from 'supertest';
 import type { App } from 'supertest/types';
 
@@ -32,6 +32,7 @@ import {
 } from '../src/module/payment/vnpay-gateway.service';
 import { RoomType } from '../src/module/room-type/schema/room-type.entity';
 import { RoomImageStorageService } from '../src/module/room/room-image-storage.service';
+import { RoomMutationService } from '../src/module/room/room-mutation.service';
 import { RoomImage } from '../src/module/room/schema/room-image.entity';
 import { Room } from '../src/module/room/schema/room.entity';
 import { User } from '../src/module/user/schema/user.entity';
@@ -1555,45 +1556,53 @@ describe('Application API (e2e)', () => {
 
   it('prevents a stale STAFF room transition from overwriting ADMIN HIDDEN', async () => {
     const roomId = requireTestRoomId();
-    const originalFindOneBy = roomsRepository.findOneBy.bind(roomsRepository);
-    let observedStaffRead = () => undefined;
-    const staffReadObserved = new Promise<void>((resolveRead) => {
-      observedStaffRead = resolveRead;
+    type LockingRoomMutationService = {
+      getLockedRoomForStatus(manager: EntityManager, id: string): Promise<Room>;
+    };
+    const roomMutationService =
+      app.get<LockingRoomMutationService>(RoomMutationService);
+    const originalGetLockedRoom =
+      roomMutationService.getLockedRoomForStatus.bind(roomMutationService);
+    let observedAdminLock = () => undefined;
+    const adminLockObserved = new Promise<void>((resolveLock) => {
+      observedAdminLock = resolveLock;
     });
-    let releaseStaffRead = () => undefined;
-    const staffReadRelease = new Promise<void>((resolveRelease) => {
-      releaseStaffRead = resolveRelease;
+    let releaseAdminLock = () => undefined;
+    const adminLockRelease = new Promise<void>((resolveRelease) => {
+      releaseAdminLock = resolveRelease;
     });
-    const findOneBySpy = jest
-      .spyOn(roomsRepository, 'findOneBy')
-      .mockImplementationOnce(async (where) => {
-        const room = await originalFindOneBy(where);
+    const getLockedRoomSpy = jest
+      .spyOn(roomMutationService, 'getLockedRoomForStatus')
+      .mockImplementationOnce(async (manager, id) => {
+        const room = await originalGetLockedRoom(manager, id);
 
-        observedStaffRead();
-        await staffReadRelease;
+        observedAdminLock();
+        await adminLockRelease;
         return room;
       });
-    const pendingStaffResponse = request(app.getHttpServer())
+    const pendingAdminResponse = request(app.getHttpServer())
       .patch(`/api/v1/rooms/${roomId}/status`)
-      .set('Authorization', `Bearer ${requireStaffToken()}`)
-      .send({ status: 'CLEANING' })
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ status: 'HIDDEN' })
       .then((response) => response);
 
     try {
-      await staffReadObserved;
-      await request(app.getHttpServer())
+      await adminLockObserved;
+      const pendingStaffResponse = request(app.getHttpServer())
         .patch(`/api/v1/rooms/${roomId}/status`)
-        .set('Authorization', `Bearer ${adminToken}`)
-        .send({ status: 'HIDDEN' })
-        .expect(200);
-      releaseStaffRead();
+        .set('Authorization', `Bearer ${requireStaffToken()}`)
+        .send({ status: 'CLEANING' })
+        .then((response) => response);
+      releaseAdminLock();
 
+      const adminResponse = await pendingAdminResponse;
       const staffResponse = await pendingStaffResponse;
 
-      expect(staffResponse.status).toBe(409);
+      expect(adminResponse.status).toBe(200);
+      expect(staffResponse.status).toBe(403);
     } finally {
-      releaseStaffRead();
-      findOneBySpy.mockRestore();
+      releaseAdminLock();
+      getLockedRoomSpy.mockRestore();
     }
 
     expect(await roomsRepository.findOneByOrFail({ id: roomId })).toMatchObject(

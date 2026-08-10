@@ -7,11 +7,13 @@ import {
   Index,
   JoinTable,
   ManyToMany,
+  OneToMany,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
 
 import { Amenity } from '../../amenity/schema/amenity.entity';
+import { RoomTypeBed } from './room-type-bed.entity';
 
 @Entity('room_types')
 @Index('uq_room_types_name', ['name'], { unique: true })
@@ -29,6 +31,9 @@ export class RoomType {
 
   @Column({ name: 'bed_type', type: 'varchar', length: 120, nullable: true })
   bedType: string | null;
+
+  @OneToMany(() => RoomTypeBed, (bed) => bed.roomType)
+  beds: RoomTypeBed[];
 
   @Column({ name: 'max_guests', type: 'int' })
   maxGuests: number;

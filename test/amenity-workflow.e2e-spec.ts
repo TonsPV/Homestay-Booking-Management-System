@@ -1,6 +1,6 @@
 import { type INestApplication } from '@nestjs/common';
 import { Test, type TestingModule } from '@nestjs/testing';
-import { DataSource, type Repository } from 'typeorm';
+import { DataSource, type EntityManager, type Repository } from 'typeorm';
 import request from 'supertest';
 import type { App } from 'supertest/types';
 
@@ -9,9 +9,11 @@ import { configureApp } from '../src/common/http';
 import migrationDataSource from '../src/database/data-source';
 import { AccessTokenService } from '../src/module/auth/access-token.service';
 import { PasswordHasherService } from '../src/module/auth/password-hasher.service';
+import { AmenityService } from '../src/module/amenity/amenity.service';
 import { Amenity } from '../src/module/amenity/schema/amenity.entity';
 import { Customer } from '../src/module/customer/schema/customer.entity';
 import { RoomType } from '../src/module/room-type/schema/room-type.entity';
+import { RoomTypeService } from '../src/module/room-type/room-type.service';
 import { User } from '../src/module/user/schema/user.entity';
 import { E2eHarness } from './e2e-harness';
 
@@ -25,11 +27,16 @@ interface ResponseEnvelope<TData> {
   meta?: { pagination: Record<string, number> };
 }
 
+interface ErrorEnvelope {
+  errorCode: string;
+}
+
 interface AmenityPayload {
   id: string;
   name: string;
   description: string | null;
   deletedAt?: string | null;
+  beds?: Array<{ type: string; quantity: number }>;
 }
 
 describe('Amenity workflow (e2e)', () => {
@@ -216,10 +223,13 @@ describe('Amenity workflow (e2e)', () => {
       }),
     );
     createdRoomTypeIds.push(roomType.id);
-    await request(app.getHttpServer())
+    const inUseResponse = await request(app.getHttpServer())
       .delete('/api/v1/admin/amenities/' + assigned.id)
       .set('Authorization', 'Bearer ' + adminToken)
       .expect(409);
+    expect((inUseResponse.body as ErrorEnvelope).errorCode).toBe(
+      'AMENITY_IN_USE',
+    );
     await dataSource.query(
       'DELETE FROM room_type_amenities WHERE room_type_id = ? AND amenity_id = ?',
       [roomType.id, assigned.id],
@@ -228,6 +238,134 @@ describe('Amenity workflow (e2e)', () => {
       .delete('/api/v1/admin/amenities/' + assigned.id)
       .set('Authorization', 'Bearer ' + adminToken)
       .expect(200);
+  });
+
+  it('rejects assigning an Amenity after it was soft-deleted', async () => {
+    const amenity = await createAmenity(nextName('deleted-assignment'));
+    const roomType = await createRoomType(nextName('deleted-target'));
+
+    await request(app.getHttpServer())
+      .delete('/api/v1/admin/amenities/' + amenity.id)
+      .set('Authorization', 'Bearer ' + adminToken)
+      .expect(200);
+    await request(app.getHttpServer())
+      .put('/api/v1/admin/room-types/' + roomType.id + '/amenities')
+      .set('Authorization', 'Bearer ' + adminToken)
+      .send({ amenityIds: [amenity.id] })
+      .expect(400);
+
+    await expect(countAmenityRelation(roomType.id, amenity.id)).resolves.toBe(
+      0,
+    );
+  });
+
+  it('serializes Amenity assignment against soft-delete in MySQL', async () => {
+    const amenity = await createAmenity(nextName('assignment-delete-race'));
+    const roomType = await createRoomType(nextName('race-target'));
+    const roomTypeService = app.get(RoomTypeService);
+    const amenityService = app.get(AmenityService);
+    const roomTypeInternals = roomTypeService as unknown as {
+      getLockedActiveAmenities(
+        manager: EntityManager,
+        amenityIds: string[],
+      ): Promise<Amenity[]>;
+    };
+    const amenityInternals = amenityService as unknown as {
+      getLockedActiveAmenity(
+        manager: EntityManager,
+        id: string,
+      ): Promise<Amenity>;
+    };
+    const originalAssignmentLock =
+      roomTypeInternals.getLockedActiveAmenities.bind(roomTypeInternals);
+    const originalDeleteLock =
+      amenityInternals.getLockedActiveAmenity.bind(amenityInternals);
+    const assignmentHasLock = createDeferred<void>();
+    const deleteAttemptedLock = createDeferred<void>();
+    const releaseAssignment = createDeferred<void>();
+    const assignmentLockSpy = jest
+      .spyOn(roomTypeInternals, 'getLockedActiveAmenities')
+      .mockImplementation(async (manager, amenityIds) => {
+        const locked = await originalAssignmentLock(manager, amenityIds);
+        if (amenityIds.includes(amenity.id)) {
+          assignmentHasLock.resolve();
+          await releaseAssignment.promise;
+        }
+        return locked;
+      });
+    const deleteLockSpy = jest
+      .spyOn(amenityInternals, 'getLockedActiveAmenity')
+      .mockImplementation(async (manager, id) => {
+        if (id === amenity.id) {
+          deleteAttemptedLock.resolve();
+        }
+        return originalDeleteLock(manager, id);
+      });
+    let assignmentPromise: Promise<request.Response> | undefined;
+    let deletePromise: Promise<request.Response> | undefined;
+
+    try {
+      assignmentPromise = request(app.getHttpServer())
+        .put('/api/v1/admin/room-types/' + roomType.id + '/amenities')
+        .set('Authorization', 'Bearer ' + adminToken)
+        .send({ amenityIds: [amenity.id] })
+        .then((response) => response);
+      await waitForSignal(
+        assignmentHasLock.promise,
+        'Amenity assignment row lock',
+      );
+
+      deletePromise = request(app.getHttpServer())
+        .delete('/api/v1/admin/amenities/' + amenity.id)
+        .set('Authorization', 'Bearer ' + adminToken)
+        .then((response) => response);
+      await waitForSignal(
+        deleteAttemptedLock.promise,
+        'Amenity delete lock attempt',
+      );
+      releaseAssignment.resolve();
+
+      const [assignmentResponse, deleteResponse] = await Promise.all([
+        assignmentPromise,
+        deletePromise,
+      ]);
+      expect([assignmentResponse.status, deleteResponse.status]).toEqual([
+        200, 409,
+      ]);
+      expect((deleteResponse.body as ErrorEnvelope).errorCode).toBe(
+        'AMENITY_IN_USE',
+      );
+
+      const persistedAmenity = await amenitiesRepository
+        .createQueryBuilder('amenity')
+        .withDeleted()
+        .where('amenity.id = :id', { id: amenity.id })
+        .getOneOrFail();
+      const persistedRoomType = await roomTypesRepository
+        .createQueryBuilder('roomType')
+        .withDeleted()
+        .where('roomType.id = :id', { id: roomType.id })
+        .getOneOrFail();
+      const relationCount = await countAmenityRelation(roomType.id, amenity.id);
+
+      expect(persistedAmenity.deletedAt).toBeNull();
+      expect(relationCount).toBe(1);
+      expect(
+        persistedRoomType.deletedAt === null &&
+          relationCount > 0 &&
+          persistedAmenity.deletedAt !== null,
+      ).toBe(false);
+    } finally {
+      releaseAssignment.resolve();
+      await Promise.allSettled(
+        [assignmentPromise, deletePromise].filter(
+          (promise): promise is Promise<request.Response> =>
+            promise !== undefined,
+        ),
+      );
+      assignmentLockSpy.mockRestore();
+      deleteLockSpy.mockRestore();
+    }
   });
 
   it('normalizes duplicate-key races and preserves admin update behavior', async () => {
@@ -271,6 +409,34 @@ describe('Amenity workflow (e2e)', () => {
       .post('/api/v1/admin/amenities')
       .set('Authorization', 'Bearer ' + adminToken)
       .send({ name, description: null });
+  }
+
+  async function createRoomType(name: string): Promise<RoomType> {
+    const roomType = await roomTypesRepository.save(
+      roomTypesRepository.create({
+        name,
+        description: null,
+        maxGuests: 2,
+        basePrice: '100.00',
+        amenities: [],
+      }),
+    );
+    createdRoomTypeIds.push(roomType.id);
+    return roomType;
+  }
+
+  async function countAmenityRelation(
+    roomTypeId: string,
+    amenityId: string,
+  ): Promise<number> {
+    const rows = await dataSource.query<
+      Array<{ relationCount: string | number }>
+    >(
+      'SELECT COUNT(*) AS relationCount FROM room_type_amenities WHERE room_type_id = ? AND amenity_id = ?',
+      [roomTypeId, amenityId],
+    );
+
+    return Number(rows[0]?.relationCount ?? 0);
   }
 
   async function createUser(role: 'ADMIN' | 'STAFF'): Promise<User> {
@@ -347,3 +513,39 @@ describe('Amenity workflow (e2e)', () => {
     return '09' + phoneSuffix;
   }
 });
+
+interface Deferred<T> {
+  promise: Promise<T>;
+  resolve(value: T | PromiseLike<T>): void;
+}
+
+function createDeferred<T>(): Deferred<T> {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+
+  return { promise, resolve };
+}
+
+async function waitForSignal(
+  signal: Promise<void>,
+  description: string,
+): Promise<void> {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    await Promise.race([
+      signal,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(description + ' timed out.')),
+          5000,
+        );
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) {
+      clearTimeout(timer);
+    }
+  }
+}

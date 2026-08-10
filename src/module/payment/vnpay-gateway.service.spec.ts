@@ -15,6 +15,7 @@ describe('VnPayGatewayService', () => {
     VNPAY_RETURN_URL: 'http://localhost:3001/api/v1/payments/vnpay/return',
     VNPAY_TMN_CODE: 'TEST0001',
     VNPAY_HASH_SECRET: 'test-vnpay-secret-at-least-16-characters',
+    VNPAY_REQUEST_TIMEOUT_MS: 10_000,
   };
   const configService = {
     get: jest.fn((key: string) => values[key]),
@@ -254,6 +255,30 @@ describe('VnPayGatewayService', () => {
     });
   });
 
+  it.each([
+    ['transaction reference', { vnp_TxnRef: 'P999' }],
+    ['merchant code', { vnp_TmnCode: 'OTHER001' }],
+  ])(
+    'rejects a correctly signed refund response with a mismatched %s',
+    async (_field, overrides) => {
+      mockRefundFetch(createSignedRefundResponse(overrides));
+
+      await expect(
+        service.refundFull({
+          amount: '300000.00',
+          transactionReference: 'P123',
+          transactionId: '123456789012345',
+          transactionDate: '20260723170000',
+          requestId: 'R12345681',
+          orderInfo: 'Refund booking BK123',
+          ipAddress: '127.0.0.1',
+          createdAt: new Date('2026-07-24T10:00:00.000Z'),
+          createdBy: 'user-1',
+        }),
+      ).resolves.toMatchObject({ isVerified: false });
+    },
+  );
+
   it('queries VNPay using the original payment transaction date', async () => {
     const querySpy = jest.spyOn(VNPay.prototype, 'queryDr').mockResolvedValue({
       isVerified: true,
@@ -265,6 +290,9 @@ describe('VnPayGatewayService', () => {
       vnp_TransactionType: '02',
       vnp_Amount: 90000000,
       vnp_ResponseId: 'QUERY-1',
+      vnp_TmnCode: 'TEST0001',
+      vnp_TxnRef: 'P123',
+      vnp_SecureHash: 'SIGNED-QUERY-RESPONSE',
     } as never);
 
     await expect(
@@ -295,6 +323,101 @@ describe('VnPayGatewayService', () => {
       vnp_TxnRef: 'P123',
     });
   });
+
+  it('rejects an unsigned QueryDr response even when the client marks it verified', async () => {
+    jest.spyOn(VNPay.prototype, 'queryDr').mockResolvedValue({
+      isVerified: true,
+      isSuccess: true,
+      message: 'Query successful',
+      vnp_ResponseCode: '00',
+      vnp_TransactionStatus: '00',
+      vnp_TransactionNo: '123456789012345',
+      vnp_TransactionType: '02',
+      vnp_Amount: 90000000,
+      vnp_ResponseId: 'QUERY-UNSIGNED',
+      vnp_TmnCode: 'TEST0001',
+      vnp_TxnRef: 'P123',
+    } as never);
+
+    await expect(
+      service.queryTransaction({
+        amount: '900000.00',
+        transactionReference: 'P123',
+        transactionId: '123456789012345',
+        transactionDate: '20260723170000',
+        requestId: 'Q12345670',
+        orderInfo: 'Doi soat refund payment 123',
+        ipAddress: '127.0.0.1',
+        createdAt: new Date('2026-07-24T10:00:00.000Z'),
+      }),
+    ).resolves.toMatchObject({ isVerified: false });
+  });
+
+  it('applies a finite deadline when QueryDr does not settle', async () => {
+    jest.useFakeTimers();
+
+    try {
+      jest
+        .spyOn(VNPay.prototype, 'queryDr')
+        .mockReturnValue(new Promise(() => undefined) as never);
+
+      const query = service.queryTransaction({
+        amount: '900000.00',
+        transactionReference: 'P123',
+        transactionId: '123456789012345',
+        transactionDate: '20260723170000',
+        requestId: 'Q12345671',
+        orderInfo: 'Doi soat refund payment 123',
+        ipAddress: '127.0.0.1',
+        createdAt: new Date('2026-07-24T10:00:00.000Z'),
+      });
+      const rejection = expect(query).rejects.toThrow(
+        'VNPay request timed out.',
+      );
+
+      await jest.advanceTimersByTimeAsync(10_000);
+      await rejection;
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it.each([
+    ['transaction reference', { vnp_TxnRef: 'P999' }],
+    ['merchant code', { vnp_TmnCode: 'OTHER001' }],
+  ])(
+    'rejects a verified query response with a mismatched %s',
+    async (_field, overrides) => {
+      jest.spyOn(VNPay.prototype, 'queryDr').mockResolvedValue({
+        isVerified: true,
+        isSuccess: true,
+        message: 'Query successful',
+        vnp_ResponseCode: '00',
+        vnp_TransactionStatus: '00',
+        vnp_TransactionNo: '123456789012345',
+        vnp_TransactionType: '02',
+        vnp_Amount: 90000000,
+        vnp_ResponseId: 'QUERY-2',
+        vnp_TmnCode: 'TEST0001',
+        vnp_TxnRef: 'P123',
+        vnp_SecureHash: 'SIGNED-QUERY-RESPONSE',
+        ...overrides,
+      } as never);
+
+      await expect(
+        service.queryTransaction({
+          amount: '900000.00',
+          transactionReference: 'P123',
+          transactionId: '123456789012345',
+          transactionDate: '20260723170000',
+          requestId: 'Q12345679',
+          orderInfo: 'Doi soat refund payment 123',
+          ipAddress: '127.0.0.1',
+          createdAt: new Date('2026-07-24T10:00:00.000Z'),
+        }),
+      ).resolves.toMatchObject({ isVerified: false });
+    },
+  );
 
   it('rejects invalid transaction metadata before calling VNPay', async () => {
     const fetchSpy = jest.spyOn(global, 'fetch');

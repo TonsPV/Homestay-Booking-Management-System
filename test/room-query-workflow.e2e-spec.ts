@@ -15,6 +15,7 @@ import {
   RoomCalendarStatus,
 } from '../src/module/booking/schema/room-calendar.entity';
 import { Room } from '../src/module/room/schema/room.entity';
+import { BedType } from '../src/module/room-type/bed-configuration';
 import { RoomType } from '../src/module/room-type/schema/room-type.entity';
 import { User } from '../src/module/user/schema/user.entity';
 import { E2eHarness } from './e2e-harness';
@@ -34,6 +35,10 @@ interface PublicRoomPayload {
   name: string;
   roomNumber?: string;
   status?: string;
+  roomType?: {
+    beds: Array<{ type: BedType; quantity: number }>;
+    amenities: Array<{ id: string; name: string }>;
+  };
 }
 
 describe('Room catalog/query workflow (e2e)', () => {
@@ -214,6 +219,40 @@ describe('Room catalog/query workflow (e2e)', () => {
       .query({ checkIn: '2035-01-01', checkOut: '2035-01-03', guests: 4 })
       .set('Authorization', 'Bearer ' + adminToken)
       .expect(200);
+  });
+
+  it('returns normalized beds alongside amenities in public room queries', async () => {
+    const roomTypeResponse = await request(app.getHttpServer())
+      .post('/api/v1/admin/room-types')
+      .set('Authorization', 'Bearer ' + adminToken)
+      .send({
+        name: 'Beds query ' + uniqueSuffix,
+        maxGuests: 3,
+        basePrice: '150.00',
+        beds: [
+          { type: BedType.DOUBLE, quantity: 1 },
+          { type: BedType.SINGLE, quantity: 1 },
+        ],
+      })
+      .expect(201);
+    const roomTypeId = (roomTypeResponse.body as { data: { id: string } }).data
+      .id;
+    createdRoomTypeIds.push(roomTypeId);
+    const roomType = await roomTypesRepository.findOneByOrFail({
+      id: roomTypeId,
+    });
+    const room = await createRoom(roomType, 'READY');
+
+    const response = await request(app.getHttpServer())
+      .get('/api/v1/rooms/' + room.id)
+      .expect(200);
+    const body = response.body as ResponseEnvelope<PublicRoomPayload>;
+
+    expect(body.data.roomType?.beds).toEqual([
+      { type: BedType.SINGLE, quantity: 1 },
+      { type: BedType.DOUBLE, quantity: 1 },
+    ]);
+    expect(body.data.roomType?.amenities).toEqual([]);
   });
 
   it('validates room query IDs, date ranges, and pagination boundaries', async () => {

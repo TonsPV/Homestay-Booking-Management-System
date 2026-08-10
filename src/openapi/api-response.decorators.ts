@@ -5,6 +5,7 @@ import {
   ApiConflictResponse,
   ApiExtraModels,
   ApiForbiddenResponse,
+  ApiFoundResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiServiceUnavailableResponse,
@@ -174,6 +175,29 @@ export function ApiReadinessError(): MethodDecorator {
     ApiExtraModels(ErrorEnvelopeDto),
     ApiServiceUnavailableResponse({
       description: 'The database is unavailable or did not respond in time.',
+      type: ErrorEnvelopeDto,
+    }),
+  );
+}
+
+export function ApiFoundEnvelope(
+  model: Type<unknown>,
+  options: EnvelopeOptions = {},
+): MethodDecorator {
+  return applyDecorators(
+    ApiExtraModels(SuccessEnvelopeDto, ErrorEnvelopeDto, model),
+    ApiFoundResponse(
+      createEnvelopeResponseOptions(HttpStatus.FOUND, model, options),
+    ),
+  );
+}
+
+export function ApiExternalServiceUnavailableError(): MethodDecorator {
+  return applyDecorators(
+    ApiExtraModels(ErrorEnvelopeDto),
+    ApiServiceUnavailableResponse({
+      description:
+        'The external payment operation outcome is unavailable and requires retry or reconciliation.',
       type: ErrorEnvelopeDto,
     }),
   );

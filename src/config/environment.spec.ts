@@ -42,14 +42,20 @@ describe('validateEnvironment', () => {
     expect(config.ROOM_IMAGE_UPLOAD_DIR).toBe('.data/uploads/room-images');
     expect(config.CORS_ORIGINS).toEqual([]);
     expect(config.VNPAY_FRONTEND_RETURN_URL).toBe('');
+    expect(config.VNPAY_REQUEST_TIMEOUT_MS).toBe(10_000);
   });
 
   it('rejects known example secrets', () => {
-    expect(() =>
-      validateEnvironment({
-        JWT_ACCESS_TOKEN_SECRET: 'replace_with_a_long_random_secret',
-      }),
-    ).toThrow('JWT_ACCESS_TOKEN_SECRET must be replaced with a random secret.');
+    for (const secret of [
+      'replace_with_a_long_random_secret',
+      'development-only-secret-change-before-production-2026',
+    ]) {
+      expect(() =>
+        validateEnvironment({ JWT_ACCESS_TOKEN_SECRET: secret }),
+      ).toThrow(
+        'JWT_ACCESS_TOKEN_SECRET must be replaced with a random secret.',
+      );
+    }
   });
 
   it('rejects invalid or zero token durations', () => {
@@ -302,6 +308,15 @@ describe('validateEnvironment', () => {
 
     expect(enabledConfig.VNPAY_ENABLED).toBe(true);
     expect(enabledConfig.VNPAY_TMN_CODE).toBe('TEST0001');
+
+    expect(() =>
+      validateEnvironment({
+        JWT_ACCESS_TOKEN_SECRET: 'a'.repeat(32),
+        VNPAY_REQUEST_TIMEOUT_MS: '999',
+      }),
+    ).toThrow(
+      'VNPAY_REQUEST_TIMEOUT_MS must be an integer from 1000 to 120000.',
+    );
 
     expect(() =>
       validateEnvironment({

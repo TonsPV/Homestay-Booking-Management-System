@@ -1,7 +1,6 @@
 import {
   BadRequestException,
   ConflictException,
-  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -16,12 +15,19 @@ import {
   optionalTrimmedString,
   requireTrimmedString,
 } from '../../common/validation';
+import {
+  AuditLogService,
+  type AuditActorContext,
+} from '../audit/audit-log.service';
+import { AuditAction, AuditEntityType } from '../audit/schema/audit-log.entity';
+import { Booking, BookingStatus } from '../booking/schema/booking.entity';
 import { RoomType } from '../room-type/schema/room-type.entity';
 import type { CreateRoomDto } from './dto/create-room.dto';
 import type { UpdateRoomStatusDto } from './dto/update-room-status.dto';
 import type { UpdateRoomDto } from './dto/update-room.dto';
 import { RoomImageStorageService } from './room-image-storage.service';
 import { RoomQueryService } from './room-query.service';
+import { RoomStatusTransitionPolicy } from './room-status-transition.policy';
 import { Room, RoomStatus } from './schema/room.entity';
 import type { RoomResponse } from './room.types';
 
@@ -34,6 +40,8 @@ export class RoomMutationService {
     private readonly roomTypesRepository: Repository<RoomType>,
     private readonly roomImageStorage: RoomImageStorageService,
     private readonly roomQueryService: RoomQueryService,
+    private readonly roomStatusTransitionPolicy: RoomStatusTransitionPolicy,
+    private readonly auditLogService: AuditLogService,
   ) {}
 
   async create(body: CreateRoomDto): Promise<RoomResponse> {
@@ -59,27 +67,44 @@ export class RoomMutationService {
       ) ?? null;
     const status = this.optionalStatus(body.status) ?? RoomStatus.READY;
 
-    await this.getActiveRoomType(roomTypeId);
-    await this.ensureRoomNumberIsAvailable(roomNumber);
-
-    const room = this.roomsRepository.create({
-      roomTypeId,
-      roomNumber,
-      name,
-      description,
-      status,
+    this.roomStatusTransitionPolicy.assertAllowed({
+      currentStatus: RoomStatus.READY,
+      nextStatus: status,
+      role: 'ADMIN',
+      hasCheckedInBooking: false,
     });
 
     try {
-      const savedRoom = await this.roomsRepository.save(room);
-      return this.roomQueryService.getAdminRoom(savedRoom.id);
+      const roomId = await this.roomsRepository.manager.transaction(
+        async (manager) => {
+          await this.getLockedActiveRoomType(manager, roomTypeId);
+          await this.ensureRoomNumberIsAvailable(
+            roomNumber,
+            undefined,
+            manager,
+          );
+
+          const roomsRepository = manager.getRepository(Room);
+          const room = roomsRepository.create({
+            roomTypeId,
+            roomNumber,
+            name,
+            description,
+            status,
+          });
+
+          return (await roomsRepository.save(room)).id;
+        },
+      );
+
+      return this.roomQueryService.getAdminRoom(roomId);
     } catch (error) {
       this.throwRoomDuplicateConflict(error);
     }
   }
 
   async update(id: string, body: UpdateRoomDto): Promise<RoomResponse> {
-    const room = await this.getActiveRoom(id);
+    this.validateId(id);
     const roomTypeId = this.optionalId(
       body.roomTypeId,
       'Room type id khong hop le.',
@@ -116,37 +141,51 @@ export class RoomMutationService {
       description?: string | null;
     } = {};
 
-    if (roomTypeId !== undefined) {
-      await this.getActiveRoomType(roomTypeId);
-      changes.roomTypeId = roomTypeId;
-    }
-
-    if (roomNumber !== undefined) {
-      await this.ensureRoomNumberIsAvailable(roomNumber, room.id);
-      changes.roomNumber = roomNumber;
-    }
-
-    if (name !== undefined) {
-      changes.name = name;
-    }
-
-    if (description !== undefined) {
-      changes.description = description;
-    }
-
     try {
-      const result = await this.roomsRepository.update(
-        { id: room.id, deletedAt: IsNull() },
-        changes,
+      const roomId = await this.roomsRepository.manager.transaction(
+        async (manager) => {
+          if (roomTypeId !== undefined) {
+            await this.getLockedActiveRoomType(manager, roomTypeId);
+          }
+
+          const room = await this.getLockedRoomForMutation(manager, id);
+
+          if (roomTypeId !== undefined) {
+            changes.roomTypeId = roomTypeId;
+          }
+
+          if (roomNumber !== undefined) {
+            await this.ensureRoomNumberIsAvailable(
+              roomNumber,
+              room.id,
+              manager,
+            );
+            changes.roomNumber = roomNumber;
+          }
+
+          if (name !== undefined) {
+            changes.name = name;
+          }
+
+          if (description !== undefined) {
+            changes.description = description;
+          }
+
+          const result = await manager
+            .getRepository(Room)
+            .update({ id: room.id, deletedAt: IsNull() }, changes);
+
+          if (result.affected !== 1) {
+            throw new ConflictException(
+              'Phong da thay doi. Vui long tai lai va thu lai.',
+            );
+          }
+
+          return room.id;
+        },
       );
 
-      if (result.affected !== 1) {
-        throw new ConflictException(
-          'Phong da thay doi. Vui long tai lai va thu lai.',
-        );
-      }
-
-      return this.roomQueryService.getAdminRoom(room.id);
+      return this.roomQueryService.getAdminRoom(roomId);
     } catch (error) {
       this.throwRoomDuplicateConflict(error);
     }
@@ -185,28 +224,103 @@ export class RoomMutationService {
     id: string,
     body: UpdateRoomStatusDto,
     role: UserRole | undefined,
+    auditContext: AuditActorContext,
   ): Promise<RoomResponse> {
-    const room = await this.getActiveRoom(id);
+    this.validateId(id);
     const status = this.requireStatus(body.status);
+    const roomId = await this.roomsRepository.manager.transaction(
+      // A no-match locking read must not gap-lock new Booking inserts while
+      // this transaction waits for the Room row.
+      'READ COMMITTED',
+      async (manager) => {
+        // Booking lifecycle also locks Booking before Room. Locking every
+        // CONFIRMED/CHECKED_IN candidate closes the race where a check-in and
+        // a manual Room transition start at the same time.
+        const hasCheckedInBooking = await this.lockStayBookings(manager, id);
+        const room = await this.getLockedRoomForStatus(manager, id);
 
-    this.assertStatusTransitionAllowed(room.status, status, role);
+        this.roomStatusTransitionPolicy.assertAllowed({
+          currentStatus: room.status,
+          nextStatus: status,
+          role,
+          hasCheckedInBooking,
+        });
 
-    const result = await this.roomsRepository.update(
-      {
-        id: room.id,
-        status: room.status,
-        deletedAt: IsNull(),
+        if (room.status === status) {
+          return room.id;
+        }
+
+        const result = await manager.getRepository(Room).update(
+          {
+            id: room.id,
+            status: room.status,
+            deletedAt: IsNull(),
+          },
+          { status },
+        );
+
+        if (result.affected !== 1) {
+          throw new ConflictException(
+            'Trang thai phong da thay doi. Vui long tai lai va thu lai.',
+          );
+        }
+
+        await this.auditLogService.record(manager, {
+          ...auditContext,
+          action: AuditAction.ROOM_STATUS_CHANGED,
+          entityType: AuditEntityType.ROOM,
+          entityId: room.id,
+          metadata: {
+            fromStatus: room.status,
+            toStatus: status,
+          },
+        });
+
+        return room.id;
       },
-      { status },
     );
 
-    if (result.affected !== 1) {
-      throw new ConflictException(
-        'Trang thai phong da thay doi. Vui long tai lai va thu lai.',
-      );
+    return this.roomQueryService.getAdminRoom(roomId);
+  }
+
+  private async lockStayBookings(
+    manager: EntityManager,
+    roomId: string,
+  ): Promise<boolean> {
+    const bookings = await manager
+      .getRepository(Booking)
+      .createQueryBuilder('booking')
+      .select(['booking.id', 'booking.status'])
+      .where('booking.roomId = :roomId', { roomId })
+      .andWhere('booking.status IN (:...statuses)', {
+        statuses: [BookingStatus.CONFIRMED, BookingStatus.CHECKED_IN],
+      })
+      .orderBy('booking.id', 'ASC')
+      .setLock('pessimistic_write')
+      .getMany();
+
+    return bookings.some(
+      (booking) => booking.status === BookingStatus.CHECKED_IN,
+    );
+  }
+
+  private async getLockedRoomForStatus(
+    manager: EntityManager,
+    id: string,
+  ): Promise<Room> {
+    const room = await manager
+      .getRepository(Room)
+      .createQueryBuilder('room')
+      .where('room.id = :id', { id })
+      .andWhere('room.deletedAt IS NULL')
+      .setLock('pessimistic_write')
+      .getOne();
+
+    if (room === null) {
+      throw new NotFoundException('Khong tim thay phong.');
     }
 
-    return this.roomQueryService.getAdminRoom(room.id);
+    return room;
   }
 
   private async getLockedAdminRoomEntity(
@@ -222,6 +336,7 @@ export class RoomMutationService {
         'amenity',
         'amenity.deletedAt IS NULL',
       )
+      .leftJoinAndSelect('roomType.beds', 'bed')
       .leftJoinAndSelect('room.images', 'image')
       .setLock('pessimistic_write')
       .where('room.id = :id', { id })
@@ -238,33 +353,51 @@ export class RoomMutationService {
     return room;
   }
 
-  private async getActiveRoom(id: string): Promise<Room> {
-    this.validateId(id);
+  private async getLockedActiveRoomType(
+    manager: EntityManager,
+    id: string,
+  ): Promise<RoomType> {
+    const roomType = await manager
+      .getRepository(RoomType)
+      .createQueryBuilder('roomType')
+      .withDeleted()
+      .where('roomType.id = :id', { id })
+      .setLock('pessimistic_write')
+      .getOne();
 
-    const room = await this.roomsRepository.findOneBy({ id });
-
-    if (room === null) {
-      throw new NotFoundException('Khong tim thay phong.');
-    }
-
-    return room;
-  }
-
-  private async getActiveRoomType(id: string): Promise<RoomType> {
-    const roomType = await this.roomTypesRepository.findOneBy({ id });
-
-    if (roomType === null) {
+    if (roomType === null || roomType.deletedAt !== null) {
       throw new NotFoundException('Khong tim thay loai phong.');
     }
 
     return roomType;
   }
 
+  private async getLockedRoomForMutation(
+    manager: EntityManager,
+    id: string,
+  ): Promise<Room> {
+    const room = await manager
+      .getRepository(Room)
+      .createQueryBuilder('room')
+      .withDeleted()
+      .where('room.id = :id', { id })
+      .setLock('pessimistic_write')
+      .getOne();
+
+    if (room === null || room.deletedAt !== null) {
+      throw new NotFoundException('Khong tim thay phong.');
+    }
+
+    return room;
+  }
+
   private async ensureRoomNumberIsAvailable(
     roomNumber: string,
     currentRoomId?: string,
+    manager: EntityManager = this.roomsRepository.manager,
   ): Promise<void> {
-    const query = this.roomsRepository
+    const query = manager
+      .getRepository(Room)
       .createQueryBuilder('room')
       .withDeleted()
       .where('room.roomNumber = :roomNumber', { roomNumber });
@@ -338,26 +471,6 @@ export class RoomMutationService {
     }
 
     return status;
-  }
-
-  private assertStatusTransitionAllowed(
-    currentStatus: RoomStatus,
-    nextStatus: RoomStatus,
-    role: UserRole | undefined,
-  ): void {
-    if (role === 'ADMIN') {
-      return;
-    }
-
-    if (
-      role !== 'STAFF' ||
-      currentStatus === RoomStatus.HIDDEN ||
-      nextStatus === RoomStatus.HIDDEN
-    ) {
-      throw new ForbiddenException(
-        'Chi admin duoc thay doi trang thai HIDDEN.',
-      );
-    }
   }
 
   private optionalStatus(value: unknown): RoomStatus | undefined {

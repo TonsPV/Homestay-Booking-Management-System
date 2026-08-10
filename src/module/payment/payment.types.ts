@@ -1,4 +1,8 @@
-import { PaymentMethod, PaymentStatus } from './schema/payment.entity';
+import {
+  PaymentMethod,
+  PaymentReviewReason,
+  PaymentStatus,
+} from './schema/payment.entity';
 
 export interface PaymentResponse {
   id: string;
@@ -7,6 +11,8 @@ export interface PaymentResponse {
   currency: 'VND';
   method: PaymentMethod;
   status: PaymentStatus;
+  reviewReason: PaymentReviewReason | null;
+  reviewCanonicalPaymentId: string | null;
   gatewayName: string | null;
   gatewayReference: string | null;
   gatewayTransactionId: string | null;

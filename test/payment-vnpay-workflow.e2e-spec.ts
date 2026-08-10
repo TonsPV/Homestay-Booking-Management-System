@@ -16,6 +16,7 @@ import { Customer } from '../src/module/customer/schema/customer.entity';
 import {
   Payment,
   PaymentMethod,
+  PaymentReviewReason,
   PaymentStatus,
 } from '../src/module/payment/schema/payment.entity';
 import {
@@ -153,6 +154,70 @@ describe('VNPay collection/Return/IPN workflow (e2e)', () => {
     });
   });
 
+  it('rejects reuse of a gateway transaction id by a payment for another booking', async () => {
+    const sharedTransactionId = 'shared-tx-' + suffix;
+    const firstBooking = await createBooking(
+      BookingStatus.CONFIRMED,
+      BookingPaymentStatus.PAID,
+    );
+    const firstPayment = await createPayment(
+      firstBooking.id,
+      'shared-first-' + suffix,
+      PaymentStatus.SUCCESS,
+      '00',
+    );
+    await payments.update(firstPayment.id, {
+      gatewayTransactionId: sharedTransactionId,
+      paidAt: new Date(),
+    });
+
+    const secondBooking = await createBooking(
+      BookingStatus.PENDING_PAYMENT,
+      BookingPaymentStatus.UNPAID,
+    );
+    const secondPayment = await createPayment(
+      secondBooking.id,
+      'shared-second-' + suffix,
+      PaymentStatus.PENDING,
+      null,
+    );
+
+    const response = await request(app.getHttpServer())
+      .get('/api/v1/payments/vnpay/ipn')
+      .query(
+        callback(
+          secondPayment.gatewayReference as string,
+          '10000',
+          '00',
+          '00',
+          sharedTransactionId,
+        ),
+      )
+      .expect(200);
+
+    expect(response.body as VnPayResponse).toEqual({
+      RspCode: '99',
+      Message: 'Unknown error',
+    });
+    expect(
+      await payments.countBy({ gatewayTransactionId: sharedTransactionId }),
+    ).toBe(1);
+    expect(
+      await payments.findOneByOrFail({ id: secondPayment.id }),
+    ).toMatchObject({
+      status: PaymentStatus.PENDING,
+      gatewayTransactionId: null,
+      gatewayResponseCode: null,
+      gatewayTransactionStatus: null,
+    });
+    expect(
+      await bookings.findOneByOrFail({ id: secondBooking.id }),
+    ).toMatchObject({
+      status: BookingStatus.PENDING_PAYMENT,
+      paymentStatus: BookingPaymentStatus.UNPAID,
+    });
+  });
+
   it('marks a late success after cancelled Booking as REQUIRES_REVIEW', async () => {
     const booking = await createBooking(
       BookingStatus.CANCELLED,
@@ -182,6 +247,8 @@ describe('VNPay collection/Return/IPN workflow (e2e)', () => {
     });
     expect(await payments.findOneByOrFail({ id: payment.id })).toMatchObject({
       status: PaymentStatus.REQUIRES_REVIEW,
+      reviewReason: PaymentReviewReason.BOOKING_CANCELLED,
+      reviewCanonicalPaymentId: null,
       gatewayTransactionId: 'cancelled-tx-' + suffix,
     });
   });
@@ -225,7 +292,11 @@ describe('VNPay collection/Return/IPN workflow (e2e)', () => {
       Message: 'Confirm Success',
     });
     const refreshedFirst = await payments.findOneByOrFail({ id: first.id });
-    expect(refreshedFirst.status).toBe(PaymentStatus.REQUIRES_REVIEW);
+    expect(refreshedFirst).toMatchObject({
+      status: PaymentStatus.REQUIRES_REVIEW,
+      reviewReason: PaymentReviewReason.ANOTHER_SUCCESSFUL_PAYMENT,
+      reviewCanonicalPaymentId: second.id,
+    });
     expect(
       await payments.countBy({
         bookingId: booking.id,

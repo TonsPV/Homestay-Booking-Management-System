@@ -1,6 +1,7 @@
 const MIN_JWT_SECRET_LENGTH = 32;
 const DISALLOWED_JWT_SECRETS = new Set([
   'change-this-development-access-token-secret',
+  'development-only-secret-change-before-production-2026',
   'replace_with_a_long_random_secret',
 ]);
 
@@ -209,6 +210,13 @@ export function validateEnvironment(
   );
   const vnpayTmnCode = readOptionalString(config, 'VNPAY_TMN_CODE', '');
   const vnpayHashSecret = readOptionalString(config, 'VNPAY_HASH_SECRET', '');
+  const vnpayRequestTimeoutMs = readOptionalPositiveInteger(
+    config,
+    'VNPAY_REQUEST_TIMEOUT_MS',
+    10_000,
+    1_000,
+    120_000,
+  );
 
   assertHttpUrl(vnpayPaymentUrl, 'VNPAY_PAYMENT_URL', true);
   assertHttpUrl(vnpayReturnUrl, 'VNPAY_RETURN_URL', false);
@@ -312,6 +320,7 @@ export function validateEnvironment(
     VNPAY_FRONTEND_RETURN_URL: vnpayFrontendReturnUrl,
     VNPAY_TMN_CODE: vnpayTmnCode,
     VNPAY_HASH_SECRET: vnpayHashSecret,
+    VNPAY_REQUEST_TIMEOUT_MS: vnpayRequestTimeoutMs,
   };
 }
 

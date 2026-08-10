@@ -5,6 +5,12 @@ import {
 } from '@nestjs/common';
 import type { Repository } from 'typeorm';
 
+import type { AuditActorContext } from '../audit/audit-log.service';
+import {
+  AuditAction,
+  AuditActorType,
+  AuditEntityType,
+} from '../audit/schema/audit-log.entity';
 import type { PasswordHasherService } from '../auth/password-hasher.service';
 import { User } from './schema/user.entity';
 import { UserAdminService } from './user-admin.service';
@@ -19,6 +25,7 @@ describe('UserAdminService', () => {
   let passwordHasherService: {
     hash: jest.Mock;
   };
+  let auditLogService: { record: jest.Mock };
   let service: UserAdminService;
 
   beforeEach(() => {
@@ -31,9 +38,13 @@ describe('UserAdminService', () => {
     passwordHasherService = {
       hash: jest.fn(),
     };
+    auditLogService = {
+      record: jest.fn().mockResolvedValue(undefined),
+    };
     service = new UserAdminService(
       usersRepository as unknown as Repository<User>,
       passwordHasherService as unknown as PasswordHasherService,
+      auditLogService,
     );
   });
 
@@ -218,23 +229,114 @@ describe('UserAdminService', () => {
       Promise.resolve(value),
     );
 
-    await service.updateStatus('2', 'LOCKED', '1');
+    await service.updateStatus('2', 'LOCKED', '1', auditContext());
     expect(user).toMatchObject({ status: 'LOCKED', tokenVersion: 9 });
 
-    await service.updateStatus('2', 'ACTIVE', '1');
+    await service.updateStatus('2', 'ACTIVE', '1', auditContext());
     expect(user).toMatchObject({ status: 'ACTIVE', tokenVersion: 10 });
   });
 
   it('does not revoke again for an idempotent status request', async () => {
+    const user = userFixture({ status: 'ACTIVE', tokenVersion: 8 });
+    const transactionalRepository = {
+      findOne: jest.fn().mockResolvedValue(user),
+      save: jest.fn((value: User) => Promise.resolve(value)),
+    };
+    const manager = {
+      getRepository: jest.fn().mockReturnValue(transactionalRepository),
+    };
+    const transaction = jest.fn((operation: (value: unknown) => unknown) =>
+      operation(manager),
+    );
+    Object.assign(usersRepository, { manager: { transaction } });
+    service = new UserAdminService(
+      usersRepository as unknown as Repository<User>,
+      passwordHasherService as unknown as PasswordHasherService,
+      auditLogService,
+    );
+
+    await service.updateStatus('2', 'ACTIVE', '1', auditContext());
+
+    expect(user.tokenVersion).toBe(8);
+    expect(transactionalRepository.findOne).toHaveBeenCalledWith({
+      where: { id: '2' },
+      lock: { mode: 'pessimistic_write' },
+    });
+    expect(auditLogService.record).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    {
+      fromStatus: 'ACTIVE',
+      toStatus: 'LOCKED',
+      action: AuditAction.ACCOUNT_LOCKED,
+    },
+    {
+      fromStatus: 'LOCKED',
+      toStatus: 'ACTIVE',
+      action: AuditAction.ACCOUNT_UNLOCKED,
+    },
+  ] as const)(
+    'writes $action audit with the status transaction manager',
+    async ({ fromStatus, toStatus, action }) => {
+      const user = userFixture({ status: fromStatus, tokenVersion: 8 });
+      const transactionalRepository = {
+        findOne: jest.fn().mockResolvedValue(user),
+        save: jest.fn((value: User) => Promise.resolve(value)),
+      };
+      const manager = {
+        getRepository: jest.fn().mockReturnValue(transactionalRepository),
+      };
+      const transaction = jest.fn((operation: (value: unknown) => unknown) =>
+        operation(manager),
+      );
+      Object.assign(usersRepository, { manager: { transaction } });
+      service = new UserAdminService(
+        usersRepository as unknown as Repository<User>,
+        passwordHasherService as unknown as PasswordHasherService,
+        auditLogService,
+      );
+      const context = auditContext();
+
+      await service.updateStatus('2', toStatus, '1', context);
+
+      expect(user.tokenVersion).toBe(9);
+      expect(auditLogService.record).toHaveBeenCalledWith(manager, {
+        ...context,
+        action,
+        entityType: AuditEntityType.USER,
+        entityId: '2',
+        metadata: { fromStatus, toStatus },
+      });
+    },
+  );
+
+  it('does not write audit when status persistence fails', async () => {
+    const user = userFixture({ status: 'ACTIVE', tokenVersion: 8 });
+    usersRepository.findOneBy.mockResolvedValue(user);
+    usersRepository.save.mockImplementation(() =>
+      Promise.reject(new Error('save failed')),
+    );
+
+    await expect(
+      service.updateStatus('2', 'LOCKED', '1', auditContext()),
+    ).rejects.toThrow('save failed');
+
+    expect(auditLogService.record).not.toHaveBeenCalled();
+  });
+
+  it('keeps the existing repository save behavior for same-state requests without a manager', async () => {
     const user = userFixture({ status: 'ACTIVE', tokenVersion: 8 });
     usersRepository.findOneBy.mockResolvedValue(user);
     usersRepository.save.mockImplementation((value: User) =>
       Promise.resolve(value),
     );
 
-    await service.updateStatus('2', 'ACTIVE', '1');
+    await service.updateStatus('2', 'ACTIVE', '1', auditContext());
 
     expect(user.tokenVersion).toBe(8);
+    expect(usersRepository.save).toHaveBeenCalledWith(user);
+    expect(auditLogService.record).not.toHaveBeenCalled();
   });
 
   it('prevents self-lock and rejects invalid or missing ids', async () => {
@@ -243,15 +345,15 @@ describe('UserAdminService', () => {
     );
 
     await expect(
-      service.updateStatus('1', 'LOCKED', '1'),
+      service.updateStatus('1', 'LOCKED', '1', auditContext()),
     ).rejects.toBeInstanceOf(BadRequestException);
     await expect(
-      service.updateStatus('bad-id', 'ACTIVE', '1'),
+      service.updateStatus('bad-id', 'ACTIVE', '1', auditContext()),
     ).rejects.toBeInstanceOf(BadRequestException);
 
     usersRepository.findOneBy.mockResolvedValue(null);
     await expect(
-      service.updateStatus('999', 'ACTIVE', '1'),
+      service.updateStatus('999', 'ACTIVE', '1', auditContext()),
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 });
@@ -297,5 +399,13 @@ function userFixture(overrides: Partial<User> = {}): User {
     updatedAt: new Date('2026-01-01T00:00:00.000Z'),
     deletedAt: null,
     ...overrides,
+  };
+}
+
+function auditContext(): AuditActorContext {
+  return {
+    actorType: AuditActorType.USER,
+    actorId: '1',
+    requestId: 'request-user-status',
   };
 }

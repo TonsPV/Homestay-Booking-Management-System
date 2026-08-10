@@ -26,6 +26,7 @@ import {
   RoomCalendar,
   RoomCalendarStatus,
 } from '../booking/schema/room-calendar.entity';
+import { BookingStayPolicy } from '../booking/booking-stay.policy';
 import type {
   ManagementRoomCalendarSummary,
   ManagementRoomListResult,
@@ -36,6 +37,11 @@ import type {
   RoomResponse,
 } from './room.types';
 import { RoomTodayAvailabilityStatus } from './room.types';
+import {
+  sortBedConfigurations,
+  type BedConfiguration,
+} from '../room-type/bed-configuration';
+import type { RoomTypeBed } from '../room-type/schema/room-type-bed.entity';
 
 const VIETNAM_UTC_OFFSET_MILLISECONDS = 7 * 60 * 60 * 1000;
 
@@ -46,6 +52,7 @@ export class RoomQueryService {
     private readonly roomsRepository: Repository<Room>,
     @InjectRepository(RoomCalendar)
     private readonly roomCalendarsRepository: Repository<RoomCalendar>,
+    private readonly bookingStayPolicy: BookingStayPolicy,
   ) {}
 
   async list(query: ListRoomsQueryDto): Promise<PublicRoomListResult> {
@@ -139,18 +146,11 @@ export class RoomQueryService {
   async listAvailable(
     query: ListAvailableRoomsQueryDto,
   ): Promise<RoomListResult> {
-    const checkIn = this.requireIsoDate(
+    const stayRange = this.bookingStayPolicy.requireStayRange(
       query.checkIn,
-      'Ngay check-in khong hop le.',
-    );
-    const checkOut = this.requireIsoDate(
       query.checkOut,
-      'Ngay check-out khong hop le.',
+      { checkIn: 'checkIn', checkOut: 'checkOut' },
     );
-
-    if (checkIn >= checkOut) {
-      throw new BadRequestException('Ngay check-out phai sau ngay check-in.');
-    }
 
     const guests = requirePositiveInt(
       query.guests,
@@ -163,21 +163,15 @@ export class RoomQueryService {
     const { page, limit, skip } = parsePagination(
       query as Record<string, unknown>,
     );
-    const roomsQuery = this.createManagementQuery()
-      .andWhere('room.status NOT IN (:...unbookableStatuses)', {
-        unbookableStatuses: [RoomStatus.HIDDEN, RoomStatus.MAINTENANCE],
-      })
-      .andWhere('roomType.maxGuests >= :guests', { guests })
-      .andWhere(
-        `NOT EXISTS (
-          SELECT 1
-          FROM room_calendar roomCalendar
-          WHERE roomCalendar.room_id = room.id
-            AND roomCalendar.stay_date >= :checkIn
-            AND roomCalendar.stay_date < :checkOut
-        )`,
-        { checkIn, checkOut },
-      )
+    const roomsQuery = this.applyAvailabilityWindow(
+      this.createManagementQuery()
+        .andWhere('room.status NOT IN (:...unbookableStatuses)', {
+          unbookableStatuses: [RoomStatus.HIDDEN, RoomStatus.MAINTENANCE],
+        })
+        .andWhere('roomType.maxGuests >= :guests', { guests }),
+      stayRange.checkInDate,
+      stayRange.checkOutDate,
+    )
       .orderBy('room.roomNumber', 'ASC')
       .addOrderBy('image.isCover', 'DESC')
       .addOrderBy('image.sortOrder', 'ASC')
@@ -195,18 +189,11 @@ export class RoomQueryService {
   }
 
   async search(query: SearchRoomsQueryDto): Promise<PublicRoomListResult> {
-    const checkIn = this.requireIsoDate(
+    const stayRange = this.bookingStayPolicy.requireStayRange(
       query.checkIn,
-      'Ngay check-in khong hop le.',
-    );
-    const checkOut = this.requireIsoDate(
       query.checkOut,
-      'Ngay check-out khong hop le.',
+      { checkIn: 'checkIn', checkOut: 'checkOut' },
     );
-
-    if (checkIn >= checkOut) {
-      throw new BadRequestException('Ngay check-out phai sau ngay check-in.');
-    }
 
     const guests = requirePositiveInt(
       query.guests,
@@ -243,18 +230,13 @@ export class RoomQueryService {
       );
     }
 
-    const roomsQuery = this.createPublicQuery()
-      .andWhere('roomType.maxGuests >= :guests', { guests })
-      .andWhere(
-        `NOT EXISTS (
-          SELECT 1
-          FROM room_calendar roomCalendar
-          WHERE roomCalendar.room_id = room.id
-            AND roomCalendar.stay_date >= :checkIn
-            AND roomCalendar.stay_date < :checkOut
-        )`,
-        { checkIn, checkOut },
-      )
+    const roomsQuery = this.applyAvailabilityWindow(
+      this.createPublicQuery().andWhere('roomType.maxGuests >= :guests', {
+        guests,
+      }),
+      stayRange.checkInDate,
+      stayRange.checkOutDate,
+    )
       .orderBy(this.roomSearchOrder(sort), this.roomSearchDirection(sort))
       .addOrderBy('roomType.basePrice', 'ASC')
       .addOrderBy('room.roomNumber', 'ASC')
@@ -323,7 +305,7 @@ export class RoomQueryService {
       case RoomSearchSort.NEWEST:
         return 'room.createdAt';
       case RoomSearchSort.POPULARITY:
-        return `(SELECT COUNT(*) FROM bookings popularityBooking WHERE popularityBooking.room_id = room.id AND popularityBooking.status NOT IN ('CANCELLED', 'EXPIRED'))`;
+        return `(SELECT COUNT(*) FROM bookings popularityBooking WHERE popularityBooking.room_id = room.id AND popularityBooking.status <> 'CANCELLED')`;
       default:
         return 'roomType.basePrice';
     }
@@ -388,6 +370,7 @@ export class RoomQueryService {
         name: room.roomType.name,
         description: room.roomType.description,
         bedType: room.roomType.bedType,
+        beds: this.toBedConfigurations(room.roomType.beds),
         maxGuests: room.roomType.maxGuests,
         basePrice: room.roomType.basePrice,
         amenities: (room.roomType.amenities ?? []).map((amenity) => ({
@@ -413,6 +396,7 @@ export class RoomQueryService {
         name: room.roomType.name,
         description: room.roomType.description,
         bedType: room.roomType.bedType,
+        beds: this.toBedConfigurations(room.roomType.beds),
         maxGuests: room.roomType.maxGuests,
         basePrice: room.roomType.basePrice,
         amenities: (room.roomType.amenities ?? []).map((amenity) => ({
@@ -434,6 +418,7 @@ export class RoomQueryService {
         'amenity',
         'amenity.deletedAt IS NULL',
       )
+      .leftJoinAndSelect('roomType.beds', 'bed')
       .leftJoinAndSelect('room.images', 'image')
       .where('room.deletedAt IS NULL')
       .andWhere('roomType.deletedAt IS NULL')
@@ -451,6 +436,7 @@ export class RoomQueryService {
         'amenity',
         'amenity.deletedAt IS NULL',
       )
+      .leftJoinAndSelect('roomType.beds', 'bed')
       .leftJoinAndSelect('room.images', 'image')
       .where('room.deletedAt IS NULL')
       .andWhere('roomType.deletedAt IS NULL');
@@ -547,6 +533,7 @@ export class RoomQueryService {
         'amenity',
         'amenity.deletedAt IS NULL',
       )
+      .leftJoinAndSelect('roomType.beds', 'bed')
       .leftJoinAndSelect('room.images', 'image')
       .where('room.id = :id', { id })
       .andWhere('room.deletedAt IS NULL')
@@ -592,30 +579,32 @@ export class RoomQueryService {
     };
   }
 
-  private requireIsoDate(value: unknown, message: string): string {
-    if (typeof value !== 'string') {
-      throw new BadRequestException(message);
-    }
+  private toBedConfigurations(
+    beds: RoomTypeBed[] | undefined,
+  ): BedConfiguration[] {
+    return sortBedConfigurations(
+      (beds ?? []).map((bed) => ({
+        type: bed.bedType,
+        quantity: bed.quantity,
+      })),
+    );
+  }
 
-    const date = value.trim();
-    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
-
-    if (match === null) {
-      throw new BadRequestException(message);
-    }
-
-    const parsed = new Date(`${date}T00:00:00.000Z`);
-
-    if (
-      Number.isNaN(parsed.getTime()) ||
-      parsed.getUTCFullYear() !== Number(match[1]) ||
-      parsed.getUTCMonth() + 1 !== Number(match[2]) ||
-      parsed.getUTCDate() !== Number(match[3])
-    ) {
-      throw new BadRequestException(message);
-    }
-
-    return date;
+  private applyAvailabilityWindow(
+    query: SelectQueryBuilder<Room>,
+    checkIn: string,
+    checkOut: string,
+  ): SelectQueryBuilder<Room> {
+    return query.andWhere(
+      `NOT EXISTS (
+        SELECT 1
+        FROM room_calendar roomCalendar
+        WHERE roomCalendar.room_id = room.id
+          AND roomCalendar.stay_date >= :checkIn
+          AND roomCalendar.stay_date < :checkOut
+      )`,
+      { checkIn, checkOut },
+    );
   }
 
   private requireId(value: unknown, message: string): string {

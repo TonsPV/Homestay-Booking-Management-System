@@ -10,6 +10,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
+import { ApiHeader } from '@nestjs/swagger';
 
 import {
   ApiResponse,
@@ -25,6 +26,7 @@ import {
   ApiCommonAuthErrors,
   ApiCommonMutationErrors,
   ApiCreatedEnvelope,
+  ApiExternalServiceUnavailableError,
   ApiOkEnvelope,
 } from '../../openapi/api-response.decorators';
 import { AccessTokenGuard } from '../auth/access-token.guard';
@@ -93,14 +95,26 @@ export class PaymentManagementController {
   @HttpCode(HttpStatus.CREATED)
   @ApiCreatedEnvelope(PaymentDto)
   @ApiCommonMutationErrors()
+  @ApiHeader({
+    name: 'Idempotency-Key',
+    required: true,
+    description: 'Unique key for this manual payment request.',
+  })
   create(
     @CurrentAuth() auth: AccessTokenPayload,
     @Param('bookingId') bookingId: string,
     @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @ReqContext() context: RequestContext,
     @Body() body: CreateManualPaymentDto,
   ): Promise<ApiResponsePayload<PaymentResponse>> {
     return this.paymentService
-      .recordManualPayment(auth.user_id, bookingId, idempotencyKey, body)
+      .recordManualPayment(
+        auth.user_id,
+        bookingId,
+        idempotencyKey,
+        body,
+        context.requestId,
+      )
       .then((payment) =>
         ApiResponse.created(payment, 'Ghi nhan thanh toan thanh cong.'),
       );
@@ -111,6 +125,13 @@ export class PaymentManagementController {
   @Roles('ADMIN')
   @ApiOkEnvelope(PaymentDto)
   @ApiCommonMutationErrors()
+  @ApiExternalServiceUnavailableError()
+  @ApiHeader({
+    name: 'Idempotency-Key',
+    required: false,
+    description:
+      'Required for VNPay refunds; manual refunds are lock-idempotent.',
+  })
   refund(
     @CurrentAuth() auth: AccessTokenPayload,
     @Param('id') id: string,
@@ -119,7 +140,14 @@ export class PaymentManagementController {
     @Body() body: RefundPaymentDto,
   ): Promise<ApiResponsePayload<PaymentResponse>> {
     return this.paymentService
-      .refund(auth.user_id, id, idempotencyKey, context.ip, body)
+      .refund(
+        auth.user_id,
+        id,
+        idempotencyKey,
+        context.ip,
+        body,
+        context.requestId,
+      )
       .then((payment) =>
         ApiResponse.ok(
           payment,
@@ -130,18 +158,54 @@ export class PaymentManagementController {
       );
   }
 
+  @Post('payments/:id/resolve-duplicate-charge')
+  @HttpCode(HttpStatus.OK)
+  @Roles('ADMIN')
+  @ApiOkEnvelope(PaymentDto)
+  @ApiCommonMutationErrors()
+  @ApiExternalServiceUnavailableError()
+  @ApiHeader({
+    name: 'Idempotency-Key',
+    required: true,
+    description: 'Unique key for this duplicate VNPay charge resolution.',
+  })
+  resolveDuplicateCharge(
+    @CurrentAuth() auth: AccessTokenPayload,
+    @Param('id') id: string,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @ReqContext() context: RequestContext,
+  ): Promise<ApiResponsePayload<PaymentResponse>> {
+    return this.paymentService
+      .resolveDuplicateCharge(
+        auth.user_id,
+        id,
+        idempotencyKey,
+        context.ip,
+        context.requestId,
+      )
+      .then((payment) =>
+        ApiResponse.ok(
+          payment,
+          payment.status === PaymentStatus.REFUND_PENDING
+            ? 'Yeu cau refund giao dich trung da duoc ghi nhan. VNPay van dang xu ly.'
+            : 'Hoan tien giao dich trung thanh cong.',
+        ),
+      );
+  }
+
   @Post('payments/:id/reconcile-refund')
   @HttpCode(HttpStatus.OK)
   @Roles('ADMIN')
   @ApiOkEnvelope(PaymentDto)
   @ApiCommonMutationErrors()
+  @ApiExternalServiceUnavailableError()
   reconcileRefund(
     @CurrentAuth() auth: AccessTokenPayload,
     @Param('id') id: string,
     @ReqContext() context: RequestContext,
   ): Promise<ApiResponsePayload<PaymentResponse>> {
     return this.paymentService
-      .reconcileVnPayRefund(auth.user_id, id, context.ip)
+      .reconcileVnPayRefund(auth.user_id, id, context.ip, context.requestId)
       .then((payment) =>
         ApiResponse.ok(
           payment,

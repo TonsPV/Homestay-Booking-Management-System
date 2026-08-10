@@ -166,8 +166,11 @@ export class BookingQueryService {
   }
 
   private createBookingQuery(): SelectQueryBuilder<Booking> {
+    // TypeORM decides whether to append relation deleted_at filters when a
+    // join is registered, so withDeleted must precede the historical joins.
     return this.bookingsRepository
       .createQueryBuilder('booking')
+      .withDeleted()
       .innerJoinAndSelect('booking.customer', 'customer')
       .innerJoinAndSelect('booking.room', 'room')
       .innerJoinAndSelect('room.roomType', 'roomType')

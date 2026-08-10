@@ -4,6 +4,8 @@ import { RoomCalendarStatus } from '../../booking/schema/room-calendar.entity';
 import { RoomStatus } from '../schema/room.entity';
 import { RoomTodayAvailabilityStatus } from '../room.types';
 import { RoomTypeAmenityDto } from '../../room-type/dto/room-type-response.dto';
+import { BedType } from '../../room-type/bed-configuration';
+import { RoomTypeBedResponseDto } from '../../room-type/dto/room-type-bed.dto';
 
 export class RoomImageDto {
   @ApiProperty({ example: '1' })
@@ -29,8 +31,17 @@ export class RoomResponseRoomTypeDto {
   @ApiProperty({ nullable: true, type: String })
   description!: string | null;
 
-  @ApiProperty({ example: '1 giường đôi', nullable: true, type: String })
+  @ApiProperty({
+    deprecated: true,
+    description: 'Legacy free-text bed configuration. Use beds instead.',
+    example: '1 giường đôi',
+    nullable: true,
+    type: String,
+  })
   bedType!: string | null;
+
+  @ApiProperty({ type: [RoomTypeBedResponseDto] })
+  beds!: Array<{ type: BedType; quantity: number }>;
 
   @ApiProperty({ example: 2, minimum: 1 })
   maxGuests!: number;

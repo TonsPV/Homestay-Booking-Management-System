@@ -2,9 +2,12 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { AuthModule } from '../auth/auth.module';
+import { AuditModule } from '../audit/audit.module';
 import { Booking } from '../booking/schema/booking.entity';
 import { RoomCalendar } from '../booking/schema/room-calendar.entity';
+import { BookingStayPolicy } from '../booking/booking-stay.policy';
 import { RoomType } from '../room-type/schema/room-type.entity';
+import { RoomTypeBed } from '../room-type/schema/room-type-bed.entity';
 import { RoomImageController } from './room-image.controller';
 import { RoomImageService } from './room-image.service';
 import { RoomImageStorageService } from './room-image-storage.service';
@@ -14,6 +17,7 @@ import { RoomController } from './room.controller';
 import { RoomMutationService } from './room-mutation.service';
 import { RoomQueryService } from './room-query.service';
 import { RoomService } from './room.service';
+import { RoomStatusTransitionPolicy } from './room-status-transition.policy';
 import { RoomImage } from './schema/room-image.entity';
 import { Room } from './schema/room.entity';
 
@@ -23,19 +27,23 @@ import { Room } from './schema/room.entity';
       Room,
       RoomImage,
       RoomType,
+      RoomTypeBed,
       RoomCalendar,
       Booking,
     ]),
     AuthModule,
+    AuditModule,
   ],
   controllers: [RoomController, RoomManagementController, RoomImageController],
   providers: [
     RoomService,
     RoomQueryService,
     RoomMutationService,
+    RoomStatusTransitionPolicy,
     RoomImageService,
     RoomImageStorageService,
     RoomAvailabilityService,
+    BookingStayPolicy,
   ],
 })
 export class RoomModule {}

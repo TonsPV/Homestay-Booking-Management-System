@@ -101,6 +101,44 @@ describe('BookingQueryService', () => {
     );
   });
 
+  it('includes soft-deleted relations in customer and management history queries', async () => {
+    const customerQuery = createQuery({ one: bookingFixture() });
+    const managementQuery = createQuery({ one: bookingFixture() });
+    repository.createQueryBuilder
+      .mockReturnValueOnce(customerQuery)
+      .mockReturnValueOnce(managementQuery);
+
+    await expect(service.getForCustomer('10', '100')).resolves.toMatchObject({
+      id: '100',
+      customerId: '10',
+      roomId: '1',
+    });
+    await expect(service.getManagement('100')).resolves.toMatchObject({
+      id: '100',
+      customerId: '10',
+      roomId: '1',
+    });
+
+    for (const query of [customerQuery, managementQuery]) {
+      expect(query.withDeleted).toHaveBeenCalledTimes(1);
+      expect(query.innerJoinAndSelect).toHaveBeenCalledWith(
+        'booking.customer',
+        'customer',
+      );
+      expect(query.innerJoinAndSelect).toHaveBeenCalledWith(
+        'booking.room',
+        'room',
+      );
+      expect(query.innerJoinAndSelect).toHaveBeenCalledWith(
+        'room.roomType',
+        'roomType',
+      );
+      expect(query.withDeleted.mock.invocationCallOrder[0]).toBeLessThan(
+        query.innerJoinAndSelect.mock.invocationCallOrder[0],
+      );
+    }
+  });
+
   it('returns 404 instead of exposing another customer booking', async () => {
     repository.createQueryBuilder.mockReturnValue(createQuery());
 
@@ -130,6 +168,7 @@ interface QueryResult {
 
 function createQuery(result: QueryResult = {}) {
   const query = {
+    withDeleted: jest.fn(),
     innerJoinAndSelect: jest.fn(),
     leftJoinAndSelect: jest.fn(),
     where: jest.fn(),
@@ -145,6 +184,7 @@ function createQuery(result: QueryResult = {}) {
   };
 
   for (const method of [
+    query.withDeleted,
     query.innerJoinAndSelect,
     query.leftJoinAndSelect,
     query.where,

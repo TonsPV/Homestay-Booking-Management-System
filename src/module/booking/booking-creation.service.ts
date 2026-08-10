@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   HttpStatus,
   Injectable,
+  Logger,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -20,10 +21,18 @@ import {
   requiredPhone,
   requirePositiveInt,
 } from '../../common/validation';
+import { AuditLogService } from '../audit/audit-log.service';
+import {
+  AuditAction,
+  AuditActorType,
+  AuditEntityType,
+} from '../audit/schema/audit-log.entity';
 import { Customer } from '../customer/schema/customer.entity';
 import { Room, RoomStatus } from '../room/schema/room.entity';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { CreateManagementBookingDto } from './dto/create-management-booking.dto';
+import { BookingStayPolicy } from './booking-stay.policy';
+import type { BookingAuditContext } from './booking.types';
 import {
   Booking,
   BookingPaymentStatus,
@@ -34,9 +43,6 @@ import {
   RoomCalendarStatus,
 } from './schema/room-calendar.entity';
 
-const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
-const VIETNAM_UTC_OFFSET_MILLISECONDS = 7 * 60 * 60 * 1000;
-const MAX_STAY_NIGHTS = 90;
 const MAX_TOTAL_CENTS = 999_999_999_999n;
 
 interface NormalizedCreateBookingInput {
@@ -64,14 +70,16 @@ export interface CustomerBookingCreationResult {
 
 @Injectable()
 export class BookingCreationService {
+  private readonly logger = new Logger(BookingCreationService.name);
   private readonly paymentTimeoutMilliseconds: number;
   private readonly maxActiveUnpaidBookingsPerCustomer: number;
   private readonly maxHeldNightsPerCustomer: number;
-  private readonly maxAdvanceBookingDays: number;
 
   constructor(
     private readonly dataSource: DataSource,
     configService: ConfigService,
+    private readonly bookingStayPolicy: BookingStayPolicy,
+    private readonly auditLogService: AuditLogService,
   ) {
     this.paymentTimeoutMilliseconds =
       configService.getOrThrow<number>('BOOKING_PAYMENT_TIMEOUT_MINUTES') *
@@ -83,14 +91,12 @@ export class BookingCreationService {
     this.maxHeldNightsPerCustomer = configService.getOrThrow<number>(
       'BOOKING_MAX_HELD_NIGHTS_PER_CUSTOMER',
     );
-    this.maxAdvanceBookingDays = configService.getOrThrow<number>(
-      'BOOKING_MAX_ADVANCE_DAYS',
-    );
   }
 
   async createForCustomer(
     customerId: string | undefined,
     body: CreateBookingDto,
+    context?: BookingAuditContext,
   ): Promise<CustomerBookingCreationResult> {
     const activeCustomerId = this.requireActorId(customerId);
     const input = this.normalizeCreateInput(body);
@@ -100,6 +106,9 @@ export class BookingCreationService {
         this.getActiveCustomer(manager, activeCustomerId, true, true),
       null,
       true,
+      AuditActorType.CUSTOMER,
+      activeCustomerId,
+      context?.requestId,
     );
 
     return { customerId: activeCustomerId, bookingId };
@@ -108,6 +117,7 @@ export class BookingCreationService {
   async createForManagement(
     userId: string | undefined,
     body: CreateManagementBookingDto,
+    context?: BookingAuditContext,
   ): Promise<string> {
     const createdByUserId = this.requireActorId(userId);
     const input = this.normalizeCreateInput(body);
@@ -122,6 +132,9 @@ export class BookingCreationService {
         this.resolveManagementCustomer(manager, requestedCustomerId, input),
       createdByUserId,
       false,
+      AuditActorType.USER,
+      createdByUserId,
+      context?.requestId,
     );
   }
 
@@ -130,6 +143,9 @@ export class BookingCreationService {
     resolveCustomer: (manager: EntityManager) => Promise<Customer>,
     createdByUserId: string | null,
     enforceCustomerAdmission: boolean,
+    actorType: AuditActorType,
+    actorId: string,
+    requestId?: string,
   ): Promise<string> {
     try {
       return await this.dataSource.transaction(async (manager) => {
@@ -191,25 +207,38 @@ export class BookingCreationService {
         });
         const savedBooking = await bookingsRepository.save(booking);
         const calendarRepository = manager.getRepository(RoomCalendar);
-        const calendarEntries = this.enumerateStayDates(
-          input.checkInDate,
-          input.checkOutDate,
-        ).map((stayDate) =>
-          calendarRepository.create({
-            roomId: room.id,
-            bookingId: savedBooking.id,
-            stayDate,
-            status: RoomCalendarStatus.RESERVED,
-            reason: null,
-          }),
-        );
+        const calendarEntries = this.bookingStayPolicy
+          .enumerateStayDates(input.checkInDate, input.checkOutDate)
+          .map((stayDate) =>
+            calendarRepository.create({
+              roomId: room.id,
+              bookingId: savedBooking.id,
+              stayDate,
+              status: RoomCalendarStatus.RESERVED,
+              reason: null,
+            }),
+          );
 
         await calendarRepository.insert(calendarEntries);
+        await this.auditLogService.record(manager, {
+          actorType,
+          actorId,
+          action: AuditAction.BOOKING_CREATED,
+          entityType: AuditEntityType.BOOKING,
+          entityId: savedBooking.id,
+          requestId,
+          metadata: {
+            status: savedBooking.status,
+            roomId: savedBooking.roomId,
+            checkInDate: savedBooking.checkInDate,
+            checkOutDate: savedBooking.checkOutDate,
+          },
+        });
 
         return savedBooking.id;
       });
     } catch (error) {
-      this.throwBookingWriteConflict(error);
+      this.throwBookingWriteConflict(error, input.roomId, requestId);
     }
   }
 
@@ -356,7 +385,11 @@ export class BookingCreationService {
     });
     const heldNights = activeUnpaidBookings.reduce(
       (total, booking) =>
-        total + this.calculateNights(booking.checkInDate, booking.checkOutDate),
+        total +
+        this.bookingStayPolicy.countNights(
+          booking.checkInDate,
+          booking.checkOutDate,
+        ),
       0,
     );
 
@@ -436,57 +469,10 @@ export class BookingCreationService {
     body: CreateBookingDto,
   ): NormalizedCreateBookingInput {
     const roomId = this.requireId(body.roomId, 'Room id khong hop le.');
-    const checkInDate = this.requireIsoDate(
+    const stayRange = this.bookingStayPolicy.requireStayRange(
       body.checkInDate,
-      'Ngay check-in khong hop le.',
-    );
-    const checkOutDate = this.requireIsoDate(
       body.checkOutDate,
-      'Ngay check-out khong hop le.',
     );
-    const nights = this.calculateNights(checkInDate, checkOutDate);
-
-    const currentVietnamDate = this.getCurrentVietnamDate();
-
-    if (checkInDate < currentVietnamDate) {
-      throw new AppHttpException(
-        HttpStatus.BAD_REQUEST,
-        ErrorCode.BOOKING_CHECKIN_IN_PAST,
-        'Ngay check-in khong duoc nam trong qua khu.',
-        {
-          fieldErrors: {
-            checkInDate: [
-              {
-                errorCode: ErrorCode.BOOKING_CHECKIN_IN_PAST,
-                message: 'Ngay check-in khong duoc nam trong qua khu.',
-              },
-            ],
-          },
-        },
-      );
-    }
-
-    if (
-      this.calculateDateDistance(currentVietnamDate, checkInDate) >
-      this.maxAdvanceBookingDays
-    ) {
-      throw new AppHttpException(
-        HttpStatus.BAD_REQUEST,
-        ErrorCode.BOOKING_CHECKIN_TOO_FAR,
-        `Ngay check-in khong duoc qua ${this.maxAdvanceBookingDays} ngay ke tu hom nay.`,
-        {
-          details: { maxAdvanceDays: this.maxAdvanceBookingDays },
-          fieldErrors: {
-            checkInDate: [
-              {
-                errorCode: ErrorCode.BOOKING_CHECKIN_TOO_FAR,
-                message: 'Ngay check-in vuot qua thoi gian dat truoc.',
-              },
-            ],
-          },
-        },
-      );
-    }
 
     const guestCount = requirePositiveInt(
       body.guestCount,
@@ -511,9 +497,9 @@ export class BookingCreationService {
 
     return {
       roomId,
-      checkInDate,
-      checkOutDate,
-      nights,
+      checkInDate: stayRange.checkInDate,
+      checkOutDate: stayRange.checkOutDate,
+      nights: stayRange.nights,
       guestCount,
       contactName,
       contactPhone,
@@ -532,101 +518,6 @@ export class BookingCreationService {
       email:
         input.contactEmail === undefined ? customer.email : input.contactEmail,
     };
-  }
-
-  private requireIsoDate(value: unknown, message: string): string {
-    if (typeof value !== 'string') {
-      throw new BadRequestException(message);
-    }
-
-    const date = value.trim();
-    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
-
-    if (match === null) {
-      throw new BadRequestException(message);
-    }
-
-    const parsed = new Date(`${date}T00:00:00.000Z`);
-
-    if (
-      Number.isNaN(parsed.getTime()) ||
-      parsed.getUTCFullYear() !== Number(match[1]) ||
-      parsed.getUTCMonth() + 1 !== Number(match[2]) ||
-      parsed.getUTCDate() !== Number(match[3])
-    ) {
-      throw new BadRequestException(message);
-    }
-
-    return date;
-  }
-
-  private calculateNights(checkInDate: string, checkOutDate: string): number {
-    const nights = this.calculateDateDistance(checkInDate, checkOutDate);
-
-    if (!Number.isInteger(nights) || nights <= 0) {
-      throw new AppHttpException(
-        HttpStatus.BAD_REQUEST,
-        ErrorCode.BOOKING_DATE_RANGE_INVALID,
-        'Ngay check-out phai sau ngay check-in.',
-        {
-          fieldErrors: {
-            checkOutDate: [
-              {
-                errorCode: ErrorCode.BOOKING_DATE_RANGE_INVALID,
-                message: 'Ngay check-out phai sau ngay check-in.',
-              },
-            ],
-          },
-        },
-      );
-    }
-
-    if (nights > MAX_STAY_NIGHTS) {
-      throw new AppHttpException(
-        HttpStatus.BAD_REQUEST,
-        ErrorCode.BOOKING_STAY_TOO_LONG,
-        `Booking khong duoc vuot qua ${MAX_STAY_NIGHTS} dem.`,
-        {
-          details: { maxStayNights: MAX_STAY_NIGHTS },
-          fieldErrors: {
-            checkOutDate: [
-              {
-                errorCode: ErrorCode.BOOKING_STAY_TOO_LONG,
-                message: `Booking khong duoc vuot qua ${MAX_STAY_NIGHTS} dem.`,
-              },
-            ],
-          },
-        },
-      );
-    }
-
-    return nights;
-  }
-
-  private calculateDateDistance(fromDate: string, toDate: string): number {
-    const from = Date.parse(`${fromDate}T00:00:00.000Z`);
-    const to = Date.parse(`${toDate}T00:00:00.000Z`);
-
-    return (to - from) / MILLISECONDS_PER_DAY;
-  }
-
-  private enumerateStayDates(
-    checkInDate: string,
-    checkOutDate: string,
-  ): string[] {
-    const checkIn = Date.parse(`${checkInDate}T00:00:00.000Z`);
-    const checkOut = Date.parse(`${checkOutDate}T00:00:00.000Z`);
-    const stayDates: string[] = [];
-
-    for (
-      let stayDate = checkIn;
-      stayDate < checkOut;
-      stayDate += MILLISECONDS_PER_DAY
-    ) {
-      stayDates.push(new Date(stayDate).toISOString().slice(0, 10));
-    }
-
-    return stayDates;
   }
 
   private calculateTotalAmount(basePrice: string, nights: number): string {
@@ -660,12 +551,6 @@ export class BookingCreationService {
     return `BK${timestamp}${random}`;
   }
 
-  private getCurrentVietnamDate(now = new Date()): string {
-    return new Date(now.getTime() + VIETNAM_UTC_OFFSET_MILLISECONDS)
-      .toISOString()
-      .slice(0, 10);
-  }
-
   private requireActorId(value: string | undefined): string {
     if (value === undefined || !/^[1-9][0-9]*$/.test(value)) {
       throw new UnauthorizedException('Access token is invalid.');
@@ -696,7 +581,11 @@ export class BookingCreationService {
     return this.requireId(value, message);
   }
 
-  private throwBookingWriteConflict(error: unknown): never {
+  private throwBookingWriteConflict(
+    error: unknown,
+    roomId: string,
+    requestId?: string,
+  ): never {
     const duplicateKey = getMysqlDuplicateKey(error);
 
     if (duplicateKey === undefined) {
@@ -704,6 +593,9 @@ export class BookingCreationService {
     }
 
     if (duplicateKey.includes('room_calendar_room_date')) {
+      this.logger.warn(
+        `operation=booking_create errorCode=${ErrorCode.BOOKING_ROOM_UNAVAILABLE} requestId=${requestId ?? 'unavailable'} roomId=${roomId}`,
+      );
       throw new AppHttpException(
         HttpStatus.CONFLICT,
         ErrorCode.BOOKING_ROOM_UNAVAILABLE,

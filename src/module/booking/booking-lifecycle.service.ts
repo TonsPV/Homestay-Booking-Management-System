@@ -10,6 +10,12 @@ import { DataSource, type EntityManager, In } from 'typeorm';
 
 import { AppHttpException, ErrorCode } from '../../common/http';
 import { optionalNullableTrimmedString } from '../../common/validation';
+import { AuditLogService } from '../audit/audit-log.service';
+import {
+  AuditAction,
+  AuditActorType,
+  AuditEntityType,
+} from '../audit/schema/audit-log.entity';
 import {
   Payment,
   PaymentMethod,
@@ -19,6 +25,7 @@ import { Room, RoomStatus } from '../room/schema/room.entity';
 import { CancelBookingDto } from './dto/cancel-booking.dto';
 import { UpdateBookingStatusDto } from './dto/update-booking-status.dto';
 import { BookingTransitionPolicy } from './booking-transition.policy';
+import type { BookingAuditContext } from './booking.types';
 import {
   Booking,
   BookingPaymentStatus,
@@ -34,6 +41,7 @@ export class BookingLifecycleService {
     private readonly dataSource: DataSource,
     configService: ConfigService,
     private readonly bookingTransitionPolicy: BookingTransitionPolicy,
+    private readonly auditLogService: AuditLogService,
   ) {
     this.paymentTimeoutMilliseconds =
       configService.getOrThrow<number>('BOOKING_PAYMENT_TIMEOUT_MINUTES') *
@@ -45,6 +53,7 @@ export class BookingLifecycleService {
     customerId: string | undefined,
     id: string,
     body: CancelBookingDto,
+    context?: BookingAuditContext,
   ): Promise<string> {
     const activeCustomerId = this.requireActorId(customerId);
     this.validateId(id, 'Booking id khong hop le.');
@@ -62,13 +71,31 @@ export class BookingLifecycleService {
         throw new NotFoundException('Khong tim thay booking.');
       }
 
-      await this.cancelBooking(manager, booking, reason, true);
+      const fromStatus = booking.status;
+      const changed = await this.cancelBooking(manager, booking, reason, true);
+
+      if (changed) {
+        await this.recordStatusAudit(
+          manager,
+          booking,
+          AuditAction.BOOKING_CANCELLED,
+          AuditActorType.CUSTOMER,
+          activeCustomerId,
+          fromStatus,
+          context?.requestId,
+        );
+      }
     });
 
     return activeCustomerId;
   }
 
-  async updateStatus(id: string, body: UpdateBookingStatusDto): Promise<void> {
+  async updateStatus(
+    id: string,
+    body: UpdateBookingStatusDto,
+    userId?: string,
+    context?: BookingAuditContext,
+  ): Promise<void> {
     this.validateId(id, 'Booking id khong hop le.');
     const status = this.requireBookingStatus(body.status);
     const cancellationReason = this.normalizeManagementCancellationReason(
@@ -81,6 +108,8 @@ export class BookingLifecycleService {
       if (booking.status === status) {
         return;
       }
+
+      const fromStatus = booking.status;
 
       const refundPending = await manager.getRepository(Payment).existsBy({
         bookingId: booking.id,
@@ -125,7 +154,24 @@ export class BookingLifecycleService {
           );
         }
 
-        await this.cancelBooking(manager, booking, cancellationReason, false);
+        const changed = await this.cancelBooking(
+          manager,
+          booking,
+          cancellationReason,
+          false,
+        );
+
+        if (changed) {
+          await this.recordStatusAudit(
+            manager,
+            booking,
+            AuditAction.BOOKING_CANCELLED,
+            AuditActorType.USER,
+            userId ?? null,
+            fromStatus,
+            context?.requestId,
+          );
+        }
         return;
       }
 
@@ -134,6 +180,15 @@ export class BookingLifecycleService {
       booking.status = status;
       booking.paymentExpiresAt = null;
       await manager.getRepository(Booking).save(booking);
+      await this.recordStatusAudit(
+        manager,
+        booking,
+        AuditAction.BOOKING_STATUS_CHANGED,
+        AuditActorType.USER,
+        userId ?? null,
+        fromStatus,
+        context?.requestId,
+      );
     });
   }
 
@@ -185,6 +240,17 @@ export class BookingLifecycleService {
         bookingId: In(bookingIds),
       });
 
+      for (const booking of expiredBookings) {
+        await this.recordStatusAudit(
+          manager,
+          booking,
+          AuditAction.BOOKING_CANCELLED,
+          AuditActorType.SYSTEM,
+          null,
+          BookingStatus.PENDING_PAYMENT,
+        );
+      }
+
       return expiredBookings.length;
     });
   }
@@ -233,9 +299,9 @@ export class BookingLifecycleService {
     booking: Booking,
     reason: string | null,
     customerRequested: boolean,
-  ): Promise<void> {
+  ): Promise<boolean> {
     if (booking.status === BookingStatus.CANCELLED) {
-      return;
+      return false;
     }
 
     if (booking.paymentStatus === BookingPaymentStatus.PAID) {
@@ -279,6 +345,32 @@ export class BookingLifecycleService {
     await this.failPendingOnlinePayments(manager, [booking.id], 'CANCELLED');
     await manager.getRepository(RoomCalendar).delete({
       bookingId: booking.id,
+    });
+
+    return true;
+  }
+
+  private async recordStatusAudit(
+    manager: EntityManager,
+    booking: Booking,
+    action: AuditAction,
+    actorType: AuditActorType,
+    actorId: string | null,
+    fromStatus: BookingStatus,
+    requestId?: string,
+  ): Promise<void> {
+    await this.auditLogService.record(manager, {
+      actorType,
+      actorId,
+      action,
+      entityType: AuditEntityType.BOOKING,
+      entityId: booking.id,
+      requestId,
+      metadata: {
+        fromStatus,
+        toStatus: booking.status,
+        cancellationReason: booking.cancellationReason,
+      },
     });
   }
 

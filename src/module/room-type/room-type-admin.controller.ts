@@ -102,6 +102,7 @@ export class RoomTypeAdminController {
   @Delete(':id')
   @HttpCode(HttpStatus.OK)
   @ApiOkEnvelope(AdminRoomTypeDto)
+  @ApiCommonMutationErrors()
   softDelete(
     @Param('id') id: string,
   ): Promise<ApiResponsePayload<AdminRoomTypeResponse>> {

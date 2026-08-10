@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import type { Repository } from 'typeorm';
+import type { EntityManager, Repository } from 'typeorm';
 
 import { getMysqlDuplicateKey } from '../../common/database';
 import {
@@ -28,6 +28,7 @@ import {
 } from './dto/list-amenities-query.dto';
 import { UpdateAmenityDto } from './dto/update-amenity.dto';
 import { Amenity } from './schema/amenity.entity';
+import { RoomType } from '../room-type/schema/room-type.entity';
 
 export interface AmenityResponse {
   id: string;
@@ -151,19 +152,24 @@ export class AmenityService {
   }
 
   async softDelete(id: string): Promise<AdminAmenityResponse> {
-    const amenity = await this.getActiveAmenity(id);
+    this.validateId(id);
+    const amenity = await this.amenitiesRepository.manager.transaction(
+      async (manager) => {
+        const amenity = await this.getLockedActiveAmenity(manager, id);
 
-    if (await this.isAssignedToRoomType(amenity.id)) {
-      throw new AppHttpException(
-        HttpStatus.CONFLICT,
-        ErrorCode.AMENITY_IN_USE,
-        'Khong the xoa tien nghi dang duoc loai phong su dung.',
-      );
-    }
+        if (await this.isAssignedToActiveRoomType(manager, amenity.id)) {
+          throw new AppHttpException(
+            HttpStatus.CONFLICT,
+            ErrorCode.AMENITY_IN_USE,
+            'Khong the xoa tien nghi dang duoc loai phong su dung.',
+          );
+        }
 
-    return this.toAdminResponse(
-      await this.amenitiesRepository.softRemove(amenity),
+        return manager.getRepository(Amenity).softRemove(amenity);
+      },
     );
+
+    return this.toAdminResponse(amenity);
   }
 
   async restore(id: string): Promise<AdminAmenityResponse> {
@@ -277,11 +283,34 @@ export class AmenityService {
     }
   }
 
-  private async isAssignedToRoomType(id: string): Promise<boolean> {
-    return this.amenitiesRepository
+  private async getLockedActiveAmenity(
+    manager: EntityManager,
+    id: string,
+  ): Promise<Amenity> {
+    const amenity = await manager
+      .getRepository(Amenity)
       .createQueryBuilder('amenity')
-      .innerJoin('amenity.roomTypes', 'roomType')
+      .withDeleted()
       .where('amenity.id = :id', { id })
+      .setLock('pessimistic_write')
+      .getOne();
+
+    if (amenity === null || amenity.deletedAt !== null) {
+      throw new NotFoundException('Khong tim thay tien nghi.');
+    }
+
+    return amenity;
+  }
+
+  private async isAssignedToActiveRoomType(
+    manager: EntityManager,
+    id: string,
+  ): Promise<boolean> {
+    return manager
+      .getRepository(RoomType)
+      .createQueryBuilder('roomType')
+      .innerJoin('roomType.amenities', 'amenity', 'amenity.id = :id', { id })
+      .where('roomType.deletedAt IS NULL')
       .getExists();
   }
 

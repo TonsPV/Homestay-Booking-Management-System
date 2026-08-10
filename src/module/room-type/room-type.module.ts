@@ -7,9 +7,13 @@ import { RoomTypeAdminController } from './room-type-admin.controller';
 import { RoomTypeController } from './room-type.controller';
 import { RoomTypeService } from './room-type.service';
 import { RoomType } from './schema/room-type.entity';
+import { RoomTypeBed } from './schema/room-type-bed.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([RoomType, Amenity]), AuthModule],
+  imports: [
+    TypeOrmModule.forFeature([RoomType, RoomTypeBed, Amenity]),
+    AuthModule,
+  ],
   controllers: [RoomTypeController, RoomTypeAdminController],
   providers: [RoomTypeService],
 })

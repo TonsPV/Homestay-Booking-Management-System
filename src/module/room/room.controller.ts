@@ -20,6 +20,8 @@ import {
   ApiResponse,
   type ApiResponsePayload,
   CurrentAuth,
+  ReqContext,
+  type RequestContext,
   Roles,
   RolesGuard,
   type AccessTokenPayload,
@@ -32,6 +34,7 @@ import {
 } from '../../openapi/api-response.decorators';
 import { ROOM_IMAGE_MAX_FILE_SIZE } from '../../config/room-image-storage';
 import { AccessTokenGuard } from '../auth/access-token.guard';
+import { AuditActorType } from '../audit/schema/audit-log.entity';
 import { CreateRoomImageDto } from './dto/create-room-image.dto';
 import { CreateRoomDto } from './dto/create-room.dto';
 import { ListRoomsQueryDto } from './dto/list-rooms-query.dto';
@@ -149,9 +152,14 @@ export class RoomController {
     @Param('id') id: string,
     @Body() body: UpdateRoomStatusDto,
     @CurrentAuth() auth: AccessTokenPayload,
+    @ReqContext() context: RequestContext,
   ): Promise<ApiResponsePayload<RoomResponse>> {
     return this.roomService
-      .updateStatus(id, body, auth.role)
+      .updateStatus(id, body, auth.role, {
+        actorType: AuditActorType.USER,
+        actorId: auth.user_id ?? null,
+        requestId: context.requestId,
+      })
       .then((room) =>
         ApiResponse.ok(room, 'Cap nhat trang thai phong thanh cong.'),
       );

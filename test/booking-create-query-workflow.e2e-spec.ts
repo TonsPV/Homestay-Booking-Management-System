@@ -5,7 +5,7 @@ import request from 'supertest';
 import type { App } from 'supertest/types';
 
 import { AppModule } from '../src/app.module';
-import { configureApp } from '../src/common/http';
+import { configureApp, ErrorCode } from '../src/common/http';
 import migrationDataSource from '../src/database/data-source';
 import { AccessTokenService } from '../src/module/auth/access-token.service';
 import { PasswordHasherService } from '../src/module/auth/password-hasher.service';
@@ -41,7 +41,12 @@ interface BookingPayload {
   paymentStatus: BookingPaymentStatus;
   paymentExpiresAt: string | null;
   customer: { id: string; fullName: string; phone: string };
-  room: { id: string; roomNumber: string; name: string };
+  room: {
+    id: string;
+    roomNumber: string;
+    name: string;
+    roomType: { id: string; name: string };
+  };
 }
 
 interface ManagementRoomPayload {
@@ -242,6 +247,45 @@ describe('Booking create/query workflow (e2e)', () => {
       ),
     ).not.toContain(room.id);
 
+    const publicAvailability = await request(app.getHttpServer())
+      .get('/api/v1/rooms/search')
+      .query({
+        checkIn: booking.checkInDate,
+        checkOut: booking.checkOutDate,
+        guests: booking.guestCount,
+        limit: 100,
+      })
+      .expect(200);
+    expect(
+      (publicAvailability.body as Envelope<Array<{ id: string }>>).data.map(
+        (item) => item.id,
+      ),
+    ).not.toContain(room.id);
+
+    await roomTypes.update(room.roomTypeId, { basePrice: '200.00' });
+    const historicalBooking = await request(app.getHttpServer())
+      .get(`/api/v1/bookings/${booking.id}`)
+      .set('Authorization', 'Bearer ' + customerAToken)
+      .expect(200);
+    expect(
+      (historicalBooking.body as Envelope<BookingPayload>).data.totalAmount,
+    ).toBe('250.00');
+
+    const bookingAtNewPrice = await request(app.getHttpServer())
+      .post('/api/v1/bookings')
+      .set('Authorization', 'Bearer ' + customerAToken)
+      .send({
+        roomId: room.id,
+        checkInDate: '2027-01-13',
+        checkOutDate: '2027-01-15',
+        guestCount: 1,
+      })
+      .expect(201);
+    const newPriceBooking = (bookingAtNewPrice.body as Envelope<BookingPayload>)
+      .data;
+    bookingIds.push(newPriceBooking.id);
+    expect(newPriceBooking.totalAmount).toBe('400.00');
+
     const customerList = await request(app.getHttpServer())
       .get('/api/v1/bookings')
       .set('Authorization', 'Bearer ' + customerAToken)
@@ -418,10 +462,13 @@ describe('Booking create/query workflow (e2e)', () => {
 
   it('allows only one overlapping online booking under concurrency', async () => {
     const room = await createRoom('Concurrent');
+    const firstCustomer = await createCustomer('concurrent-a-' + sequence);
+    const secondCustomer = await createCustomer('concurrent-b-' + sequence);
+    const tokens = [signCustomer(firstCustomer), signCustomer(secondCustomer)];
     const responses = await Promise.all([
       request(app.getHttpServer())
         .post('/api/v1/bookings')
-        .set('Authorization', 'Bearer ' + customerAToken)
+        .set('Authorization', 'Bearer ' + tokens[0])
         .send({
           roomId: room.id,
           checkInDate: '2027-04-01',
@@ -430,7 +477,7 @@ describe('Booking create/query workflow (e2e)', () => {
         }),
       request(app.getHttpServer())
         .post('/api/v1/bookings')
-        .set('Authorization', 'Bearer ' + customerBToken)
+        .set('Authorization', 'Bearer ' + tokens[1])
         .send({
           roomId: room.id,
           checkInDate: '2027-04-01',
@@ -441,12 +488,138 @@ describe('Booking create/query workflow (e2e)', () => {
     expect(responses.map((response) => response.status).sort()).toEqual([
       201, 409,
     ]);
-    const successful = responses.find((response) => response.status === 201);
-    if (successful !== undefined) {
-      const booking = (successful.body as Envelope<BookingPayload>).data;
-      bookingIds.push(booking.id);
-      expect(await calendars.countBy({ bookingId: booking.id })).toBe(2);
+    const successfulIndex = responses.findIndex(
+      (response) => response.status === 201,
+    );
+    const rejected = responses.find((response) => response.status === 409);
+    expect(rejected?.body).toMatchObject({
+      errorCode: ErrorCode.BOOKING_ROOM_UNAVAILABLE,
+    });
+    if (successfulIndex < 0) {
+      throw new Error('Expected one concurrent booking request to succeed.');
     }
+    const successful = responses[successfulIndex];
+    const booking = (successful.body as Envelope<BookingPayload>).data;
+    bookingIds.push(booking.id);
+    expect(await calendars.countBy({ bookingId: booking.id })).toBe(2);
+
+    await request(app.getHttpServer())
+      .patch(`/api/v1/bookings/${booking.id}/cancel`)
+      .set('Authorization', 'Bearer ' + tokens[successfulIndex])
+      .send({ reason: 'Release concurrent booking.' })
+      .expect(200);
+    expect(await calendars.countBy({ bookingId: booking.id })).toBe(0);
+
+    const replacement = await request(app.getHttpServer())
+      .post('/api/v1/bookings')
+      .set('Authorization', 'Bearer ' + tokens[successfulIndex === 0 ? 1 : 0])
+      .send({
+        roomId: room.id,
+        checkInDate: '2027-04-01',
+        checkOutDate: '2027-04-03',
+        guestCount: 1,
+      })
+      .expect(201);
+    bookingIds.push((replacement.body as Envelope<BookingPayload>).data.id);
+  });
+
+  it('allows concurrent bookings for different rooms and non-overlapping stays', async () => {
+    const firstRoom = await createRoom('Concurrent independent A');
+    const secondRoom = await createRoom('Concurrent independent B');
+    const firstCustomer = await createCustomer('independent-a-' + sequence);
+    const secondCustomer = await createCustomer('independent-b-' + sequence);
+    const firstToken = signCustomer(firstCustomer);
+    const secondToken = signCustomer(secondCustomer);
+
+    const differentRooms = await Promise.all([
+      request(app.getHttpServer())
+        .post('/api/v1/bookings')
+        .set('Authorization', 'Bearer ' + firstToken)
+        .send({
+          roomId: firstRoom.id,
+          checkInDate: '2027-05-01',
+          checkOutDate: '2027-05-03',
+          guestCount: 1,
+        }),
+      request(app.getHttpServer())
+        .post('/api/v1/bookings')
+        .set('Authorization', 'Bearer ' + secondToken)
+        .send({
+          roomId: secondRoom.id,
+          checkInDate: '2027-05-01',
+          checkOutDate: '2027-05-03',
+          guestCount: 1,
+        }),
+    ]);
+    expect(differentRooms.map((response) => response.status)).toEqual([
+      201, 201,
+    ]);
+
+    const adjacentStays = await Promise.all([
+      request(app.getHttpServer())
+        .post('/api/v1/bookings')
+        .set('Authorization', 'Bearer ' + firstToken)
+        .send({
+          roomId: firstRoom.id,
+          checkInDate: '2027-05-10',
+          checkOutDate: '2027-05-12',
+          guestCount: 1,
+        }),
+      request(app.getHttpServer())
+        .post('/api/v1/bookings')
+        .set('Authorization', 'Bearer ' + secondToken)
+        .send({
+          roomId: firstRoom.id,
+          checkInDate: '2027-05-12',
+          checkOutDate: '2027-05-14',
+          guestCount: 1,
+        }),
+    ]);
+    expect(adjacentStays.map((response) => response.status)).toEqual([
+      201, 201,
+    ]);
+
+    for (const response of [...differentRooms, ...adjacentStays]) {
+      bookingIds.push((response.body as Envelope<BookingPayload>).data.id);
+    }
+  });
+
+  it('preserves management booking history after related records are soft-deleted', async () => {
+    const room = await createRoom('Historical soft delete');
+    const roomType = await roomTypes.findOneByOrFail({ id: room.roomTypeId });
+    const customer = await createCustomer('historical-' + sequence);
+    const customerToken = signCustomer(customer);
+    const created = await request(app.getHttpServer())
+      .post('/api/v1/bookings')
+      .set('Authorization', 'Bearer ' + customerToken)
+      .send({
+        roomId: room.id,
+        checkInDate: '2027-06-01',
+        checkOutDate: '2027-06-03',
+        guestCount: 1,
+      })
+      .expect(201);
+    const booking = (created.body as Envelope<BookingPayload>).data;
+    bookingIds.push(booking.id);
+
+    await customers.softDelete(customer.id);
+    await rooms.softDelete(room.id);
+    await roomTypes.softDelete(roomType.id);
+
+    const history = await request(app.getHttpServer())
+      .get(`/api/v1/management/bookings/${booking.id}`)
+      .set('Authorization', 'Bearer ' + staffToken)
+      .expect(200);
+
+    expect((history.body as Envelope<BookingPayload>).data).toMatchObject({
+      id: booking.id,
+      customer: { id: customer.id, fullName: customer.fullName },
+      room: {
+        id: room.id,
+        name: room.name,
+        roomType: { id: roomType.id, name: roomType.name },
+      },
+    });
   });
 
   async function createRoom(label: string): Promise<Room> {
@@ -491,6 +664,7 @@ describe('Booking create/query workflow (e2e)', () => {
   }
 
   async function createCustomer(label: string): Promise<Customer> {
+    sequence += 1;
     const customer = await customers.save(
       customers.create({
         fullName: 'Booking Customer ' + label,

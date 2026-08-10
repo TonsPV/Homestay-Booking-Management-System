@@ -10,6 +10,12 @@ import { DataSource, type Repository } from 'typeorm';
 
 import { getMysqlDuplicateKey } from '../../common/database';
 import { requireTrimmedString } from '../../common/validation';
+import { AuditLogService } from '../audit/audit-log.service';
+import {
+  AuditAction,
+  AuditActorType,
+  AuditEntityType,
+} from '../audit/schema/audit-log.entity';
 import {
   Booking,
   BookingPaymentStatus,
@@ -34,6 +40,7 @@ export class PaymentManualService {
     @InjectRepository(Payment)
     private readonly paymentsRepository: Repository<Payment>,
     private readonly paymentQueryService: PaymentQueryService,
+    private readonly auditLogService: AuditLogService,
     configService: ConfigService,
   ) {
     this.paymentTimeoutMilliseconds =
@@ -47,6 +54,7 @@ export class PaymentManualService {
     bookingId: string,
     idempotencyKey: string | undefined,
     body: CreateManualPaymentDto,
+    requestId?: string,
   ): Promise<PaymentResponse> {
     const createdByUserId = this.requireActorId(userId);
     this.validateId(bookingId, 'Booking id khong hop le.');
@@ -94,6 +102,7 @@ export class PaymentManualService {
 
         assertBookingCanAcceptPayment(booking, this.paymentTimeoutMilliseconds);
 
+        const bookingFromStatus = booking.status;
         const now = new Date();
         const payment = await paymentsRepository.save(
           paymentsRepository.create({
@@ -125,6 +134,33 @@ export class PaymentManualService {
         }
 
         await manager.getRepository(Booking).save(booking);
+        await this.auditLogService.record(manager, {
+          actorType: AuditActorType.USER,
+          actorId: createdByUserId,
+          action: AuditAction.PAYMENT_CONFIRMED,
+          entityType: AuditEntityType.PAYMENT,
+          entityId: payment.id,
+          requestId,
+          metadata: {
+            bookingId: booking.id,
+            method: payment.method,
+          },
+        });
+        if (bookingFromStatus !== booking.status) {
+          await this.auditLogService.record(manager, {
+            actorType: AuditActorType.USER,
+            actorId: createdByUserId,
+            action: AuditAction.BOOKING_STATUS_CHANGED,
+            entityType: AuditEntityType.BOOKING,
+            entityId: booking.id,
+            requestId,
+            metadata: {
+              fromStatus: bookingFromStatus,
+              toStatus: booking.status,
+              paymentId: payment.id,
+            },
+          });
+        }
 
         return payment.id;
       });

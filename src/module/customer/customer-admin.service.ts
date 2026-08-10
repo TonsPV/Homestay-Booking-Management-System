@@ -8,6 +8,11 @@ import type { EntityManager, Repository } from 'typeorm';
 
 import type { AccountStatus, PaginationMeta } from '../../common/http';
 import {
+  AuditLogService,
+  type AuditActorContext,
+} from '../audit/audit-log.service';
+import { AuditAction, AuditEntityType } from '../audit/schema/audit-log.entity';
+import {
   optionalAccountStatus,
   optionalSearch,
   parsePagination,
@@ -47,6 +52,7 @@ export class CustomerAdminService {
     @InjectRepository(Customer)
     private readonly customersRepository: Repository<Customer>,
     private readonly customerCredentialPolicy: CustomerCredentialPolicy,
+    private readonly auditLogService: AuditLogService,
   ) {}
 
   async listCustomers(
@@ -92,9 +98,16 @@ export class CustomerAdminService {
   async updateStatus(
     id: string,
     statusValue: unknown,
+    auditContext?: AuditActorContext,
   ): Promise<AdminCustomerResponse> {
-    const customer = await this.withCustomerTransaction((repository) =>
-      this.updateStatusWithRepository(repository, id, statusValue),
+    const customer = await this.withCustomerTransaction((repository, manager) =>
+      this.updateStatusWithRepository(
+        repository,
+        id,
+        statusValue,
+        manager,
+        auditContext,
+      ),
     );
 
     return {
@@ -108,31 +121,53 @@ export class CustomerAdminService {
     repository: Repository<Customer>,
     id: string,
     statusValue: unknown,
+    manager: EntityManager | undefined,
+    auditContext: AuditActorContext | undefined,
   ): Promise<AdminCustomerProfile> {
     const customer = await this.getCustomer(id, repository);
     const status = requireAccountStatus(statusValue);
 
     if (customer.status !== status) {
+      const previousStatus = customer.status;
       customer.status = status;
       customer.tokenVersion += 1;
+      const savedCustomer = await repository.save(customer);
+
+      if (manager !== undefined && auditContext !== undefined) {
+        await this.auditLogService.record(manager, {
+          ...auditContext,
+          action:
+            status === 'LOCKED'
+              ? AuditAction.ACCOUNT_LOCKED
+              : AuditAction.ACCOUNT_UNLOCKED,
+          entityType: AuditEntityType.CUSTOMER,
+          entityId: savedCustomer.id,
+          metadata: { fromStatus: previousStatus, toStatus: status },
+        });
+      }
+
+      return this.toAdminCustomerProfile(savedCustomer);
     }
 
     return this.toAdminCustomerProfile(await repository.save(customer));
   }
 
   private async withCustomerTransaction<T>(
-    operation: (repository: Repository<Customer>) => Promise<T>,
+    operation: (
+      repository: Repository<Customer>,
+      manager: EntityManager | undefined,
+    ) => Promise<T>,
   ): Promise<T> {
     const repository = this.customersRepository as Repository<Customer> & {
       manager?: EntityManager;
     };
 
     if (repository.manager === undefined) {
-      return operation(this.customersRepository);
+      return operation(this.customersRepository, undefined);
     }
 
     return repository.manager.transaction((manager) =>
-      operation(manager.getRepository(Customer)),
+      operation(manager.getRepository(Customer), manager),
     );
   }
 

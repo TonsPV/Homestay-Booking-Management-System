@@ -1,6 +1,8 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Allow } from 'class-validator';
 
+import { RoomTypeBedInputDto } from './room-type-bed.dto';
+
 export class CreateRoomTypeDto {
   @ApiProperty({ example: 'Phòng đôi', maxLength: 120, type: String })
   @Allow()
@@ -15,6 +17,8 @@ export class CreateRoomTypeDto {
   description?: unknown;
 
   @ApiPropertyOptional({
+    deprecated: true,
+    description: 'Legacy free-text bed configuration. Use beds instead.',
     example: '1 giường đôi',
     maxLength: 120,
     nullable: true,
@@ -22,6 +26,16 @@ export class CreateRoomTypeDto {
   })
   @Allow()
   bedType?: unknown;
+
+  @ApiPropertyOptional({
+    description:
+      'Normalized bed configuration. Do not send together with bedType.',
+    items: { $ref: '#/components/schemas/RoomTypeBedInputDto' },
+    maxItems: 6,
+    type: [RoomTypeBedInputDto],
+  })
+  @Allow()
+  beds?: unknown;
 
   @ApiProperty({ example: 2, maximum: 100, minimum: 1, type: Number })
   @Allow()

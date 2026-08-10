@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import type { UserRole } from '../../common/http';
+import type { AuditActorContext } from '../audit/audit-log.service';
 import type { CreateRoomDto } from './dto/create-room.dto';
 import type { ListAvailableRoomsQueryDto } from './dto/list-available-rooms-query.dto';
 import type { ListManagementRoomsQueryDto } from './dto/list-management-rooms-query.dto';
@@ -76,7 +77,8 @@ export class RoomService {
     id: string,
     body: UpdateRoomStatusDto,
     role: UserRole | undefined,
+    auditContext: AuditActorContext,
   ): Promise<RoomResponse> {
-    return this.roomMutationService.updateStatus(id, body, role);
+    return this.roomMutationService.updateStatus(id, body, role, auditContext);
   }
 }

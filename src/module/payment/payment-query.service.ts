@@ -124,6 +124,8 @@ export class PaymentQueryService {
       currency: payment.currency,
       method: payment.method,
       status: payment.status,
+      reviewReason: payment.reviewReason,
+      reviewCanonicalPaymentId: payment.reviewCanonicalPaymentId,
       gatewayName: payment.gatewayName,
       gatewayReference: payment.gatewayReference,
       gatewayTransactionId: payment.gatewayTransactionId,

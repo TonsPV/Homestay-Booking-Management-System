@@ -21,6 +21,13 @@ import {
   RoomCalendarStatus,
 } from '../src/module/booking/schema/room-calendar.entity';
 import { Customer } from '../src/module/customer/schema/customer.entity';
+import { PaymentRefundService } from '../src/module/payment/payment-refund.service';
+import {
+  Payment,
+  PaymentMethod,
+  PaymentStatus,
+} from '../src/module/payment/schema/payment.entity';
+import { VnPayGatewayService } from '../src/module/payment/vnpay-gateway.service';
 import { Room, RoomStatus } from '../src/module/room/schema/room.entity';
 import { RoomType } from '../src/module/room-type/schema/room-type.entity';
 import { User } from '../src/module/user/schema/user.entity';
@@ -37,6 +44,9 @@ interface BookingPayload {
   id: string;
   status: BookingStatus;
   paymentStatus: BookingPaymentStatus;
+  checkInDate: string;
+  checkOutDate: string;
+  totalAmount: string;
   cancellationReason: string | null;
 }
 
@@ -60,6 +70,7 @@ describe('Booking lifecycle/expiration workflow (e2e)', () => {
   let roomTypes: Repository<RoomType>;
   let bookings: Repository<Booking>;
   let calendars: Repository<RoomCalendar>;
+  let payments: Repository<Payment>;
   let customers: Repository<Customer>;
   let users: Repository<User>;
   let hasher: PasswordHasherService;
@@ -93,6 +104,7 @@ describe('Booking lifecycle/expiration workflow (e2e)', () => {
     roomTypes = dataSource.getRepository(RoomType);
     bookings = dataSource.getRepository(Booking);
     calendars = dataSource.getRepository(RoomCalendar);
+    payments = dataSource.getRepository(Payment);
     customers = dataSource.getRepository(Customer);
     users = dataSource.getRepository(User);
     hasher = app.get(PasswordHasherService);
@@ -116,6 +128,18 @@ describe('Booking lifecycle/expiration workflow (e2e)', () => {
         await dataSource.query(
           `DELETE FROM room_calendar WHERE room_id IN (${placeholders(roomIds)})`,
           roomIds,
+        );
+      }
+      if (bookingIds.length > 0) {
+        await dataSource.query(
+          `DELETE FROM audit_logs WHERE entity_type = 'BOOKING' AND entity_id IN (${placeholders(bookingIds)})`,
+          bookingIds,
+        );
+      }
+      if (bookingIds.length > 0) {
+        await dataSource.query(
+          `DELETE FROM payments WHERE booking_id IN (${placeholders(bookingIds)})`,
+          bookingIds,
         );
       }
       if (bookingIds.length > 0) {
@@ -304,7 +328,7 @@ describe('Booking lifecycle/expiration workflow (e2e)', () => {
       .expect(409);
   });
 
-  it('keeps CHECKED_OUT and CANCELLED terminal and characterizes early checkout', async () => {
+  it('keeps CHECKED_OUT and CANCELLED terminal', async () => {
     const room = await createRoom('terminal');
     const terminal = await createBooking({
       roomId: room.id,
@@ -345,25 +369,145 @@ describe('Booking lifecycle/expiration workflow (e2e)', () => {
       .set('Authorization', 'Bearer ' + staffToken)
       .send({ status: BookingStatus.CANCELLED })
       .expect(200);
+  });
+
+  it('keeps contractual nights, price, and payment unchanged on early checkout', async () => {
+    const today = todayVietnam();
+    const earlyRoom = await createRoom('early checkout');
+    earlyRoom.status = RoomStatus.OCCUPIED;
+    await rooms.save(earlyRoom);
 
     const early = await createBooking({
-      roomId: room.id,
-      status: BookingStatus.CONFIRMED,
+      roomId: earlyRoom.id,
+      status: BookingStatus.CHECKED_IN,
       paymentStatus: BookingPaymentStatus.PAID,
       createdByUserId: userIds[0],
-      checkInDate: todayVietnam(),
-      checkOutDate: addDays(todayVietnam(), 5),
+      checkInDate: today,
+      checkOutDate: addDays(today, 5),
+      totalAmount: '500.00',
     });
-    await request(app.getHttpServer())
-      .patch(`/api/v1/management/bookings/${early.id}/status`)
-      .set('Authorization', 'Bearer ' + staffToken)
-      .send({ status: BookingStatus.CHECKED_IN })
+    await reserveBookingNights(early);
+    await createSuccessfulVnPayPayment(early, 'early');
+
+    const originalBooking = await bookings.findOneByOrFail({ id: early.id });
+    const calendarBefore = await getCalendarSnapshot(early.id);
+    const paymentsBefore = await getPaymentSnapshot(early.id);
+    expect(calendarBefore).toHaveLength(5);
+    expect(paymentsBefore).toEqual([
+      expect.objectContaining({ status: PaymentStatus.SUCCESS }),
+    ]);
+    expect(
+      calendarBefore.filter((entry) => entry.stayDate > today),
+    ).toHaveLength(4);
+
+    const refundSpy = jest.spyOn(app.get(PaymentRefundService), 'refund');
+    const gatewayRefundSpy = jest
+      .spyOn(app.get(VnPayGatewayService), 'refundFull')
+      .mockRejectedValue(new Error('Early checkout must not call VNPay.'));
+
+    try {
+      const checkout = await request(app.getHttpServer())
+        .patch(`/api/v1/management/bookings/${early.id}/status`)
+        .set('Authorization', 'Bearer ' + staffToken)
+        .send({ status: BookingStatus.CHECKED_OUT })
+        .expect(200);
+      expect((checkout.body as Envelope<BookingPayload>).data).toMatchObject({
+        id: early.id,
+        status: BookingStatus.CHECKED_OUT,
+        paymentStatus: BookingPaymentStatus.PAID,
+        checkInDate: originalBooking.checkInDate,
+        checkOutDate: originalBooking.checkOutDate,
+        totalAmount: originalBooking.totalAmount,
+      });
+      expect(refundSpy).not.toHaveBeenCalled();
+      expect(gatewayRefundSpy).not.toHaveBeenCalled();
+    } finally {
+      refundSpy.mockRestore();
+      gatewayRefundSpy.mockRestore();
+    }
+
+    expect(await bookings.findOneByOrFail({ id: early.id })).toMatchObject({
+      status: BookingStatus.CHECKED_OUT,
+      paymentStatus: BookingPaymentStatus.PAID,
+      checkInDate: originalBooking.checkInDate,
+      checkOutDate: originalBooking.checkOutDate,
+      totalAmount: originalBooking.totalAmount,
+    });
+    expect((await rooms.findOneByOrFail({ id: earlyRoom.id })).status).toBe(
+      RoomStatus.CLEANING,
+    );
+    expect(await getCalendarSnapshot(early.id)).toEqual(calendarBefore);
+    expect(await getPaymentSnapshot(early.id)).toEqual(paymentsBefore);
+
+    const overlapCheckIn = addDays(today, 2);
+    const overlapCheckOut = addDays(today, 4);
+    const search = await request(app.getHttpServer())
+      .get('/api/v1/rooms/search')
+      .query({
+        checkIn: overlapCheckIn,
+        checkOut: overlapCheckOut,
+        guests: 1,
+        limit: 100,
+      })
       .expect(200);
-    await request(app.getHttpServer())
-      .patch(`/api/v1/management/bookings/${early.id}/status`)
+    expect(
+      (search.body as Envelope<Array<{ id: string }>>).data.map(
+        (item) => item.id,
+      ),
+    ).not.toContain(earlyRoom.id);
+
+    const overlap = await request(app.getHttpServer())
+      .post('/api/v1/bookings')
+      .set('Authorization', 'Bearer ' + customerBToken)
+      .send({
+        roomId: earlyRoom.id,
+        checkInDate: overlapCheckIn,
+        checkOutDate: overlapCheckOut,
+        guestCount: 1,
+      })
+      .expect(409);
+    expect(overlap.body).toMatchObject({
+      errorCode: ErrorCode.BOOKING_ROOM_UNAVAILABLE,
+    });
+    expect(await getCalendarSnapshot(early.id)).toEqual(calendarBefore);
+  });
+
+  it('keeps the normal checkout transition working', async () => {
+    const today = todayVietnam();
+    const room = await createRoom('normal checkout');
+    room.status = RoomStatus.OCCUPIED;
+    await rooms.save(room);
+    const booking = await createBooking({
+      roomId: room.id,
+      status: BookingStatus.CHECKED_IN,
+      paymentStatus: BookingPaymentStatus.PAID,
+      createdByUserId: userIds[0],
+      checkInDate: addDays(today, -1),
+      checkOutDate: today,
+      totalAmount: '100.00',
+    });
+    await reserveBookingNights(booking);
+    await createSuccessfulVnPayPayment(booking, 'normal');
+    const calendarBefore = await getCalendarSnapshot(booking.id);
+
+    const checkout = await request(app.getHttpServer())
+      .patch(`/api/v1/management/bookings/${booking.id}/status`)
       .set('Authorization', 'Bearer ' + staffToken)
       .send({ status: BookingStatus.CHECKED_OUT })
       .expect(200);
+
+    expect((checkout.body as Envelope<BookingPayload>).data).toMatchObject({
+      id: booking.id,
+      status: BookingStatus.CHECKED_OUT,
+      paymentStatus: BookingPaymentStatus.PAID,
+      checkInDate: booking.checkInDate,
+      checkOutDate: booking.checkOutDate,
+      totalAmount: booking.totalAmount,
+    });
+    expect((await rooms.findOneByOrFail({ id: room.id })).status).toBe(
+      RoomStatus.CLEANING,
+    );
+    expect(await getCalendarSnapshot(booking.id)).toEqual(calendarBefore);
   });
 
   it('expires only pending unpaid bookings in batches and releases their calendars', async () => {
@@ -434,6 +578,7 @@ describe('Booking lifecycle/expiration workflow (e2e)', () => {
     createdByUserId: string | null;
     checkInDate: string;
     checkOutDate: string;
+    totalAmount?: string;
     paymentExpiresAt?: Date;
   }): Promise<Booking> {
     sequence += 1;
@@ -453,7 +598,7 @@ describe('Booking lifecycle/expiration workflow (e2e)', () => {
         contactName: customerA.fullName,
         contactPhone: customerA.phone,
         contactEmail: customerA.email,
-        totalAmount: '100.00',
+        totalAmount: input.totalAmount ?? '100.00',
         status: input.status,
         paymentStatus: input.paymentStatus,
         paymentExpiresAt: input.paymentExpiresAt ?? null,
@@ -465,6 +610,131 @@ describe('Booking lifecycle/expiration workflow (e2e)', () => {
     );
     bookingIds.push(booking.id);
     return booking;
+  }
+
+  async function reserveBookingNights(booking: Booking): Promise<void> {
+    const entries: RoomCalendar[] = [];
+
+    for (
+      let stayDate = booking.checkInDate;
+      stayDate < booking.checkOutDate;
+      stayDate = addDays(stayDate, 1)
+    ) {
+      entries.push(
+        calendars.create({
+          roomId: booking.roomId,
+          bookingId: booking.id,
+          stayDate,
+          status: RoomCalendarStatus.RESERVED,
+          reason: null,
+        }),
+      );
+    }
+
+    const saved = await calendars.save(entries);
+    calendarIds.push(...saved.map((entry) => entry.id));
+  }
+
+  async function createSuccessfulVnPayPayment(
+    booking: Booking,
+    marker: string,
+  ): Promise<Payment> {
+    const reference =
+      'BL-' +
+      suffix.replace(/[^A-Za-z0-9]/g, '').slice(-20) +
+      '-' +
+      marker +
+      '-' +
+      sequence;
+
+    return payments.save(
+      payments.create({
+        bookingId: booking.id,
+        amount: booking.totalAmount,
+        currency: 'VND',
+        method: PaymentMethod.VNPAY,
+        status: PaymentStatus.SUCCESS,
+        reviewReason: null,
+        reviewCanonicalPaymentId: null,
+        gatewayName: 'VNPAY',
+        gatewayReference: reference,
+        gatewayTransactionId: 'txn-' + reference,
+        gatewayPaymentUrl: null,
+        gatewayResponseCode: '00',
+        gatewayTransactionStatus: '00',
+        gatewayTransactionDate: null,
+        idempotencyKey: 'idempotency-' + reference,
+        refundIdempotencyKey: null,
+        refundRequestId: null,
+        refundPreviousStatus: null,
+        refundGatewayTransactionId: null,
+        refundResponseCode: null,
+        refundTransactionStatus: null,
+        refundMessage: null,
+        refundReason: null,
+        createdByUserId: null,
+        refundedByUserId: null,
+        paidAt: new Date(),
+        refundedAt: null,
+        refundRequestedAt: null,
+        refundLastQueriedAt: null,
+        expiresAt: null,
+      }),
+    );
+  }
+
+  async function getCalendarSnapshot(bookingId: string): Promise<
+    Array<{
+      id: string;
+      roomId: string;
+      bookingId: string | null;
+      stayDate: string;
+      status: RoomCalendarStatus;
+      reason: string | null;
+    }>
+  > {
+    const entries = await calendars.find({
+      where: { bookingId },
+      order: { stayDate: 'ASC', id: 'ASC' },
+    });
+
+    return entries.map((entry) => ({
+      id: entry.id,
+      roomId: entry.roomId,
+      bookingId: entry.bookingId,
+      stayDate: entry.stayDate,
+      status: entry.status,
+      reason: entry.reason,
+    }));
+  }
+
+  async function getPaymentSnapshot(bookingId: string): Promise<
+    Array<{
+      id: string;
+      status: PaymentStatus;
+      amount: string;
+      refundRequestId: string | null;
+      refundIdempotencyKey: string | null;
+      refundReason: string | null;
+      refundRequestedAt: Date | null;
+      refundedAt: Date | null;
+    }>
+  > {
+    const entries = await payments.find({
+      where: { bookingId },
+      order: { id: 'ASC' },
+    });
+
+    return entries.map((entry) => ({
+      id: entry.id,
+      status: entry.status,
+      amount: entry.amount,
+      refundRequestId: entry.refundRequestId,
+      refundIdempotencyKey: entry.refundIdempotencyKey,
+      refundReason: entry.refundReason,
+      refundRequestedAt: entry.refundRequestedAt,
+      refundedAt: entry.refundedAt,
+    }));
   }
 
   async function createUser(): Promise<User> {

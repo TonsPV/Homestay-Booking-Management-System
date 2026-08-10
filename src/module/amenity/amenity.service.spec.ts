@@ -1,7 +1,8 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
-import type { Repository } from 'typeorm';
+import type { EntityManager, Repository } from 'typeorm';
 
 import { ErrorCode } from '../../common/http';
+import { RoomType } from '../room-type/schema/room-type.entity';
 import { AmenityService } from './amenity.service';
 import { Amenity } from './schema/amenity.entity';
 
@@ -13,10 +14,39 @@ describe('AmenityService', () => {
     save: jest.Mock;
     softRemove: jest.Mock;
     recover: jest.Mock;
+    manager: {
+      transaction: jest.Mock;
+    };
+  };
+  let managerAmenityRepository: {
+    createQueryBuilder: jest.Mock;
+    softRemove: jest.Mock;
+  };
+  let managerRoomTypeRepository: {
+    createQueryBuilder: jest.Mock;
+  };
+  let transactionManager: {
+    getRepository: jest.Mock;
   };
   let service: AmenityService;
 
   beforeEach(() => {
+    managerAmenityRepository = {
+      createQueryBuilder: jest.fn(),
+      softRemove: jest.fn((value: Amenity) =>
+        Promise.resolve({ ...value, deletedAt: new Date('2026-02-01') }),
+      ),
+    };
+    managerRoomTypeRepository = {
+      createQueryBuilder: jest.fn(),
+    };
+    transactionManager = {
+      getRepository: jest.fn((entity: unknown) =>
+        entity === Amenity
+          ? managerAmenityRepository
+          : managerRoomTypeRepository,
+      ),
+    };
     repository = {
       createQueryBuilder: jest.fn(),
       findOneBy: jest.fn(),
@@ -28,6 +58,12 @@ describe('AmenityService', () => {
       recover: jest.fn((value: Amenity) =>
         Promise.resolve({ ...value, deletedAt: null }),
       ),
+      manager: {
+        transaction: jest.fn(
+          (work: (manager: EntityManager) => Promise<unknown>) =>
+            work(transactionManager as unknown as EntityManager),
+        ),
+      },
     };
     service = new AmenityService(repository as unknown as Repository<Amenity>);
   });
@@ -124,28 +160,85 @@ describe('AmenityService', () => {
     );
   });
 
-  it('soft-deletes an active amenity without removing its identity', async () => {
-    repository.findOneBy.mockResolvedValue(amenityFixture());
-    repository.createQueryBuilder.mockReturnValue(
-      createQueryBuilder({ exists: false }),
-    );
+  it('soft-deletes an unused active amenity under a pessimistic transaction lock', async () => {
+    const amenity = amenityFixture();
+    const amenityQuery = createQueryBuilder({ one: amenity });
+    const roomTypeQuery = createQueryBuilder({ exists: false });
+    managerAmenityRepository.createQueryBuilder.mockReturnValue(amenityQuery);
+    managerRoomTypeRepository.createQueryBuilder.mockReturnValue(roomTypeQuery);
 
     await expect(service.softDelete('1')).resolves.toMatchObject({
       id: '1',
       deletedAt: new Date('2026-02-01'),
     });
+
+    expect(repository.manager.transaction).toHaveBeenCalledTimes(1);
+    expect(transactionManager.getRepository).toHaveBeenCalledWith(Amenity);
+    expect(transactionManager.getRepository).toHaveBeenCalledWith(RoomType);
+    expect(amenityQuery.withDeleted).toHaveBeenCalledTimes(1);
+    expect(amenityQuery.where).toHaveBeenCalledWith('amenity.id = :id', {
+      id: '1',
+    });
+    expect(amenityQuery.setLock).toHaveBeenCalledWith('pessimistic_write');
+    expect(managerAmenityRepository.softRemove).toHaveBeenCalledWith(amenity);
+    expect(repository.softRemove).not.toHaveBeenCalled();
   });
 
-  it('refuses to delete an amenity assigned to a RoomType', async () => {
-    repository.findOneBy.mockResolvedValue(amenityFixture());
-    repository.createQueryBuilder.mockReturnValue(
-      createQueryBuilder({ exists: true }),
+  it('refuses with AMENITY_IN_USE when an active RoomType references the amenity', async () => {
+    const amenityQuery = createQueryBuilder({ one: amenityFixture() });
+    const roomTypeQuery = createQueryBuilder({ exists: true });
+    managerAmenityRepository.createQueryBuilder.mockReturnValue(amenityQuery);
+    managerRoomTypeRepository.createQueryBuilder.mockReturnValue(roomTypeQuery);
+
+    await expect(service.softDelete('1')).rejects.toMatchObject({
+      response: {
+        errorCode: ErrorCode.AMENITY_IN_USE,
+        message: 'Khong the xoa tien nghi dang duoc loai phong su dung.',
+      },
+      status: 409,
+    });
+    expect(roomTypeQuery.innerJoin).toHaveBeenCalledWith(
+      'roomType.amenities',
+      'amenity',
+      'amenity.id = :id',
+      { id: '1' },
+    );
+    expect(roomTypeQuery.where).toHaveBeenCalledWith(
+      'roomType.deletedAt IS NULL',
+    );
+    expect(managerAmenityRepository.softRemove).not.toHaveBeenCalled();
+    expect(repository.softRemove).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['missing', null],
+    ['soft-deleted', amenityFixture({ deletedAt: new Date('2026-02-01') })],
+  ])(
+    'rejects a %s amenity after locking and before checking relations or mutating',
+    async (_label, lockedAmenity) => {
+      const amenityQuery = createQueryBuilder({ one: lockedAmenity });
+      managerAmenityRepository.createQueryBuilder.mockReturnValue(amenityQuery);
+
+      await expect(service.softDelete('1')).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+
+      expect(amenityQuery.setLock).toHaveBeenCalledWith('pessimistic_write');
+      expect(
+        managerRoomTypeRepository.createQueryBuilder,
+      ).not.toHaveBeenCalled();
+      expect(managerAmenityRepository.softRemove).not.toHaveBeenCalled();
+      expect(repository.softRemove).not.toHaveBeenCalled();
+    },
+  );
+
+  it('rejects an invalid delete id before opening a transaction', async () => {
+    await expect(service.softDelete('bad-id')).rejects.toBeInstanceOf(
+      BadRequestException,
     );
 
-    await expect(service.softDelete('1')).rejects.toThrow(
-      'Khong the xoa tien nghi dang duoc loai phong su dung.',
-    );
-    expect(repository.softRemove).not.toHaveBeenCalled();
+    expect(repository.manager.transaction).not.toHaveBeenCalled();
+    expect(managerAmenityRepository.softRemove).not.toHaveBeenCalled();
   });
 
   it('restores a deleted amenity after checking name availability', async () => {
@@ -199,6 +292,7 @@ function createQueryBuilder(result: QueryResult = {}) {
     innerJoin: jest.fn(),
     andWhere: jest.fn(),
     where: jest.fn(),
+    setLock: jest.fn(),
     getExists: jest.fn().mockResolvedValue(result.exists ?? false),
     getOne: jest.fn().mockResolvedValue(result.one ?? null),
     getManyAndCount: jest
@@ -215,6 +309,7 @@ function createQueryBuilder(result: QueryResult = {}) {
     queryBuilder.innerJoin,
     queryBuilder.andWhere,
     queryBuilder.where,
+    queryBuilder.setLock,
   ]) {
     method.mockReturnValue(queryBuilder);
   }

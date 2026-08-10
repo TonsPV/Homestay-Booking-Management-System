@@ -1,4 +1,4 @@
-import { UnauthorizedException } from '@nestjs/common';
+import { Logger, UnauthorizedException } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
 import {
   type DataSource,
@@ -7,6 +7,12 @@ import {
   type Repository,
 } from 'typeorm';
 
+import { AuditLogService } from '../audit/audit-log.service';
+import {
+  AuditAction,
+  AuditActorType,
+  AuditEntityType,
+} from '../audit/schema/audit-log.entity';
 import { Customer } from '../customer/schema/customer.entity';
 import { ErrorCode } from '../../common/http';
 import { Payment } from '../payment/schema/payment.entity';
@@ -16,6 +22,7 @@ import { BookingCreationService } from './booking-creation.service';
 import { BookingLifecycleService } from './booking-lifecycle.service';
 import { BookingQueryService } from './booking-query.service';
 import { BookingService } from './booking.service';
+import { BookingStayPolicy } from './booking-stay.policy';
 import { BookingTransitionPolicy } from './booking-transition.policy';
 import {
   Booking,
@@ -31,6 +38,7 @@ describe('BookingService characterization', () => {
   let dataSource: {
     transaction: jest.Mock;
   };
+  let auditRecord: jest.Mock;
   let service: BookingService;
 
   beforeEach(() => {
@@ -41,6 +49,10 @@ describe('BookingService characterization', () => {
     dataSource = {
       transaction: jest.fn(),
     };
+    auditRecord = jest.fn().mockResolvedValue(undefined);
+    const auditLogService = {
+      record: auditRecord,
+    } as unknown as AuditLogService;
     const configValues: Record<string, number> = {
       BOOKING_PAYMENT_TIMEOUT_MINUTES: 15,
       BOOKING_MAX_ACTIVE_UNPAID_PER_CUSTOMER: 3,
@@ -54,11 +66,14 @@ describe('BookingService characterization', () => {
       new BookingCreationService(
         dataSource as unknown as DataSource,
         config as unknown as ConfigService,
+        new BookingStayPolicy(config as unknown as ConfigService),
+        auditLogService,
       ),
       new BookingLifecycleService(
         dataSource as unknown as DataSource,
         config as unknown as ConfigService,
         new BookingTransitionPolicy(),
+        auditLogService,
       ),
       new BookingQueryService(
         bookingsRepository as unknown as Repository<Booking>,
@@ -79,6 +94,7 @@ describe('BookingService characterization', () => {
   });
 
   afterEach(() => {
+    jest.restoreAllMocks();
     jest.useRealTimers();
   });
 
@@ -114,12 +130,16 @@ describe('BookingService characterization', () => {
     );
 
     await expect(
-      service.createForCustomer('10', {
-        roomId: '1',
-        checkInDate: '2030-02-01',
-        checkOutDate: '2030-02-04',
-        guestCount: 2,
-      }),
+      service.createForCustomer(
+        '10',
+        {
+          roomId: '1',
+          checkInDate: '2030-02-01',
+          checkOutDate: '2030-02-04',
+          guestCount: 2,
+        },
+        { requestId: 'request-online-create' },
+      ),
     ).resolves.toMatchObject({
       id: '100',
       totalAmount: '3000000.00',
@@ -141,6 +161,20 @@ describe('BookingService characterization', () => {
       expect.objectContaining({ stayDate: '2030-02-02' }),
       expect.objectContaining({ stayDate: '2030-02-03' }),
     ]);
+    expect(auditRecord).toHaveBeenCalledWith(manager, {
+      actorType: AuditActorType.CUSTOMER,
+      actorId: '10',
+      action: AuditAction.BOOKING_CREATED,
+      entityType: AuditEntityType.BOOKING,
+      entityId: '100',
+      requestId: 'request-online-create',
+      metadata: {
+        status: BookingStatus.PENDING_PAYMENT,
+        roomId: '1',
+        checkInDate: '2030-02-01',
+        checkOutDate: '2030-02-04',
+      },
+    });
   });
 
   it('creates a counter booking for an existing customer with the staff snapshot', async () => {
@@ -170,19 +204,34 @@ describe('BookingService characterization', () => {
       createBookingQuery(savedBooking),
     );
 
-    await service.createForManagement('20', {
-      customerId: '10',
-      roomId: '1',
-      checkInDate: '2030-02-01',
-      checkOutDate: '2030-02-03',
-      guestCount: 2,
-    });
+    await service.createForManagement(
+      '20',
+      {
+        customerId: '10',
+        roomId: '1',
+        checkInDate: '2030-02-01',
+        checkOutDate: '2030-02-03',
+        guestCount: 2,
+      },
+      { requestId: 'request-counter-create' },
+    );
 
     expect(bookingCreate).toHaveBeenCalledWith(
       expect.objectContaining({
         customerId: '10',
         createdByUserId: '20',
         paymentStatus: BookingPaymentStatus.UNPAID,
+      }),
+    );
+    expect(auditRecord).toHaveBeenCalledWith(
+      manager,
+      expect.objectContaining({
+        actorType: AuditActorType.USER,
+        actorId: '20',
+        action: AuditAction.BOOKING_CREATED,
+        entityType: AuditEntityType.BOOKING,
+        entityId: '100',
+        requestId: 'request-counter-create',
       }),
     );
   });
@@ -345,6 +394,9 @@ describe('BookingService characterization', () => {
   });
 
   it('maps a concurrent room-calendar collision to Conflict', async () => {
+    const loggerWarn = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
     dataSource.transaction.mockRejectedValue(
       new QueryFailedError('INSERT', [], {
         code: 'ER_DUP_ENTRY',
@@ -354,15 +406,22 @@ describe('BookingService characterization', () => {
     );
 
     await expect(
-      service.createForCustomer('10', {
-        roomId: '1',
-        checkInDate: '2030-02-01',
-        checkOutDate: '2030-02-02',
-        guestCount: 1,
-      }),
+      service.createForCustomer(
+        '10',
+        {
+          roomId: '1',
+          checkInDate: '2030-02-01',
+          checkOutDate: '2030-02-02',
+          guestCount: 1,
+        },
+        { requestId: 'request-room-conflict' },
+      ),
     ).rejects.toHaveProperty(
       'response.errorCode',
       ErrorCode.BOOKING_ROOM_UNAVAILABLE,
+    );
+    expect(loggerWarn).toHaveBeenCalledWith(
+      'operation=booking_create errorCode=BOOKING_ROOM_UNAVAILABLE requestId=request-room-conflict roomId=1',
     );
   });
 
@@ -455,12 +514,55 @@ describe('BookingService characterization', () => {
       createBookingQuery(booking),
     );
 
-    await service.updateStatus('100', {
-      status: BookingStatus.CONFIRMED,
-    });
+    await service.updateStatus(
+      '100',
+      {
+        status: BookingStatus.CONFIRMED,
+      },
+      '20',
+      { requestId: 'request-confirm-counter-booking' },
+    );
 
     expect(booking.status).toBe(BookingStatus.CONFIRMED);
     expect(booking.paymentExpiresAt).toBeNull();
+    expect(auditRecord).toHaveBeenCalledWith(manager, {
+      actorType: AuditActorType.USER,
+      actorId: '20',
+      action: AuditAction.BOOKING_STATUS_CHANGED,
+      entityType: AuditEntityType.BOOKING,
+      entityId: '100',
+      requestId: 'request-confirm-counter-booking',
+      metadata: {
+        fromStatus: BookingStatus.PENDING_PAYMENT,
+        toStatus: BookingStatus.CONFIRMED,
+        cancellationReason: null,
+      },
+    });
+  });
+
+  it('does not write a duplicate audit entry for a same-status update', async () => {
+    const booking = bookingFixture({
+      status: BookingStatus.CONFIRMED,
+      paymentStatus: BookingPaymentStatus.PAID,
+    });
+    const manager = createLifecycleManager(booking);
+    dataSource.transaction.mockImplementation(
+      (work: (entityManager: EntityManager) => unknown) =>
+        Promise.resolve(work(manager)),
+    );
+    bookingsRepository.createQueryBuilder.mockReturnValue(
+      createBookingQuery(booking),
+    );
+
+    await service.updateStatus(
+      '100',
+      { status: BookingStatus.CONFIRMED },
+      '20',
+      { requestId: 'request-same-status' },
+    );
+
+    expect(booking.status).toBe(BookingStatus.CONFIRMED);
+    expect(auditRecord).not.toHaveBeenCalled();
   });
 
   it('rejects an invalid management status transition', async () => {
@@ -501,13 +603,24 @@ describe('BookingService characterization', () => {
     ).rejects.toThrow('yeu cau hoan tien VNPay');
   });
 
-  it('moves an occupied room to CLEANING on check-out', async () => {
+  it('keeps the contractual stay, price, payment, and calendar unchanged on early check-out', async () => {
     const booking = bookingFixture({
       status: BookingStatus.CHECKED_IN,
       paymentStatus: BookingPaymentStatus.PAID,
+      checkInDate: '2030-01-01',
+      checkOutDate: '2030-01-06',
+      totalAmount: '5000000.00',
     });
     const room = roomFixture({ status: RoomStatus.OCCUPIED });
-    const manager = createLifecycleManager(booking, room);
+    const calendarDelete = jest.fn().mockResolvedValue({ affected: 0 });
+    const paymentExecute = jest.fn().mockResolvedValue({ affected: 0 });
+    const originalCheckOutDate = booking.checkOutDate;
+    const originalTotalAmount = booking.totalAmount;
+    const originalPaymentStatus = booking.paymentStatus;
+    const manager = createLifecycleManager(booking, room, {
+      calendarDelete,
+      paymentExecute,
+    });
     dataSource.transaction.mockImplementation(
       (work: (entityManager: EntityManager) => unknown) =>
         Promise.resolve(work(manager)),
@@ -522,6 +635,11 @@ describe('BookingService characterization', () => {
 
     expect(booking.status).toBe(BookingStatus.CHECKED_OUT);
     expect(room.status).toBe(RoomStatus.CLEANING);
+    expect(booking.checkOutDate).toBe(originalCheckOutDate);
+    expect(booking.totalAmount).toBe(originalTotalAmount);
+    expect(booking.paymentStatus).toBe(originalPaymentStatus);
+    expect(calendarDelete).not.toHaveBeenCalled();
+    expect(paymentExecute).not.toHaveBeenCalled();
   });
 
   it('keeps a maintenance room unchanged when the booking checks out', async () => {
@@ -589,6 +707,45 @@ describe('BookingService characterization', () => {
     ]);
   });
 
+  it('audits a management cancellation with the staff actor in the mutation transaction', async () => {
+    const booking = bookingFixture({
+      status: BookingStatus.CONFIRMED,
+      paymentStatus: BookingPaymentStatus.UNPAID,
+    });
+    const manager = createLifecycleManager(booking);
+    dataSource.transaction.mockImplementation(
+      (work: (entityManager: EntityManager) => unknown) =>
+        Promise.resolve(work(manager)),
+    );
+    bookingsRepository.createQueryBuilder.mockReturnValue(
+      createBookingQuery(booking),
+    );
+
+    await service.updateStatus(
+      '100',
+      {
+        status: BookingStatus.CANCELLED,
+        cancellationReason: 'Cancelled by staff',
+      },
+      '20',
+      { requestId: 'request-management-cancel' },
+    );
+
+    expect(auditRecord).toHaveBeenCalledWith(manager, {
+      actorType: AuditActorType.USER,
+      actorId: '20',
+      action: AuditAction.BOOKING_CANCELLED,
+      entityType: AuditEntityType.BOOKING,
+      entityId: '100',
+      requestId: 'request-management-cancel',
+      metadata: {
+        fromStatus: BookingStatus.CONFIRMED,
+        toStatus: BookingStatus.CANCELLED,
+        cancellationReason: 'Cancelled by staff',
+      },
+    });
+  });
+
   it('hides another customer booking as not found during cancellation', async () => {
     const booking = bookingFixture({ customerId: '10' });
     dataSource.transaction.mockImplementation(
@@ -619,9 +776,14 @@ describe('BookingService characterization', () => {
       createBookingQuery(booking),
     );
 
-    await service.cancelForCustomer('10', '100', {
-      reason: 'Changed plans',
-    });
+    await service.cancelForCustomer(
+      '10',
+      '100',
+      {
+        reason: 'Changed plans',
+      },
+      { requestId: 'request-customer-cancel' },
+    );
 
     expect(booking).toMatchObject({
       status: BookingStatus.CANCELLED,
@@ -630,6 +792,19 @@ describe('BookingService characterization', () => {
     });
     expect(calendarDelete).toHaveBeenCalledWith({ bookingId: '100' });
     expect(paymentExecute).toHaveBeenCalled();
+    expect(auditRecord).toHaveBeenCalledWith(manager, {
+      actorType: AuditActorType.CUSTOMER,
+      actorId: '10',
+      action: AuditAction.BOOKING_CANCELLED,
+      entityType: AuditEntityType.BOOKING,
+      entityId: '100',
+      requestId: 'request-customer-cancel',
+      metadata: {
+        fromStatus: BookingStatus.PENDING_PAYMENT,
+        toStatus: BookingStatus.CANCELLED,
+        cancellationReason: 'Changed plans',
+      },
+    });
   });
 
   it('expires only the locked UNPAID batch and releases its calendars', async () => {
@@ -665,6 +840,33 @@ describe('BookingService characterization', () => {
     ]);
     expect(calendarDelete).toHaveBeenCalled();
     expect(paymentExecute).toHaveBeenCalled();
+    expect(auditRecord).toHaveBeenCalledTimes(2);
+    expect(auditRecord).toHaveBeenNthCalledWith(1, manager, {
+      actorType: AuditActorType.SYSTEM,
+      actorId: null,
+      action: AuditAction.BOOKING_CANCELLED,
+      entityType: AuditEntityType.BOOKING,
+      entityId: '100',
+      requestId: undefined,
+      metadata: {
+        fromStatus: BookingStatus.PENDING_PAYMENT,
+        toStatus: BookingStatus.CANCELLED,
+        cancellationReason: expired[0].cancellationReason,
+      },
+    });
+    expect(auditRecord).toHaveBeenNthCalledWith(2, manager, {
+      actorType: AuditActorType.SYSTEM,
+      actorId: null,
+      action: AuditAction.BOOKING_CANCELLED,
+      entityType: AuditEntityType.BOOKING,
+      entityId: '101',
+      requestId: undefined,
+      metadata: {
+        fromStatus: BookingStatus.PENDING_PAYMENT,
+        toStatus: BookingStatus.CANCELLED,
+        cancellationReason: expired[1].cancellationReason,
+      },
+    });
   });
 
   it('returns zero without writes when no payment deadline has expired', async () => {
@@ -818,6 +1020,7 @@ function createLockedQuery<T>(result: T) {
 
 function createBookingQuery(result: Booking | undefined) {
   return {
+    withDeleted: jest.fn().mockReturnThis(),
     innerJoinAndSelect: jest.fn().mockReturnThis(),
     leftJoinAndSelect: jest.fn().mockReturnThis(),
     setLock: jest.fn().mockReturnThis(),

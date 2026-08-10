@@ -28,6 +28,11 @@ export enum PaymentStatus {
   REFUNDED = 'REFUNDED',
 }
 
+export enum PaymentReviewReason {
+  BOOKING_CANCELLED = 'BOOKING_CANCELLED',
+  ANOTHER_SUCCESSFUL_PAYMENT = 'ANOTHER_SUCCESSFUL_PAYMENT',
+}
+
 @Entity('payments')
 @Index('uq_payments_gateway_transaction', ['gatewayTransactionId'], {
   unique: true,
@@ -79,6 +84,21 @@ export class Payment {
     default: PaymentStatus.PENDING,
   })
   status: PaymentStatus;
+
+  @Column({
+    name: 'review_reason',
+    type: 'enum',
+    enum: PaymentReviewReason,
+    nullable: true,
+  })
+  reviewReason: PaymentReviewReason | null;
+
+  @Column({
+    name: 'review_canonical_payment_id',
+    type: 'bigint',
+    nullable: true,
+  })
+  reviewCanonicalPaymentId: string | null;
 
   @Column({
     name: 'gateway_name',

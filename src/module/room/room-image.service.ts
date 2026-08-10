@@ -128,9 +128,17 @@ export class RoomImageService {
         { roomId: image.roomId },
         { isCover: false },
       );
+
+      // Do not use save(image) here. The entity can come from a repeatable-read
+      // snapshot where it was already the cover, so TypeORM may detect no
+      // change after the bulk reset above and leave the room with no cover.
+      await imagesRepository.update(
+        { id: image.id, roomId: image.roomId },
+        { isCover: true },
+      );
       image.isCover = true;
 
-      return this.toResponse(await imagesRepository.save(image));
+      return this.toResponse(image);
     });
   }
 

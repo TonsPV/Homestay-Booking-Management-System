@@ -2,6 +2,10 @@ import { BookingPaymentStatus, BookingStatus } from './schema/booking.entity';
 import type { BookingTransitionCapability } from './booking-transition.policy';
 import type { CustomerCredentialCapabilities } from '../customer/customer-credential.policy';
 
+export interface BookingAuditContext {
+  requestId?: string;
+}
+
 export interface BookingResponse {
   id: string;
   bookingCode: string;

@@ -1,7 +1,11 @@
 import { ApiProperty } from '@nestjs/swagger';
 
 import { PaginationDto } from '../../../openapi/response-envelope.dto';
-import { PaymentMethod, PaymentStatus } from '../schema/payment.entity';
+import {
+  PaymentMethod,
+  PaymentReviewReason,
+  PaymentStatus,
+} from '../schema/payment.entity';
 
 const nullablePaymentStatuses = [
   ...Object.values(PaymentStatus),
@@ -88,6 +92,16 @@ export class PaymentDto {
 
   @ApiProperty({ enum: PaymentStatus, enumName: 'PaymentStatus' })
   status!: PaymentStatus;
+
+  @ApiProperty({
+    enum: PaymentReviewReason,
+    enumName: 'PaymentReviewReason',
+    nullable: true,
+  })
+  reviewReason!: PaymentReviewReason | null;
+
+  @ApiProperty({ example: '1', nullable: true, type: String })
+  reviewCanonicalPaymentId!: string | null;
 
   @ApiProperty({ nullable: true, type: String })
   gatewayName!: string | null;

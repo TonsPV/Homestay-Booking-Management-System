@@ -171,4 +171,61 @@ describe('OpenAPI response contract', () => {
       'GET /api/health/ready -> 503',
     );
   });
+
+  it('documents payment idempotency, gateway failures and VNPay callbacks', () => {
+    const document = JSON.parse(
+      readFileSync(resolve(process.cwd(), 'docs/openapi.json'), 'utf8'),
+    ) as OpenAPIObject;
+    const operations = [
+      document.paths['/api/v1/bookings/{bookingId}/payments']?.post,
+      document.paths['/api/v1/management/bookings/{bookingId}/payments']?.post,
+      document.paths['/api/v1/management/payments/{id}/refund']?.post,
+    ];
+
+    for (const operation of operations) {
+      expect(
+        (operation?.parameters as Array<{ name?: string }> | undefined)?.some(
+          (parameter) => parameter.name?.toLowerCase() === 'idempotency-key',
+        ),
+      ).toBe(true);
+    }
+
+    expect(
+      document.paths['/api/v1/bookings/{bookingId}/payments']?.post?.responses,
+    ).toHaveProperty('503');
+    expect(
+      document.paths['/api/v1/management/payments/{id}/refund']?.post
+        ?.responses,
+    ).toHaveProperty('503');
+    expect(
+      document.paths['/api/v1/management/payments/{id}/reconcile-refund']?.post
+        ?.responses,
+    ).toHaveProperty('503');
+    expect(
+      document.paths['/api/v1/payments/vnpay/return']?.get?.responses,
+    ).toHaveProperty('302');
+
+    for (const path of [
+      '/api/v1/payments/vnpay/ipn',
+      '/api/v1/payments/vnpay/return',
+    ]) {
+      const parameterNames = (
+        document.paths[path]?.get?.parameters as
+          Array<{ name?: string }> | undefined
+      )?.map((parameter) => parameter.name);
+
+      expect(parameterNames).toEqual(
+        expect.arrayContaining([
+          'vnp_TmnCode',
+          'vnp_TxnRef',
+          'vnp_Amount',
+          'vnp_ResponseCode',
+          'vnp_TransactionStatus',
+          'vnp_TransactionNo',
+          'vnp_PayDate',
+          'vnp_SecureHash',
+        ]),
+      );
+    }
+  });
 });

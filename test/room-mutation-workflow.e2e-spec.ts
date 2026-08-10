@@ -1,6 +1,6 @@
 import { type INestApplication } from '@nestjs/common';
 import { Test, type TestingModule } from '@nestjs/testing';
-import { DataSource, type Repository } from 'typeorm';
+import { DataSource, type EntityManager, type Repository } from 'typeorm';
 import request from 'supertest';
 import type { App } from 'supertest/types';
 import sharp from 'sharp';
@@ -21,6 +21,7 @@ import {
 } from '../src/module/booking/schema/room-calendar.entity';
 import { Customer } from '../src/module/customer/schema/customer.entity';
 import { RoomImage } from '../src/module/room/schema/room-image.entity';
+import { RoomMutationService } from '../src/module/room/room-mutation.service';
 import { Room, RoomStatus } from '../src/module/room/schema/room.entity';
 import { RoomType } from '../src/module/room-type/schema/room-type.entity';
 import { User } from '../src/module/user/schema/user.entity';
@@ -135,6 +136,17 @@ describe('Room mutation/state workflow (e2e)', () => {
       })
       .expect(403);
 
+    await request(app.getHttpServer())
+      .post('/api/v1/rooms')
+      .set('Authorization', 'Bearer ' + adminToken)
+      .send({
+        roomTypeId: roomType.id,
+        roomNumber: nextNumber(),
+        name: 'Occupied without check-in',
+        status: RoomStatus.OCCUPIED,
+      })
+      .expect(409);
+
     const update = await request(app.getHttpServer())
       .patch('/api/v1/rooms/' + room.id)
       .set('Authorization', 'Bearer ' + adminToken)
@@ -191,7 +203,8 @@ describe('Room mutation/state workflow (e2e)', () => {
           .patch('/api/v1/rooms/' + room.id + '/status')
           .set('Authorization', 'Bearer ' + adminToken)
           .send({ status: next });
-        expect(adminResponse.status).toBe(200);
+        const occupancyConflict = next === RoomStatus.OCCUPIED;
+        expect(adminResponse.status).toBe(occupancyConflict ? 409 : 200);
 
         await rooms.update(room.id, { status: current });
         const staffResponse = await request(app.getHttpServer())
@@ -200,12 +213,14 @@ describe('Room mutation/state workflow (e2e)', () => {
           .send({ status: next });
         const staffMayChange =
           current !== RoomStatus.HIDDEN && next !== RoomStatus.HIDDEN;
-        expect(staffResponse.status).toBe(staffMayChange ? 200 : 403);
+        expect(staffResponse.status).toBe(
+          !staffMayChange ? 403 : occupancyConflict ? 409 : 200,
+        );
       }
     }
   });
 
-  it('reproduces the CHECKED_IN room-state invariant gap in the Room status API', async () => {
+  it('protects and repairs the CHECKED_IN room-state invariant', async () => {
     const roomType = await createRoomType('Mutation occupancy ' + suffix);
     const room = await createRoom(roomType, RoomStatus.OCCUPIED);
     const customer = await customers.save(
@@ -246,30 +261,60 @@ describe('Room mutation/state workflow (e2e)', () => {
       .patch('/api/v1/rooms/' + room.id + '/status')
       .set('Authorization', 'Bearer ' + adminToken)
       .send({ status: RoomStatus.READY });
-    expect(response.status).toBe(200);
-    const finalRoom = await rooms.findOneByOrFail({ id: room.id });
-    const finalBooking = await bookings.findOneByOrFail({ id: booking.id });
-    expect(finalBooking.status).toBe(BookingStatus.CHECKED_IN);
-    expect(finalRoom.status).toBe(RoomStatus.READY);
+    expect(response.status).toBe(409);
+    expect((await rooms.findOneByOrFail({ id: room.id })).status).toBe(
+      RoomStatus.OCCUPIED,
+    );
+
+    await rooms.update(room.id, { status: RoomStatus.READY });
+    const repaired = await request(app.getHttpServer())
+      .patch('/api/v1/rooms/' + room.id + '/status')
+      .set('Authorization', 'Bearer ' + adminToken)
+      .send({ status: RoomStatus.OCCUPIED })
+      .expect(200);
+
+    expect((repaired.body as Envelope<RoomPayload>).data.status).toBe(
+      RoomStatus.OCCUPIED,
+    );
+    expect((await bookings.findOneByOrFail({ id: booking.id })).status).toBe(
+      BookingStatus.CHECKED_IN,
+    );
   });
 
   it('does not let a stale general update overwrite a concurrent ADMIN HIDDEN transition', async () => {
     const roomType = await createRoomType('Mutation stale ' + suffix);
     const room = await createRoom(roomType, RoomStatus.READY);
-    const originalFindOneBy = rooms.findOneBy.bind(rooms);
-    let observedRead!: () => void;
-    const readObserved = new Promise<void>(
-      (resolve) => (observedRead = resolve),
-    );
-    let releaseRead!: () => void;
-    const readRelease = new Promise<void>((resolve) => (releaseRead = resolve));
-    const spy = jest
-      .spyOn(rooms, 'findOneBy')
-      .mockImplementationOnce(async (where) => {
-        const result = await originalFindOneBy(where);
-        observedRead();
-        await readRelease;
-        return result;
+    const roomMutationService = app.get(RoomMutationService);
+    const internals = roomMutationService as unknown as {
+      getLockedRoomForMutation(
+        manager: EntityManager,
+        id: string,
+      ): Promise<Room>;
+      getLockedRoomForStatus(manager: EntityManager, id: string): Promise<Room>;
+    };
+    const originalMutationLock =
+      internals.getLockedRoomForMutation.bind(internals);
+    const originalStatusLock = internals.getLockedRoomForStatus.bind(internals);
+    const mutationHasLock = createDeferred<void>();
+    const statusAttemptedLock = createDeferred<void>();
+    const releaseMutation = createDeferred<void>();
+    const mutationLockSpy = jest
+      .spyOn(internals, 'getLockedRoomForMutation')
+      .mockImplementation(async (manager, id) => {
+        const locked = await originalMutationLock(manager, id);
+        if (id === room.id) {
+          mutationHasLock.resolve();
+          await releaseMutation.promise;
+        }
+        return locked;
+      });
+    const statusLockSpy = jest
+      .spyOn(internals, 'getLockedRoomForStatus')
+      .mockImplementation(async (manager, id) => {
+        if (id === room.id) {
+          statusAttemptedLock.resolve();
+        }
+        return originalStatusLock(manager, id);
       });
 
     const pendingUpdate = request(app.getHttpServer())
@@ -277,18 +322,29 @@ describe('Room mutation/state workflow (e2e)', () => {
       .set('Authorization', 'Bearer ' + adminToken)
       .send({ name: 'Stale-safe update' })
       .then((response) => response);
-    await readObserved;
-    await request(app.getHttpServer())
+    await waitForSignal(mutationHasLock.promise, 'general Room update lock');
+    const pendingStatus = request(app.getHttpServer())
       .patch('/api/v1/rooms/' + room.id + '/status')
       .set('Authorization', 'Bearer ' + adminToken)
       .send({ status: RoomStatus.HIDDEN })
-      .expect(200);
-    releaseRead();
+      .then((response) => response);
+    await waitForSignal(
+      statusAttemptedLock.promise,
+      'Room status lock attempt',
+    );
+    releaseMutation.resolve();
     try {
-      await expect(pendingUpdate).resolves.toMatchObject({ status: 200 });
+      const [updateResponse, statusResponse] = await Promise.all([
+        pendingUpdate,
+        pendingStatus,
+      ]);
+      expect(updateResponse.status).toBe(200);
+      expect(statusResponse.status).toBe(200);
     } finally {
-      releaseRead();
-      spy.mockRestore();
+      releaseMutation.resolve();
+      await Promise.allSettled([pendingUpdate, pendingStatus]);
+      mutationLockSpy.mockRestore();
+      statusLockSpy.mockRestore();
     }
     expect((await rooms.findOneByOrFail({ id: room.id })).status).toBe(
       RoomStatus.HIDDEN,
@@ -384,3 +440,36 @@ describe('Room mutation/state workflow (e2e)', () => {
     return 'RM-' + suffix + '-' + sequence;
   }
 });
+
+interface Deferred<T> {
+  promise: Promise<T>;
+  resolve(value: T | PromiseLike<T>): void;
+}
+
+function createDeferred<T>(): Deferred<T> {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
+async function waitForSignal(
+  signal: Promise<void>,
+  description: string,
+): Promise<void> {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    await Promise.race([
+      signal,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(description + ' timed out.')),
+          5000,
+        );
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}

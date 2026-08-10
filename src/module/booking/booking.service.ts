@@ -7,8 +7,11 @@ import {
   BookingQueryService,
   type BookingListResult,
 } from './booking-query.service';
-import type { BookingResponse } from './booking.types';
-import type { ManagementBookingResponse } from './booking.types';
+import type {
+  BookingAuditContext,
+  BookingResponse,
+  ManagementBookingResponse,
+} from './booking.types';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { CreateManagementBookingDto } from './dto/create-management-booking.dto';
 import { ListBookingsQueryDto } from './dto/list-bookings-query.dto';
@@ -27,10 +30,12 @@ export class BookingService {
   async createForCustomer(
     customerId: string | undefined,
     body: CreateBookingDto,
+    context?: BookingAuditContext,
   ): Promise<BookingResponse> {
     const result = await this.bookingCreationService.createForCustomer(
       customerId,
       body,
+      context,
     );
 
     return this.getForCustomer(result.customerId, result.bookingId);
@@ -39,10 +44,12 @@ export class BookingService {
   async createForManagement(
     userId: string | undefined,
     body: CreateManagementBookingDto,
+    context?: BookingAuditContext,
   ): Promise<ManagementBookingResponse> {
     const bookingId = await this.bookingCreationService.createForManagement(
       userId,
       body,
+      context,
     );
 
     return this.getManagement(bookingId);
@@ -76,12 +83,14 @@ export class BookingService {
     customerId: string | undefined,
     id: string,
     body: CancelBookingDto,
+    context?: BookingAuditContext,
   ): Promise<BookingResponse> {
     const activeCustomerId =
       await this.bookingLifecycleService.cancelForCustomer(
         customerId,
         id,
         body,
+        context,
       );
 
     return this.getForCustomer(activeCustomerId, id);
@@ -90,8 +99,10 @@ export class BookingService {
   async updateStatus(
     id: string,
     body: UpdateBookingStatusDto,
+    userId?: string,
+    context?: BookingAuditContext,
   ): Promise<ManagementBookingResponse> {
-    await this.bookingLifecycleService.updateStatus(id, body);
+    await this.bookingLifecycleService.updateStatus(id, body, userId, context);
 
     return this.getManagement(id);
   }

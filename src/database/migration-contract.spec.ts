@@ -17,6 +17,11 @@ import { AddDashboardQueryIndexes1784782000000 } from './migrations/178478200000
 import { AlignAmenityJoinMetadata1784783000000 } from './migrations/1784783000000-AlignAmenityJoinMetadata';
 import { AddCustomerPhoneClaim1784784000000 } from './migrations/1784784000000-AddCustomerPhoneClaim';
 import { AddRoomTypeBedType1784785000000 } from './migrations/1784785000000-AddRoomTypeBedType';
+import { CreateRoomTypeBeds1784786000000 } from './migrations/1784786000000-CreateRoomTypeBeds';
+import { CreateAuditLogs1784787000000 } from './migrations/1784787000000-CreateAuditLogs';
+import { AddUserAuditEntityType1784788000000 } from './migrations/1784788000000-AddUserAuditEntityType';
+import { AlignRoomTypeBedMetadata1784789000000 } from './migrations/1784789000000-AlignRoomTypeBedMetadata';
+import { AddPaymentReviewContext1784790000000 } from './migrations/1784790000000-AddPaymentReviewContext';
 
 const MIGRATION_CLASSES = [
   InitialSchemaBaseline1784770000000,
@@ -35,6 +40,11 @@ const MIGRATION_CLASSES = [
   AlignAmenityJoinMetadata1784783000000,
   AddCustomerPhoneClaim1784784000000,
   AddRoomTypeBedType1784785000000,
+  CreateRoomTypeBeds1784786000000,
+  CreateAuditLogs1784787000000,
+  AddUserAuditEntityType1784788000000,
+  AlignRoomTypeBedMetadata1784789000000,
+  AddPaymentReviewContext1784790000000,
 ] as const;
 
 describe('database migration contract', () => {
@@ -81,7 +91,7 @@ describe('database migration contract', () => {
     expect(downQuery).toHaveBeenCalled();
     expect(
       [...upSql, ...downSql].every((sql) =>
-        /\b(ALTER|CREATE|DROP|UPDATE|DELETE|INSERT)\b/i.test(sql),
+        /\b(ALTER|CREATE|DROP|UPDATE|DELETE|INSERT|SELECT)\b/i.test(sql),
       ),
     ).toBe(true);
   });
@@ -92,5 +102,50 @@ describe('database migration contract', () => {
     await expect(migration.down()).rejects.toThrow(
       'Restore from a database backup instead.',
     );
+  });
+
+  it('keeps the legacy bed_type column while creating the normalized table', async () => {
+    const migration = new CreateRoomTypeBeds1784786000000();
+    const upSql: string[] = [];
+    const downSql: string[] = [];
+    const upQuery = jest.fn((sql: string) => {
+      upSql.push(sql);
+      return Promise.resolve([]);
+    });
+    const downQuery = jest.fn((sql: string) => {
+      downSql.push(sql);
+      return Promise.resolve([]);
+    });
+
+    await migration.up({ query: upQuery } as unknown as QueryRunner);
+    await migration.down?.({ query: downQuery } as unknown as QueryRunner);
+
+    expect(upSql[0]).toContain('CREATE TABLE room_type_beds');
+    expect(upSql[0]).toContain(
+      'UNIQUE KEY uq_room_type_beds_room_type_bed_type',
+    );
+    expect(upSql[0]).toContain('CHECK (quantity > 0)');
+    expect(upSql[0]).not.toMatch(/DROP\s+COLUMN\s+bed_type/i);
+    expect(downSql).toEqual(['DROP TABLE room_type_beds']);
+  });
+
+  it('refuses to narrow the audit entity enum while USER history exists', async () => {
+    const migration = new AddUserAuditEntityType1784788000000();
+    const query = jest.fn((sql: string) => {
+      if (/SELECT COUNT\(\*\)/i.test(sql)) {
+        return Promise.resolve([{ userAuditCount: '1' }]);
+      }
+
+      return Promise.resolve([]);
+    });
+
+    await expect(
+      migration.down({ query } as unknown as QueryRunner),
+    ).rejects.toThrow(
+      'Cannot remove USER from audit_logs.entity_type while USER audit records exist.',
+    );
+    expect(
+      query.mock.calls.some(([sql]: [string]) => /ALTER TABLE/i.test(sql)),
+    ).toBe(false);
   });
 });

@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
+import { AuditModule } from '../audit/audit.module';
 import { AuthModule } from '../auth/auth.module';
 import { Booking } from '../booking/schema/booking.entity';
 import { RoomCalendar } from '../booking/schema/room-calendar.entity';
@@ -20,6 +21,7 @@ import { VnPayGatewayService } from './vnpay-gateway.service';
 @Module({
   imports: [
     TypeOrmModule.forFeature([Payment, Booking, RoomCalendar, User]),
+    AuditModule,
     AuthModule,
   ],
   controllers: [

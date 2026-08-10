@@ -1,11 +1,17 @@
 import {
   Controller,
   Get,
+  Logger,
   ServiceUnavailableException,
   UseGuards,
 } from '@nestjs/common';
 
-import { RateLimit, RateLimitGuard } from '../http';
+import {
+  RateLimit,
+  RateLimitGuard,
+  ReqContext,
+  type RequestContext,
+} from '../http';
 import { ApiOkEnvelope } from '../../openapi/api-response.decorators';
 import {
   ApiRateLimitError,
@@ -16,6 +22,8 @@ import { HealthResponseDto } from './health-response.dto';
 
 @Controller('health')
 export class HealthController {
+  private readonly logger = new Logger(HealthController.name);
+
   constructor(
     private readonly healthDatabaseProbeService: HealthDatabaseProbeService,
   ) {}
@@ -32,10 +40,15 @@ export class HealthController {
   @ApiOkEnvelope(HealthResponseDto)
   @ApiReadinessError()
   @ApiRateLimitError()
-  async getReadiness(): Promise<HealthResponseDto> {
+  async getReadiness(
+    @ReqContext() context?: RequestContext,
+  ): Promise<HealthResponseDto> {
     try {
       await this.healthDatabaseProbeService.check();
-    } catch {
+    } catch (error) {
+      this.logger.warn(
+        `operation=health_readiness errorCode=DATABASE_UNAVAILABLE requestId=${context?.requestId ?? 'unavailable'} cause=${error instanceof Error ? error.name : 'UnknownError'}`,
+      );
       throw new ServiceUnavailableException('Database is unavailable.');
     }
 

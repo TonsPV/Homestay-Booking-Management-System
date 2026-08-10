@@ -6,6 +6,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { validateEnvironment } from './config/environment';
 import { HealthModule } from './common/health/health.module';
 import { AuthModule } from './module/auth/auth.module';
+import { AuditModule } from './module/audit/audit.module';
 import { AmenityModule } from './module/amenity/amenity.module';
 import { BookingModule } from './module/booking/booking.module';
 import { CustomerModule } from './module/customer/customer.module';
@@ -58,6 +59,7 @@ import { UserModule } from './module/user/user.module';
       }),
     }),
     AuthModule,
+    AuditModule,
     AmenityModule,
     BookingModule,
     CustomerModule,

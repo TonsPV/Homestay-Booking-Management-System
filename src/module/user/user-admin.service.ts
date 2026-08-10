@@ -28,6 +28,11 @@ import {
   requireTrimmedString,
 } from '../../common/validation';
 import { PasswordHasherService } from '../auth/password-hasher.service';
+import {
+  AuditLogService,
+  type AuditActorContext,
+} from '../audit/audit-log.service';
+import { AuditAction, AuditEntityType } from '../audit/schema/audit-log.entity';
 import { CreateUserDto } from './dto/create-user.dto';
 import { ListUsersQueryDto } from './dto/list-users-query.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -55,6 +60,7 @@ export class UserAdminService {
     @InjectRepository(User)
     private readonly usersRepository: Repository<User>,
     private readonly passwordHasherService: PasswordHasherService,
+    private readonly auditLogService: AuditLogService,
   ) {}
 
   async createUser(body: CreateUserDto): Promise<AdminUserResponse> {
@@ -210,13 +216,16 @@ export class UserAdminService {
     id: string,
     statusValue: unknown,
     currentAdminId: string | undefined,
+    auditContext: AuditActorContext,
   ): Promise<AdminUserResponse> {
-    return this.withUserTransaction((repository) =>
+    return this.withUserTransaction((repository, manager) =>
       this.updateStatusWithRepository(
         repository,
         id,
         statusValue,
         currentAdminId,
+        manager,
+        auditContext,
       ),
     );
   }
@@ -226,6 +235,8 @@ export class UserAdminService {
     id: string,
     statusValue: unknown,
     currentAdminId: string | undefined,
+    manager: EntityManager | undefined,
+    auditContext: AuditActorContext,
   ): Promise<AdminUserResponse> {
     const user = await this.getUser(id, repository);
     const status = requireAccountStatus(statusValue);
@@ -241,26 +252,46 @@ export class UserAdminService {
     }
 
     if (user.status !== status) {
+      const previousStatus = user.status;
       user.status = status;
       user.tokenVersion += 1;
+      const savedUser = await repository.save(user);
+
+      if (manager !== undefined) {
+        await this.auditLogService.record(manager, {
+          ...auditContext,
+          action:
+            status === 'LOCKED'
+              ? AuditAction.ACCOUNT_LOCKED
+              : AuditAction.ACCOUNT_UNLOCKED,
+          entityType: AuditEntityType.USER,
+          entityId: savedUser.id,
+          metadata: { fromStatus: previousStatus, toStatus: status },
+        });
+      }
+
+      return this.toAdminUserResponse(savedUser);
     }
 
     return this.toAdminUserResponse(await repository.save(user));
   }
 
   private async withUserTransaction<T>(
-    operation: (repository: Repository<User>) => Promise<T>,
+    operation: (
+      repository: Repository<User>,
+      manager: EntityManager | undefined,
+    ) => Promise<T>,
   ): Promise<T> {
     const repository = this.usersRepository as Repository<User> & {
       manager?: EntityManager;
     };
 
     if (repository.manager === undefined) {
-      return operation(this.usersRepository);
+      return operation(this.usersRepository, undefined);
     }
 
     return repository.manager.transaction((manager) =>
-      operation(manager.getRepository(User)),
+      operation(manager.getRepository(User), manager),
     );
   }
 

@@ -8,10 +8,16 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Not, type Repository } from 'typeorm';
+import { DataSource, type Repository } from 'typeorm';
 
 import { getMysqlDuplicateKey } from '../../common/database';
 import { requireTrimmedString } from '../../common/validation';
+import { AuditLogService } from '../audit/audit-log.service';
+import {
+  AuditAction,
+  AuditActorType,
+  AuditEntityType,
+} from '../audit/schema/audit-log.entity';
 import {
   Booking,
   BookingPaymentStatus,
@@ -29,7 +35,12 @@ import type {
   VnPayIpnResponse,
   VnPayReturnResponse,
 } from './payment.types';
-import { Payment, PaymentMethod, PaymentStatus } from './schema/payment.entity';
+import {
+  Payment,
+  PaymentMethod,
+  PaymentReviewReason,
+  PaymentStatus,
+} from './schema/payment.entity';
 import {
   formatVnPayDate,
   parseVnPayDate,
@@ -46,6 +57,7 @@ type VnPayCallbackValidation =
       responseCode: string;
       transactionStatus: string;
       transactionId: string;
+      paidAt: Date | null;
     }
   | {
       kind: 'INVALID_SIGNATURE' | 'INVALID_INPUT' | 'ERROR';
@@ -77,6 +89,7 @@ export class PaymentCollectionService {
     @InjectRepository(Payment)
     private readonly paymentsRepository: Repository<Payment>,
     private readonly paymentQueryService: PaymentQueryService,
+    private readonly auditLogService: AuditLogService,
     configService: ConfigService,
     private readonly vnPayGatewayService: VnPayGatewayService,
   ) {
@@ -208,8 +221,9 @@ export class PaymentCollectionService {
 
   async handleVnPayIpn(
     query: Record<string, unknown>,
+    requestId?: string,
   ): Promise<VnPayIpnResponse> {
-    const callback = this.validateVnPayCallback(query, 'IPN');
+    const callback = this.validateVnPayCallback(query, 'IPN', requestId);
 
     if (callback.kind === 'INVALID_SIGNATURE') {
       return { RspCode: '97', Message: 'Invalid signature' };
@@ -219,7 +233,7 @@ export class PaymentCollectionService {
       return { RspCode: '99', Message: 'Input data required' };
     }
 
-    const result = await this.processVnPayCallback(callback, 'IPN');
+    const result = await this.processVnPayCallback(callback, 'IPN', requestId);
 
     if (result.outcome === 'NOT_FOUND') {
       return { RspCode: '01', Message: 'Order not found' };
@@ -242,8 +256,9 @@ export class PaymentCollectionService {
 
   async handleVnPayReturn(
     query: Record<string, unknown>,
+    requestId?: string,
   ): Promise<VnPayReturnResponse> {
-    const callback = this.validateVnPayCallback(query, 'Return');
+    const callback = this.validateVnPayCallback(query, 'Return', requestId);
 
     if (callback.kind !== 'VALID') {
       return {
@@ -256,7 +271,11 @@ export class PaymentCollectionService {
       };
     }
 
-    const processed = await this.processVnPayCallback(callback, 'Return');
+    const processed = await this.processVnPayCallback(
+      callback,
+      'Return',
+      requestId,
+    );
     const payment =
       processed.paymentId === null
         ? null
@@ -308,6 +327,7 @@ export class PaymentCollectionService {
   private validateVnPayCallback(
     query: Record<string, unknown>,
     source: 'IPN' | 'Return',
+    requestId?: string,
   ): VnPayCallbackValidation {
     try {
       const verified = this.vnPayGatewayService.verifyCallback(query);
@@ -337,6 +357,16 @@ export class PaymentCollectionService {
         return { kind: 'INVALID_INPUT' };
       }
 
+      const paidAt = parseVnPayDate(parameters.vnp_PayDate);
+
+      if (
+        responseCode === '00' &&
+        transactionStatus === '00' &&
+        paidAt === null
+      ) {
+        return { kind: 'INVALID_INPUT' };
+      }
+
       return {
         kind: 'VALID',
         parameters,
@@ -345,10 +375,11 @@ export class PaymentCollectionService {
         responseCode,
         transactionStatus,
         transactionId,
+        paidAt,
       };
     } catch (error) {
       this.logger.error(
-        `Failed to verify VNPay ${source} callback.`,
+        `operation=VNPAY_CALLBACK_VERIFY source=${source} paymentId=unknown bookingId=unknown errorCode=CALLBACK_VERIFICATION_FAILED requestId=${requestId ?? 'unknown'}`,
         getErrorStack(error),
       );
       return { kind: 'ERROR' };
@@ -358,8 +389,10 @@ export class PaymentCollectionService {
   private async processVnPayCallback(
     callback: ValidVnPayCallback,
     source: 'IPN' | 'Return',
+    requestId?: string,
   ): Promise<VnPayCallbackProcessResult> {
     let paymentSnapshot: Payment | null = null;
+    let reviewReason: PaymentReviewReason | null = null;
 
     try {
       paymentSnapshot = await this.paymentsRepository.findOneBy({
@@ -408,6 +441,7 @@ export class PaymentCollectionService {
 
         const successful =
           callback.responseCode === '00' && callback.transactionStatus === '00';
+        const bookingFromStatus = booking.status;
         const lateSuccess =
           successful &&
           payment.status === PaymentStatus.FAILED &&
@@ -421,35 +455,66 @@ export class PaymentCollectionService {
         payment.gatewayResponseCode = callback.responseCode;
         payment.gatewayTransactionStatus = callback.transactionStatus;
 
-        const hasAnotherSuccessfulPayment =
-          successful &&
-          (await manager.getRepository(Payment).exists({
-            where: {
-              bookingId: booking.id,
-              id: Not(payment.id),
-              status: PaymentStatus.SUCCESS,
-            },
-          }));
+        const canonicalPayment = successful
+          ? await manager
+              .getRepository(Payment)
+              .createQueryBuilder('canonicalPayment')
+              .setLock('pessimistic_write')
+              .where('canonicalPayment.bookingId = :bookingId', {
+                bookingId: booking.id,
+              })
+              .andWhere('canonicalPayment.id <> :paymentId', {
+                paymentId: payment.id,
+              })
+              .andWhere('canonicalPayment.status = :status', {
+                status: PaymentStatus.SUCCESS,
+              })
+              .orderBy('canonicalPayment.id', 'ASC')
+              .getOne()
+          : null;
 
         if (
           successful &&
           (booking.status === BookingStatus.CANCELLED ||
-            hasAnotherSuccessfulPayment)
+            canonicalPayment !== null)
         ) {
+          reviewReason =
+            booking.status === BookingStatus.CANCELLED
+              ? PaymentReviewReason.BOOKING_CANCELLED
+              : PaymentReviewReason.ANOTHER_SUCCESSFUL_PAYMENT;
           payment.status = PaymentStatus.REQUIRES_REVIEW;
+          payment.reviewReason = reviewReason;
+          payment.reviewCanonicalPaymentId =
+            reviewReason === PaymentReviewReason.ANOTHER_SUCCESSFUL_PAYMENT
+              ? (canonicalPayment?.id ?? null)
+              : null;
           payment.gatewayTransactionId = callback.transactionId;
-          payment.paidAt =
-            parseVnPayDate(callback.parameters.vnp_PayDate) ?? new Date();
+          payment.paidAt = callback.paidAt;
           await manager.getRepository(Payment).save(payment);
+          await this.auditLogService.record(manager, {
+            actorType: AuditActorType.SYSTEM,
+            actorId: null,
+            action: AuditAction.PAYMENT_CONFIRMED,
+            entityType: AuditEntityType.PAYMENT,
+            entityId: payment.id,
+            requestId,
+            metadata: {
+              bookingId: booking.id,
+              source,
+              paymentStatus: payment.status,
+              reviewReason: reviewReason ?? 'UNKNOWN',
+            },
+          });
 
           return 'REQUIRES_REVIEW' as const;
         }
 
         if (successful) {
           payment.status = PaymentStatus.SUCCESS;
+          payment.reviewReason = null;
+          payment.reviewCanonicalPaymentId = null;
           payment.gatewayTransactionId = callback.transactionId;
-          payment.paidAt =
-            parseVnPayDate(callback.parameters.vnp_PayDate) ?? new Date();
+          payment.paidAt = callback.paidAt;
 
           booking.paymentStatus = BookingPaymentStatus.PAID;
           booking.paymentExpiresAt = null;
@@ -459,17 +524,50 @@ export class PaymentCollectionService {
           }
         } else {
           payment.status = PaymentStatus.FAILED;
+          payment.reviewReason = null;
+          payment.reviewCanonicalPaymentId = null;
         }
 
         await manager.getRepository(Payment).save(payment);
         await manager.getRepository(Booking).save(booking);
+
+        if (successful) {
+          await this.auditLogService.record(manager, {
+            actorType: AuditActorType.SYSTEM,
+            actorId: null,
+            action: AuditAction.PAYMENT_CONFIRMED,
+            entityType: AuditEntityType.PAYMENT,
+            entityId: payment.id,
+            requestId,
+            metadata: {
+              bookingId: booking.id,
+              source,
+              paymentStatus: payment.status,
+            },
+          });
+          if (bookingFromStatus !== booking.status) {
+            await this.auditLogService.record(manager, {
+              actorType: AuditActorType.SYSTEM,
+              actorId: null,
+              action: AuditAction.BOOKING_STATUS_CHANGED,
+              entityType: AuditEntityType.BOOKING,
+              entityId: booking.id,
+              requestId,
+              metadata: {
+                fromStatus: bookingFromStatus,
+                toStatus: booking.status,
+                paymentId: payment.id,
+              },
+            });
+          }
+        }
 
         return 'PROCESSED' as const;
       });
 
       if (outcome === 'REQUIRES_REVIEW') {
         this.logger.warn(
-          `VNPay ${source} marked payment ${activePaymentSnapshot.id} for review after booking ${activePaymentSnapshot.bookingId} was cancelled.`,
+          `operation=VNPAY_CALLBACK_PROCESS source=${source} paymentId=${activePaymentSnapshot.id} bookingId=${activePaymentSnapshot.bookingId} errorCode=REQUIRES_REVIEW requestId=${requestId ?? 'unknown'} reason=${reviewReason ?? 'UNKNOWN'}`,
         );
       }
 
@@ -480,7 +578,7 @@ export class PaymentCollectionService {
       };
     } catch (error) {
       this.logger.error(
-        `Failed to process VNPay ${source} callback for payment ${paymentSnapshot?.id ?? 'unknown'}.`,
+        `operation=VNPAY_CALLBACK_PROCESS source=${source} paymentId=${paymentSnapshot?.id ?? 'unknown'} bookingId=${paymentSnapshot?.bookingId ?? 'unknown'} errorCode=CALLBACK_PROCESSING_FAILED requestId=${requestId ?? 'unknown'}`,
         getErrorStack(error),
       );
 

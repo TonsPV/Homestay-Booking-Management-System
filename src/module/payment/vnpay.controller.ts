@@ -8,10 +8,18 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { Response } from 'express';
-import { ApiOkResponse } from '@nestjs/swagger';
+import { ApiOkResponse, ApiQuery } from '@nestjs/swagger';
 
-import { ApiResponse, type ApiResponsePayload } from '../../common/http';
-import { ApiOkEnvelope } from '../../openapi/api-response.decorators';
+import {
+  ApiResponse,
+  type ApiResponsePayload,
+  ReqContext,
+  type RequestContext,
+} from '../../common/http';
+import {
+  ApiFoundEnvelope,
+  ApiOkEnvelope,
+} from '../../openapi/api-response.decorators';
 import { VnPayIpnDto, VnPayReturnDto } from './dto/payment-response.dto';
 import { PaymentService, type VnPayReturnResponse } from './payment.service';
 
@@ -28,22 +36,60 @@ export class VnPayController {
     description: 'Raw VNPay IPN acknowledgement (not wrapped).',
     type: VnPayIpnDto,
   })
+  @ApiQuery({ name: 'vnp_TmnCode', required: true, type: String })
+  @ApiQuery({ name: 'vnp_TxnRef', required: true, type: String })
+  @ApiQuery({ name: 'vnp_Amount', required: true, type: String })
+  @ApiQuery({ name: 'vnp_ResponseCode', required: true, type: String })
+  @ApiQuery({ name: 'vnp_TransactionStatus', required: true, type: String })
+  @ApiQuery({ name: 'vnp_TransactionNo', required: true, type: String })
+  @ApiQuery({
+    name: 'vnp_PayDate',
+    required: false,
+    type: String,
+    description: 'Required for a successful transaction (yyyyMMddHHmmss).',
+  })
+  @ApiQuery({ name: 'vnp_SecureHash', required: true, type: String })
   async ipn(
     @Query() query: Record<string, unknown>,
+    @ReqContext() context: RequestContext,
     @Res() response: Response,
   ): Promise<void> {
-    const result = await this.paymentService.handleVnPayIpn(query);
+    const result = await this.paymentService.handleVnPayIpn(
+      query,
+      context.requestId,
+    );
 
     response.status(HttpStatus.OK).json(result);
   }
 
   @Get('return')
   @ApiOkEnvelope(VnPayReturnDto)
+  @ApiFoundEnvelope(VnPayReturnDto, {
+    description:
+      'Redirect response with the verification envelope when VNPAY_FRONTEND_RETURN_URL is configured.',
+  })
+  @ApiQuery({ name: 'vnp_TmnCode', required: true, type: String })
+  @ApiQuery({ name: 'vnp_TxnRef', required: true, type: String })
+  @ApiQuery({ name: 'vnp_Amount', required: true, type: String })
+  @ApiQuery({ name: 'vnp_ResponseCode', required: true, type: String })
+  @ApiQuery({ name: 'vnp_TransactionStatus', required: true, type: String })
+  @ApiQuery({ name: 'vnp_TransactionNo', required: true, type: String })
+  @ApiQuery({
+    name: 'vnp_PayDate',
+    required: false,
+    type: String,
+    description: 'Required for a successful transaction (yyyyMMddHHmmss).',
+  })
+  @ApiQuery({ name: 'vnp_SecureHash', required: true, type: String })
   async getReturn(
     @Query() query: Record<string, unknown>,
+    @ReqContext() context: RequestContext,
     @Res({ passthrough: true }) response: Response,
   ): Promise<ApiResponsePayload<VnPayReturnResponse>> {
-    const result = await this.paymentService.handleVnPayReturn(query);
+    const result = await this.paymentService.handleVnPayReturn(
+      query,
+      context.requestId,
+    );
     const frontendReturnUrl = this.configService.get<string>(
       'VNPAY_FRONTEND_RETURN_URL',
     );

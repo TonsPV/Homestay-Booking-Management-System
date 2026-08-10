@@ -2,11 +2,20 @@ import { HttpStatus } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { Response } from 'express';
 
+import type { RequestContext } from '../../common/http';
 import { PaymentService, type VnPayReturnResponse } from './payment.service';
 import { PaymentStatus } from './schema/payment.entity';
 import { VnPayController } from './vnpay.controller';
 
 describe('VnPayController', () => {
+  const requestContext: RequestContext = {
+    requestId: 'request-vnpay-controller',
+    method: 'GET',
+    path: '/v1/payments/vnpay/return',
+    ip: '127.0.0.1',
+    userAgent: 'jest',
+    auth: null,
+  };
   const returnResult: VnPayReturnResponse = {
     validSignature: true,
     paymentId: '13',
@@ -21,10 +30,19 @@ describe('VnPayController', () => {
     response: Response;
     status: jest.Mock;
     location: jest.Mock;
+    json: jest.Mock;
+    handleVnPayIpn: jest.Mock;
+    handleVnPayReturn: jest.Mock;
     getRedirectLocation: () => string | undefined;
   } {
+    const handleVnPayReturn = jest.fn().mockResolvedValue(returnResult);
+    const handleVnPayIpn = jest.fn().mockResolvedValue({
+      RspCode: '00',
+      Message: 'Confirm Success',
+    });
     const paymentService = {
-      handleVnPayReturn: jest.fn().mockResolvedValue(returnResult),
+      handleVnPayIpn,
+      handleVnPayReturn,
     } as unknown as PaymentService;
     const configService = {
       get: jest.fn().mockReturnValue(frontendReturnUrl),
@@ -34,7 +52,8 @@ describe('VnPayController', () => {
     const location = jest.fn((url: string) => {
       redirectLocation = url;
     });
-    const responseValue = { status, location };
+    const json = jest.fn();
+    const responseValue = { status, location, json };
 
     status.mockReturnValue(responseValue);
 
@@ -43,17 +62,38 @@ describe('VnPayController', () => {
       response: responseValue as unknown as Response,
       status,
       location,
+      json,
+      handleVnPayIpn,
+      handleVnPayReturn,
       getRedirectLocation: () => redirectLocation,
     };
   }
 
-  it('keeps returning the API payload when no frontend URL is configured', async () => {
-    const { controller, response, status, location } =
+  it('forwards the request id to the IPN processor', async () => {
+    const { controller, response, status, json, handleVnPayIpn } =
       createController(undefined);
 
-    const payload = await controller.getReturn({}, response);
+    await controller.ipn({}, requestContext, response);
+
+    expect(handleVnPayIpn).toHaveBeenCalledWith({}, 'request-vnpay-controller');
+    expect(status).toHaveBeenCalledWith(HttpStatus.OK);
+    expect(json).toHaveBeenCalledWith({
+      RspCode: '00',
+      Message: 'Confirm Success',
+    });
+  });
+
+  it('keeps returning the API payload when no frontend URL is configured', async () => {
+    const { controller, response, status, location, handleVnPayReturn } =
+      createController(undefined);
+
+    const payload = await controller.getReturn({}, requestContext, response);
 
     expect(payload.data).toEqual(returnResult);
+    expect(handleVnPayReturn).toHaveBeenCalledWith(
+      {},
+      'request-vnpay-controller',
+    );
     expect(status).not.toHaveBeenCalled();
     expect(location).not.toHaveBeenCalled();
   });
@@ -62,7 +102,7 @@ describe('VnPayController', () => {
     const { controller, response, status, location, getRedirectLocation } =
       createController('http://localhost:5173/payment-result');
 
-    const payload = await controller.getReturn({}, response);
+    const payload = await controller.getReturn({}, requestContext, response);
     const redirectLocation = getRedirectLocation();
 
     if (redirectLocation === undefined) {

@@ -68,12 +68,14 @@ export class PaymentService {
     bookingId: string,
     idempotencyKey: string | undefined,
     body: CreateManualPaymentDto,
+    requestId?: string,
   ): Promise<PaymentResponse> {
     return this.paymentManualService.record(
       userId,
       bookingId,
       idempotencyKey,
       body,
+      requestId,
     );
   }
 
@@ -95,14 +97,16 @@ export class PaymentService {
 
   async handleVnPayIpn(
     query: Record<string, unknown>,
+    requestId?: string,
   ): Promise<VnPayIpnResponse> {
-    return this.paymentCollectionService.handleVnPayIpn(query);
+    return this.paymentCollectionService.handleVnPayIpn(query, requestId);
   }
 
   async handleVnPayReturn(
     query: Record<string, unknown>,
+    requestId?: string,
   ): Promise<VnPayReturnResponse> {
-    return this.paymentCollectionService.handleVnPayReturn(query);
+    return this.paymentCollectionService.handleVnPayReturn(query, requestId);
   }
 
   async expirePendingOnlinePayments(now = new Date()): Promise<number> {
@@ -119,6 +123,7 @@ export class PaymentService {
     idempotencyKey: string | undefined,
     clientIp: string | undefined,
     body: RefundPaymentDto,
+    requestId?: string,
   ): Promise<PaymentResponse> {
     return this.paymentRefundService.refund(
       userId,
@@ -126,6 +131,7 @@ export class PaymentService {
       idempotencyKey,
       clientIp,
       body,
+      requestId,
     );
   }
 
@@ -133,11 +139,29 @@ export class PaymentService {
     userId: string | undefined,
     paymentId: string,
     clientIp: string | undefined,
+    requestId?: string,
   ): Promise<PaymentResponse> {
     return this.paymentRefundService.reconcileVnPayRefund(
       userId,
       paymentId,
       clientIp,
+      requestId,
+    );
+  }
+
+  async resolveDuplicateCharge(
+    userId: string | undefined,
+    paymentId: string,
+    idempotencyKey: string | undefined,
+    clientIp: string | undefined,
+    requestId?: string,
+  ): Promise<PaymentResponse> {
+    return this.paymentRefundService.resolveDuplicateCharge(
+      userId,
+      paymentId,
+      idempotencyKey,
+      clientIp,
+      requestId,
     );
   }
 }

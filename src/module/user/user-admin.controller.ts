@@ -15,6 +15,8 @@ import {
   ApiResponse,
   ApiResponsePayload,
   CurrentAuth,
+  ReqContext,
+  type RequestContext,
   Roles,
   RolesGuard,
   UpdateAccountStatusDto,
@@ -28,6 +30,7 @@ import {
 } from '../../openapi/api-response.decorators';
 import { AccessTokenGuard } from '../auth/access-token.guard';
 import { AuthUserDto } from '../auth/dto/auth-response.dto';
+import { AuditActorType } from '../audit/schema/audit-log.entity';
 import { CreateUserDto } from './dto/create-user.dto';
 import { ListUsersQueryDto } from './dto/list-users-query.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -89,9 +92,14 @@ export class UserAdminController {
     @Param('id') id: string,
     @Body() body: UpdateAccountStatusDto,
     @CurrentAuth() auth: AccessTokenPayload,
+    @ReqContext() context: RequestContext,
   ): Promise<ApiResponsePayload<AdminUserResponse>> {
     return this.userAdminService
-      .updateStatus(id, body.status, auth.user_id)
+      .updateStatus(id, body.status, auth.user_id, {
+        actorType: AuditActorType.USER,
+        actorId: auth.user_id ?? null,
+        requestId: context.requestId,
+      })
       .then((user) =>
         ApiResponse.ok(user, 'Cap nhat trang thai user thanh cong.'),
       );
