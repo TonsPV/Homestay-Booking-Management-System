@@ -1,4 +1,4 @@
-import type { ErrorCode } from './error-codes';
+import type { ErrorCode } from '../error-codes';
 
 export interface ApiResponsePayload<TData = unknown> {
   data: TData;

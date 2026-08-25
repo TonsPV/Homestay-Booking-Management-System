@@ -9,11 +9,12 @@ import { InjectRepository } from '@nestjs/typeorm';
 import type { EntityManager, Repository } from 'typeorm';
 
 import { getMysqlDuplicateKey } from '../../common/database';
+import { ErrorCode } from '../../common/error-codes';
+import { AppHttpException } from '../../common/http/app-http-exception';
 import {
-  AppHttpException,
-  ErrorCode,
+  createPaginationMeta,
   type PaginationMeta,
-} from '../../common/http';
+} from '../../common/pagination/pagination.types';
 import {
   optionalDecimalAmount,
   optionalNullableTrimmedString,
@@ -443,7 +444,7 @@ export class RoomTypeService {
 
     return {
       items,
-      meta: this.toPaginationMeta(page, limit, total),
+      meta: createPaginationMeta(page, limit, total),
     };
   }
 
@@ -815,21 +816,6 @@ export class RoomTypeService {
     return {
       ...this.toPublicResponse(roomType),
       deletedAt: roomType.deletedAt,
-    };
-  }
-
-  private toPaginationMeta(
-    page: number,
-    limit: number,
-    total: number,
-  ): PaginationMeta {
-    return {
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
     };
   }
 }

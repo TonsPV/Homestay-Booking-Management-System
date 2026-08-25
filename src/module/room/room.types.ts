@@ -1,4 +1,4 @@
-import type { PaginationMeta } from '../../common/http';
+import type { PaginationMeta } from '../../common/pagination/pagination.types';
 import type { RoomCalendarStatus } from '../booking/schema/room-calendar.entity';
 import type { RoomStatus } from './schema/room.entity';
 import type { BedConfiguration } from '../room-type/bed-configuration';

@@ -1,3 +1,5 @@
+import { isPositiveDuration } from './duration';
+
 const MIN_JWT_SECRET_LENGTH = 32;
 const DISALLOWED_JWT_SECRETS = new Set([
   'change-this-development-access-token-secret',
@@ -66,13 +68,6 @@ export function validateEnvironment(
     5000,
     250,
     60_000,
-  );
-  const healthDatabaseProbeTimeoutMs = readOptionalPositiveInteger(
-    config,
-    'HEALTH_DB_PROBE_TIMEOUT_MS',
-    1000,
-    100,
-    10_000,
   );
   const bookingMaxActiveUnpaidPerCustomer = readOptionalPositiveInteger(
     config,
@@ -291,7 +286,6 @@ export function validateEnvironment(
     DB_POOL_SIZE: databasePoolSize,
     DB_POOL_QUEUE_LIMIT: databasePoolQueueLimit,
     DB_CONNECT_TIMEOUT_MS: databaseConnectTimeoutMs,
-    HEALTH_DB_PROBE_TIMEOUT_MS: healthDatabaseProbeTimeoutMs,
     BOOKING_PAYMENT_TIMEOUT_MINUTES: bookingPaymentTimeoutMinutes,
     BOOKING_MAX_ACTIVE_UNPAID_PER_CUSTOMER: bookingMaxActiveUnpaidPerCustomer,
     BOOKING_MAX_HELD_NIGHTS_PER_CUSTOMER: bookingMaxHeldNightsPerCustomer,
@@ -353,12 +347,6 @@ function readOptionalString(
   }
 
   return value.trim();
-}
-
-function isPositiveDuration(value: string): boolean {
-  const match = /^(\d+)([smhd])?$/.exec(value);
-
-  return match !== null && Number(match[1]) > 0;
 }
 
 function readOptionalPositiveInteger(

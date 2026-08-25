@@ -19,12 +19,8 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import {
   ApiResponse,
   type ApiResponsePayload,
-  CurrentAuth,
   ReqContext,
   type RequestContext,
-  Roles,
-  RolesGuard,
-  type AccessTokenPayload,
 } from '../../common/http';
 import {
   ApiCommonAuthErrors,
@@ -34,6 +30,10 @@ import {
 } from '../../openapi/api-response.decorators';
 import { ROOM_IMAGE_MAX_FILE_SIZE } from '../../config/room-image-storage';
 import { AccessTokenGuard } from '../auth/access-token.guard';
+import type { AccessTokenPayload } from '../auth/auth.types';
+import { CurrentAuth } from '../auth/decorators/current-auth.decorator';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { RolesGuard } from '../auth/guards/roles.guard';
 import { AuditActorType } from '../audit/schema/audit-log.entity';
 import { CreateRoomImageDto } from './dto/create-room-image.dto';
 import { CreateRoomDto } from './dto/create-room.dto';

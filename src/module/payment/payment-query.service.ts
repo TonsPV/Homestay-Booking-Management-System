@@ -7,7 +7,10 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { LessThan, type Repository, type SelectQueryBuilder } from 'typeorm';
 
-import type { PaginationMeta } from '../../common/http';
+import {
+  createPaginationMeta,
+  type PaginationMeta,
+} from '../../common/pagination/pagination.types';
 import { parsePagination } from '../../common/validation';
 import { Booking } from '../booking/schema/booking.entity';
 import type { ListPaymentsQueryDto } from './dto/list-payments-query.dto';
@@ -218,14 +221,7 @@ export class PaymentQueryService {
 
     return {
       items: payments.map((payment) => this.toCustomerResponse(payment)),
-      meta: {
-        pagination: {
-          page,
-          limit,
-          total,
-          totalPages: Math.ceil(total / limit),
-        },
-      },
+      meta: createPaginationMeta(page, limit, total),
     };
   }
 
@@ -267,14 +263,7 @@ export class PaymentQueryService {
 
     return {
       items: payments.map((payment) => this.toResponse(payment)),
-      meta: {
-        pagination: {
-          page,
-          limit,
-          total,
-          totalPages: Math.ceil(total / limit),
-        },
-      },
+      meta: createPaginationMeta(page, limit, total),
     };
   }
 

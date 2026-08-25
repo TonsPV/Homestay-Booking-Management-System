@@ -14,12 +14,8 @@ import {
 import {
   ApiResponse,
   type ApiResponsePayload,
-  type AccessTokenPayload,
-  CurrentAuth,
   ReqContext,
   type RequestContext,
-  Roles,
-  RolesGuard,
 } from '../../common/http';
 import {
   ApiCommonAuthErrors,
@@ -28,6 +24,10 @@ import {
   ApiOkEnvelope,
 } from '../../openapi/api-response.decorators';
 import { AccessTokenGuard } from '../auth/access-token.guard';
+import type { AccessTokenPayload } from '../auth/auth.types';
+import { CurrentAuth } from '../auth/decorators/current-auth.decorator';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { RolesGuard } from '../auth/guards/roles.guard';
 import { BookingService, type BookingResponse } from './booking.service';
 import { BookingDto, ManagementBookingDto } from './dto/booking-response.dto';
 import type { ManagementBookingResponse } from './booking.types';

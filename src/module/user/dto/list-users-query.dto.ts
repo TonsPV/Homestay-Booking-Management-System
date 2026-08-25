@@ -5,22 +5,9 @@ import {
   AccountStatusEnum,
   UserRoleEnum,
 } from '../../../common/domain/account.enums';
+import { PaginationQueryDto } from '../../../common/pagination/pagination-query.dto';
 
-export class ListUsersQueryDto {
-  @ApiPropertyOptional({ default: 1, example: 1, minimum: 1, type: Number })
-  @Allow()
-  page?: unknown;
-
-  @ApiPropertyOptional({
-    default: 20,
-    example: 20,
-    maximum: 100,
-    minimum: 1,
-    type: Number,
-  })
-  @Allow()
-  limit?: unknown;
-
+export class ListUsersQueryDto extends PaginationQueryDto {
   @ApiPropertyOptional({ example: 'staff@example.com', type: String })
   @Allow()
   search?: unknown;

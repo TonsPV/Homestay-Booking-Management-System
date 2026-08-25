@@ -5,7 +5,7 @@ import type { Repository } from 'typeorm';
 import {
   CustomerAuthorizationReader,
   type CustomerAuthorizationState,
-} from '../../common/http';
+} from './authorization/customer-authorization-reader';
 import { Customer } from '../customer/schema/customer.entity';
 
 @Injectable()

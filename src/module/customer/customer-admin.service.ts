@@ -6,7 +6,11 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import type { EntityManager, Repository } from 'typeorm';
 
-import type { AccountStatus, PaginationMeta } from '../../common/http';
+import type { AccountStatus } from '../../common/domain/account.enums';
+import {
+  createPaginationMeta,
+  type PaginationMeta,
+} from '../../common/pagination/pagination.types';
 import {
   AuditLogService,
   type AuditActorContext,
@@ -91,7 +95,7 @@ export class CustomerAdminService {
       items: customers.map((customer) =>
         this.toAdminCustomerResponse(customer),
       ),
-      meta: this.toPaginationMeta(page, limit, total),
+      meta: createPaginationMeta(page, limit, total),
     };
   }
 
@@ -217,21 +221,6 @@ export class CustomerAdminService {
       status: customer.status,
       createdAt: customer.createdAt,
       updatedAt: customer.updatedAt,
-    };
-  }
-
-  private toPaginationMeta(
-    page: number,
-    limit: number,
-    total: number,
-  ): PaginationMeta {
-    return {
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
     };
   }
 }

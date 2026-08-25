@@ -2,17 +2,14 @@ import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
-import {
-  ActorsGuard,
-  CustomerAuthorizationReader,
-  RateLimitGuard,
-  RolesGuard,
-  UserAuthorizationReader,
-} from '../../common/http';
+import { RateLimitGuard } from '../../common/http/rate-limit.guard';
 import { AccessTokenGuard } from './access-token.guard';
 import { AccessTokenService } from './access-token.service';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
+import { CustomerAuthorizationReader } from './authorization/customer-authorization-reader';
+import { ActorsGuard } from './guards/actors.guard';
+import { RolesGuard } from './guards/roles.guard';
 import { Customer } from '../customer/schema/customer.entity';
 import { User } from '../user/schema/user.entity';
 import { CustomerAuthorizationService } from './customer-authorization.service';
@@ -25,6 +22,7 @@ import { LocalCustomerClaimService } from './local-customer-claim.service';
 import { PasswordHasherService } from './password-hasher.service';
 import { CustomerClaimChallenge } from './schema/customer-claim-challenge.entity';
 import { UserAuthorizationService } from './user-authorization.service';
+import { UserAuthorizationReader } from './authorization/user-authorization-reader';
 import { TestCustomerClaimSmsProvider } from './test-customer-claim-sms.provider';
 
 @Module({

@@ -1,6 +1,7 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
 
-import { AppHttpException, ErrorCode } from '../../common/http';
+import { ErrorCode } from '../../common/error-codes';
+import { AppHttpException } from '../../common/http/app-http-exception';
 import {
   Booking,
   BookingPaymentStatus,
@@ -32,7 +33,7 @@ export const BOOKING_TRANSITION_REASON_CODES = [
   ErrorCode.BOOKING_CONFIRMATION_REQUIRES_PAYMENT,
   ErrorCode.BOOKING_CHECKIN_REQUIRES_PAYMENT,
   ErrorCode.BOOKING_CHECKIN_OUTSIDE_STAY_WINDOW,
-  ErrorCode.BOOKING_ROOM_NOT_FOUND,
+  ErrorCode.BOOKING_ROOM_MISSING_FOR_BOOKING,
   ErrorCode.BOOKING_ROOM_NOT_READY,
   ErrorCode.BOOKING_CANCELLATION_ALREADY_PAID,
 ] as const;
@@ -120,7 +121,10 @@ export class BookingTransitionPolicy {
       targetStatus === BookingStatus.CHECKED_OUT
     ) {
       if (context.roomExists === false) {
-        return this.denied(targetStatus, ErrorCode.BOOKING_ROOM_NOT_FOUND);
+        return this.denied(
+          targetStatus,
+          ErrorCode.BOOKING_ROOM_MISSING_FOR_BOOKING,
+        );
       }
 
       if (
@@ -200,7 +204,7 @@ export class BookingTransitionPolicy {
         return 'Booking phai duoc thanh toan truoc khi check-in.';
       case ErrorCode.BOOKING_CHECKIN_OUTSIDE_STAY_WINDOW:
         return 'Chi co the check-in trong thoi gian luu tru cua booking.';
-      case ErrorCode.BOOKING_ROOM_NOT_FOUND:
+      case ErrorCode.BOOKING_ROOM_MISSING_FOR_BOOKING:
         return 'Phong cua booking khong con ton tai.';
       case ErrorCode.BOOKING_ROOM_NOT_READY:
         return 'Phong phai o trang thai READY truoc khi check-in.';

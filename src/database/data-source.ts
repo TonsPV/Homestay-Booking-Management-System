@@ -33,6 +33,7 @@ import { CreateAuditLogs1784787000000 } from './migrations/1784787000000-CreateA
 import { AddUserAuditEntityType1784788000000 } from './migrations/1784788000000-AddUserAuditEntityType';
 import { AlignRoomTypeBedMetadata1784789000000 } from './migrations/1784789000000-AlignRoomTypeBedMetadata';
 import { AddPaymentReviewContext1784790000000 } from './migrations/1784790000000-AddPaymentReviewContext';
+import { HardenPositivePriceConstraints1784791000000 } from './migrations/1784791000000-HardenPositivePriceConstraints';
 import { AlignRoomMetadata1784772000000 } from './migrations/1784772000000-AlignRoomMetadata';
 import { AddUserTokenVersion1784773000000 } from './migrations/1784773000000-AddUserTokenVersion';
 import { AlignEntityMetadata1784771000000 } from './migrations/1784771000000-AlignEntityMetadata';
@@ -100,6 +101,7 @@ const AppDataSource = new DataSource({
     AddUserAuditEntityType1784788000000,
     AlignRoomTypeBedMetadata1784789000000,
     AddPaymentReviewContext1784790000000,
+    HardenPositivePriceConstraints1784791000000,
   ],
   migrationsTableName: 'typeorm_migrations',
   synchronize: false,

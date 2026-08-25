@@ -9,7 +9,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import type { Repository } from 'typeorm';
 
 import { getMysqlDuplicateKey } from '../../common/database';
-import type { AccessTokenPayload } from '../../common/http';
+import type { AccessTokenPayload } from './auth.types';
 import {
   getVietnamesePhoneLookupVariants,
   isEmail,

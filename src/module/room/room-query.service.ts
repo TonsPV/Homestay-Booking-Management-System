@@ -7,6 +7,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import type { SelectQueryBuilder } from 'typeorm';
 import { Repository } from 'typeorm';
 
+import { createPaginationMeta } from '../../common/pagination/pagination.types';
 import {
   optionalDecimalAmount,
   optionalSearch,
@@ -132,14 +133,7 @@ export class RoomQueryService {
         calendarSummary:
           calendarSummaries.get(room.id) ?? this.emptyCalendarSummary(),
       })),
-      meta: {
-        pagination: {
-          page,
-          limit,
-          total,
-          totalPages: Math.ceil(total / limit),
-        },
-      },
+      meta: createPaginationMeta(page, limit, total),
     };
   }
 
@@ -559,14 +553,7 @@ export class RoomQueryService {
 
     return {
       items: rooms.map(mapRoom),
-      meta: {
-        pagination: {
-          page,
-          limit,
-          total,
-          totalPages: Math.ceil(total / limit),
-        },
-      },
+      meta: createPaginationMeta(page, limit, total),
     };
   }
 

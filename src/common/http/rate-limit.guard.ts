@@ -8,7 +8,11 @@ import {
 import { Reflector } from '@nestjs/core';
 import type { Request, Response } from 'express';
 
-import { RATE_LIMIT_KEY, type RateLimitOptions } from './rate-limit.decorator';
+import {
+  assertValidRateLimitOptions,
+  RATE_LIMIT_KEY,
+  type RateLimitOptions,
+} from './rate-limit.decorator';
 
 interface RateLimitBucket {
   count: number;
@@ -17,6 +21,8 @@ interface RateLimitBucket {
 
 @Injectable()
 export class RateLimitGuard implements CanActivate {
+  // Buckets are process-local by design; distributed enforcement requires an
+  // explicit deployment decision and a shared store.
   private readonly buckets = new Map<string, RateLimitBucket>();
   private lastSweepAt = Date.now();
 
@@ -31,6 +37,8 @@ export class RateLimitGuard implements CanActivate {
     if (options === undefined) {
       return true;
     }
+
+    assertValidRateLimitOptions(options);
 
     const http = context.switchToHttp();
     const request = http.getRequest<Request>();

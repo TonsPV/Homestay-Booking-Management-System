@@ -8,7 +8,8 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { DataSource, type EntityManager, In } from 'typeorm';
 
-import { AppHttpException, ErrorCode } from '../../common/http';
+import { ErrorCode } from '../../common/error-codes';
+import { AppHttpException } from '../../common/http/app-http-exception';
 import { optionalNullableTrimmedString } from '../../common/validation';
 import { AuditLogService } from '../audit/audit-log.service';
 import {
@@ -390,7 +391,7 @@ export class BookingLifecycleService {
     if (room === null) {
       throw new AppHttpException(
         HttpStatus.CONFLICT,
-        ErrorCode.BOOKING_ROOM_NOT_FOUND,
+        ErrorCode.BOOKING_ROOM_MISSING_FOR_BOOKING,
         'Phong cua booking khong con ton tai.',
       );
     }

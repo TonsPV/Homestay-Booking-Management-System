@@ -14,7 +14,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, type EntityManager, type Repository } from 'typeorm';
 
 import { getMysqlDuplicateKey } from '../../common/database';
-import { AppHttpException, ErrorCode } from '../../common/http';
+import { ErrorCode } from '../../common/error-codes';
+import { AppHttpException } from '../../common/http/app-http-exception';
 import {
   optionalNullableTrimmedString,
   requireTrimmedString,

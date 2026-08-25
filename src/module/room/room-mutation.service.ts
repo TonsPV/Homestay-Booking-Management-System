@@ -9,7 +9,7 @@ import type { EntityManager } from 'typeorm';
 import { IsNull, Repository } from 'typeorm';
 
 import { getMysqlDuplicateKey } from '../../common/database';
-import type { UserRole } from '../../common/http';
+import type { UserRole } from '../../common/domain/account.enums';
 import {
   optionalNullableTrimmedString,
   optionalTrimmedString,

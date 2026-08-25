@@ -4,8 +4,6 @@ import { ApiBadRequestResponse, ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import {
   ApiResponse,
   type ApiResponsePayload,
-  Roles,
-  RolesGuard,
 } from '../../common/http';
 import {
   ApiCommonAuthErrors,
@@ -13,6 +11,8 @@ import {
 } from '../../openapi/api-response.decorators';
 import { ErrorEnvelopeDto } from '../../openapi/response-envelope.dto';
 import { AccessTokenGuard } from '../auth/access-token.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { RolesGuard } from '../auth/guards/roles.guard';
 import { DashboardQueryService } from './dashboard-query.service';
 import { DashboardSummaryQueryDto } from './dto/dashboard-summary-query.dto';
 import { DashboardSummaryResponse } from './dto/dashboard-summary.response';

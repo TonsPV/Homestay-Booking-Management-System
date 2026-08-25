@@ -1,7 +1,8 @@
 import { BadRequestException, HttpStatus, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
-import { AppHttpException, ErrorCode } from '../../common/http';
+import { ErrorCode } from '../../common/error-codes';
+import { AppHttpException } from '../../common/http/app-http-exception';
 
 const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
 const VIETNAM_UTC_OFFSET_MILLISECONDS = 7 * 60 * 60 * 1000;

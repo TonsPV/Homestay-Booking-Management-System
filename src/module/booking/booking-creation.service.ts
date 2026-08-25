@@ -12,7 +12,8 @@ import { randomBytes } from 'node:crypto';
 import { DataSource, type EntityManager } from 'typeorm';
 
 import { getMysqlDuplicateKey } from '../../common/database';
-import { AppHttpException, ErrorCode } from '../../common/http';
+import { ErrorCode } from '../../common/error-codes';
+import { AppHttpException } from '../../common/http/app-http-exception';
 import {
   getVietnamesePhoneLookupVariants,
   optionalNullableEmail,

@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import type { Repository } from 'typeorm';
 
-import { ErrorCode } from '../../common/http';
+import { ErrorCode } from '../../common/error-codes';
 import { Customer } from './schema/customer.entity';
 
 export const CUSTOMER_CREDENTIAL_CAPABILITY_REASON_CODES = [

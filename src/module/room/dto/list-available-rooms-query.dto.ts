@@ -1,7 +1,9 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Allow } from 'class-validator';
 
-export class ListAvailableRoomsQueryDto {
+import { PaginationQueryDto } from '../../../common/pagination/pagination-query.dto';
+
+export class ListAvailableRoomsQueryDto extends PaginationQueryDto {
   @ApiProperty({ example: '2026-08-01', format: 'date', type: String })
   @Allow()
   checkIn?: unknown;
@@ -21,18 +23,4 @@ export class ListAvailableRoomsQueryDto {
   })
   @Allow()
   roomTypeId?: unknown;
-
-  @ApiPropertyOptional({ default: 1, example: 1, minimum: 1, type: Number })
-  @Allow()
-  page?: unknown;
-
-  @ApiPropertyOptional({
-    default: 20,
-    example: 20,
-    maximum: 100,
-    minimum: 1,
-    type: Number,
-  })
-  @Allow()
-  limit?: unknown;
 }

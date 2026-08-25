@@ -12,12 +12,8 @@ import {
 } from '@nestjs/common';
 
 import {
-  Actors,
-  ActorsGuard,
   ApiResponse,
   type ApiResponsePayload,
-  type AccessTokenPayload,
-  CurrentAuth,
   ReqContext,
   type RequestContext,
 } from '../../common/http';
@@ -28,6 +24,10 @@ import {
   ApiOkEnvelope,
 } from '../../openapi/api-response.decorators';
 import { AccessTokenGuard } from '../auth/access-token.guard';
+import type { AccessTokenPayload } from '../auth/auth.types';
+import { Actors } from '../auth/decorators/actors.decorator';
+import { CurrentAuth } from '../auth/decorators/current-auth.decorator';
+import { ActorsGuard } from '../auth/guards/actors.guard';
 import { BookingService, type BookingResponse } from './booking.service';
 import { BookingDto } from './dto/booking-response.dto';
 import { CancelBookingDto } from './dto/cancel-booking.dto';

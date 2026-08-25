@@ -1,11 +1,33 @@
 # Homestay Booking Management System API
 
 NestJS API for customer authentication, staff administration, customer
-profiles, room types, rooms, and room images.
+profiles, room inventory and availability, bookings, manual/VNPay payments,
+refund operations, audit records, and an operational dashboard.
+
+## MVP Payment Scope
+
+The payment MVP focuses on one full payment for a customer-created online
+booking through one VNPay sandbox/mock-compatible integration. Inventory is
+held for 15 minutes. A verified server-to-server IPN/webhook is the sole target
+financial mutation authority; the Return URL is verified presentation/read-only
+and clients re-query local state. Payment creation and callback handling are
+idempotent, with duplicate callbacks and callback-vs-timeout races as required
+test targets. This is an MVP technical demonstration, not a production
+financial-system or PCI certification claim.
+
+## Known Limitations / Future Work
+
+- Partial, installment, split, and multiple accepted collections are not supported.
+- Counter installment/debt tracking and the `PARTIALLY_PAID`, `collectedAmount`,
+  and `remainingAmount` model are outside MVP scope.
+- Multi-provider routing, payment ledger/allocation, overpayment/credit, and
+  complex partial-refund allocation are outside MVP scope.
+- Production-grade VNPay configuration, reconciliation, refund-lineage, and
+  operational hardening require additional validation and work.
 
 ## Requirements
 
-- Node.js 22+
+- Node.js 22.x
 - MySQL 8.4
 - npm
 
@@ -65,6 +87,10 @@ npm run start:dev
 
 The API is available at `http://localhost:3000/api`.
 
+Current working-tree limitation: `npm run build` emits `dist/src/main.js`, while
+`npm run start:prod` points to `dist/main`. The production start command therefore
+fails with `MODULE_NOT_FOUND` until the build output or script is aligned.
+
 ## Database Migrations
 
 The first migration is an idempotent baseline for the eight tables that
@@ -91,6 +117,18 @@ database name is empty, or the name does not end with `_test`.
 ```bash
 npm run test:e2e
 ```
+
+## Test Layout
+
+Production code under `src/` must not contain `*.spec.ts` files. Keep isolated
+unit, service, policy, helper, configuration, database-contract, and OpenAPI
+specifications under `test/unit/`, mirroring the relevant `src/` path. Keep
+HTTP/database workflow tests under `test/<feature>/` with the `.e2e-spec.ts`
+suffix.
+
+When creating a new test, place it under `test/unit/` or the relevant
+`test/<feature>/` folder instead of the production source folder. Unit tests run
+with `npm test`; E2E tests run with `npm run test:e2e`.
 
 ## Main Endpoints
 
@@ -436,13 +474,12 @@ Public VNPay callbacks:
 - `GET /api/v1/payments/vnpay/return`
 - `GET /api/v1/payments/vnpay/ipn`
 
-IPN is the primary server-to-server update path. A correctly signed Return can
-apply the same idempotent update as a fallback when IPN has not arrived, which
-keeps local Sandbox testing usable without making the frontend a source of
-payment truth. Both paths lock the Booking and Payment rows; whichever callback
-arrives second observes an already processed payment instead of writing twice.
-After Return, the frontend must still reload booking/payment history and use the
-database status returned by the API.
+Current implementation uses IPN as the primary server-to-server path, while a
+correctly signed Return can still apply the shared idempotent update as a
+fallback. The MVP target intentionally narrows this: IPN/webhook is the only
+financial mutation authority and Return becomes verified read-only
+presentation/recovery UX. After Return, the frontend reloads booking/payment
+history and trusts local database state; before IPN it may remain `PENDING`.
 
 When `VNPAY_FRONTEND_RETURN_URL` is empty, Return responds with JSON. When it is
 configured, Return responds with `302` and includes `paymentId`, `bookingId`,
@@ -467,9 +504,9 @@ is pending.
 ## Frontend Integration
 
 When `SWAGGER_ENABLED=true`, runtime OpenAPI documentation is available at
-`/api/docs`, with the raw document at `/api/docs-json`. The committed snapshot is
-[`openapi/openapi.json`](openapi/openapi.json). Regenerate it after a contract
-change:
+`/api/docs`, with the raw document at `/api/docs-json`. The version-controlled
+snapshot path is [`openapi/openapi.json`](openapi/openapi.json). Regenerate it
+after a contract change:
 
 ```bash
 npm run openapi:generate

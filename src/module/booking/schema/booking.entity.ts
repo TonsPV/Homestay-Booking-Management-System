@@ -39,7 +39,7 @@ export enum BookingPaymentStatus {
 @Index('idx_bookings_created_at_status', ['createdAt', 'status'])
 @Check('chk_bookings_date_range', 'check_in_date < check_out_date')
 @Check('chk_bookings_guest_count', 'guest_count > 0')
-@Check('chk_bookings_total_amount', 'total_amount >= 0')
+@Check('chk_bookings_total_amount', 'total_amount > 0')
 export class Booking {
   @PrimaryGeneratedColumn({ type: 'bigint' })
   id: string;

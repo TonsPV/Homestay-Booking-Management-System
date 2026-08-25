@@ -3,7 +3,7 @@ import { NestFactory } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
 
 import { AppModule } from './app.module';
-import { configureApp } from './common/http';
+import { configureApp } from './bootstrap/configure-app';
 import { configureOpenApiIfEnabled } from './openapi/openapi';
 
 async function bootstrap(): Promise<void> {

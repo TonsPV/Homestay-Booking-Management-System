@@ -14,14 +14,10 @@ import {
 import {
   ApiResponse,
   ApiResponsePayload,
-  CurrentAuth,
   ReqContext,
   type RequestContext,
-  Roles,
-  RolesGuard,
-  UpdateAccountStatusDto,
-  type AccessTokenPayload,
 } from '../../common/http';
+import { UpdateAccountStatusDto } from '../../common/account/update-account-status.dto';
 import {
   ApiCommonAuthErrors,
   ApiCommonMutationErrors,
@@ -29,6 +25,10 @@ import {
   ApiOkEnvelope,
 } from '../../openapi/api-response.decorators';
 import { AccessTokenGuard } from '../auth/access-token.guard';
+import type { AccessTokenPayload } from '../auth/auth.types';
+import { CurrentAuth } from '../auth/decorators/current-auth.decorator';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { RolesGuard } from '../auth/guards/roles.guard';
 import { AuthUserDto } from '../auth/dto/auth-response.dto';
 import { AuditActorType } from '../audit/schema/audit-log.entity';
 import { CreateUserDto } from './dto/create-user.dto';

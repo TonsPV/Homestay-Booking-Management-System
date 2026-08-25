@@ -10,9 +10,12 @@ import type { EntityManager, Repository } from 'typeorm';
 import { getMysqlDuplicateKey } from '../../common/database';
 import type {
   AccountStatus,
-  PaginationMeta,
   UserRole,
-} from '../../common/http';
+} from '../../common/domain/account.enums';
+import {
+  createPaginationMeta,
+  type PaginationMeta,
+} from '../../common/pagination/pagination.types';
 import {
   getVietnamesePhoneLookupVariants,
   optionalEmail,
@@ -132,7 +135,7 @@ export class UserAdminService {
 
     return {
       items: users.map((user) => this.toAdminUserResponse(user)),
-      meta: this.toPaginationMeta(page, limit, total),
+      meta: createPaginationMeta(page, limit, total),
     };
   }
 
@@ -419,21 +422,6 @@ export class UserAdminService {
       status: user.status,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
-    };
-  }
-
-  private toPaginationMeta(
-    page: number,
-    limit: number,
-    total: number,
-  ): PaginationMeta {
-    return {
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
     };
   }
 }

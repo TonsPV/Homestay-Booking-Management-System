@@ -8,7 +8,8 @@ import {
 } from '@nestjs/common';
 import { DataSource, type EntityManager } from 'typeorm';
 
-import { AppHttpException, ErrorCode } from '../../common/http';
+import { ErrorCode } from '../../common/error-codes';
+import { AppHttpException } from '../../common/http/app-http-exception';
 import { requireLoginPassword, requirePassword } from '../../common/validation';
 import { PasswordHasherService } from '../auth/password-hasher.service';
 import { CustomerCredentialPolicy } from './customer-credential.policy';

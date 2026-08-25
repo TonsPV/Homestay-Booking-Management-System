@@ -13,12 +13,8 @@ import {
 import { ApiHeader } from '@nestjs/swagger';
 
 import {
-  Actors,
-  ActorsGuard,
   ApiResponse,
   type ApiResponsePayload,
-  type AccessTokenPayload,
-  CurrentAuth,
   ReqContext,
   type RequestContext,
 } from '../../common/http';
@@ -30,6 +26,10 @@ import {
   ApiOkEnvelope,
 } from '../../openapi/api-response.decorators';
 import { AccessTokenGuard } from '../auth/access-token.guard';
+import type { AccessTokenPayload } from '../auth/auth.types';
+import { Actors } from '../auth/decorators/actors.decorator';
+import { CurrentAuth } from '../auth/decorators/current-auth.decorator';
+import { ActorsGuard } from '../auth/guards/actors.guard';
 import { CreateVnpayPaymentDto } from './dto/create-vnpay-payment.dto';
 import { ListPaymentsQueryDto } from './dto/list-payments-query.dto';
 import {

@@ -3,7 +3,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   ErrorCode,
   type ErrorCode as ErrorCodeType,
-} from '../common/http/error-codes';
+} from '../common/error-codes';
 import type { ApiErrorDetails } from '../common/http/api-response';
 
 export class PaginationDto {

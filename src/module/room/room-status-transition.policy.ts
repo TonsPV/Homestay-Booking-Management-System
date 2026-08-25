@@ -4,7 +4,7 @@ import {
   Injectable,
 } from '@nestjs/common';
 
-import type { UserRole } from '../../common/http';
+import type { UserRole } from '../../common/domain/account.enums';
 import { RoomStatus } from './schema/room.entity';
 
 export interface RoomStatusTransitionContext {

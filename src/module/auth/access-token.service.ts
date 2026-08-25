@@ -2,7 +2,8 @@ import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
-import type { AccessTokenPayload, AccessTokenSubject } from '../../common/http';
+import { parseDurationToSeconds } from '../../config/duration';
+import type { AccessTokenPayload, AccessTokenSubject } from './auth.types';
 
 @Injectable()
 export class AccessTokenService {
@@ -17,7 +18,11 @@ export class AccessTokenService {
       'JWT_ACCESS_TOKEN_EXPIRES_IN',
     );
 
-    return this.parseDuration(value);
+    try {
+      return parseDurationToSeconds(value);
+    } catch {
+      throw new Error('JWT access token duration is invalid.');
+    }
   }
 
   sign(subject: AccessTokenSubject): string {
@@ -279,24 +284,5 @@ export class AccessTokenService {
     }
 
     return value;
-  }
-
-  private parseDuration(value: string): number {
-    const match = /^(\d+)([smhd])?$/.exec(value.trim());
-
-    if (match === null || Number(match[1]) <= 0) {
-      throw new Error('JWT access token duration is invalid.');
-    }
-
-    const amount = Number(match[1]);
-    const unit = match[2] ?? 's';
-    const multipliers: Record<string, number> = {
-      s: 1,
-      m: 60,
-      h: 3600,
-      d: 86400,
-    };
-
-    return amount * multipliers[unit];
   }
 }

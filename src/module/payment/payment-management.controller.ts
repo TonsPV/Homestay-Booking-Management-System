@@ -15,12 +15,8 @@ import { ApiHeader } from '@nestjs/swagger';
 import {
   ApiResponse,
   type ApiResponsePayload,
-  type AccessTokenPayload,
-  CurrentAuth,
   ReqContext,
   type RequestContext,
-  Roles,
-  RolesGuard,
 } from '../../common/http';
 import {
   ApiCommonAuthErrors,
@@ -30,6 +26,10 @@ import {
   ApiOkEnvelope,
 } from '../../openapi/api-response.decorators';
 import { AccessTokenGuard } from '../auth/access-token.guard';
+import type { AccessTokenPayload } from '../auth/auth.types';
+import { CurrentAuth } from '../auth/decorators/current-auth.decorator';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { RolesGuard } from '../auth/guards/roles.guard';
 import { CreateManualPaymentDto } from './dto/create-manual-payment.dto';
 import { ListPaymentsQueryDto } from './dto/list-payments-query.dto';
 import { RefundPaymentDto } from './dto/refund-payment.dto';

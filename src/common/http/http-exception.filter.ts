@@ -15,12 +15,15 @@ import type {
   ApiFieldError,
   ApiFieldErrors,
 } from './api-response';
-import type { AppRequest } from './auth.types';
+import type { AppRequest } from './request.types';
+import { createRequestMetadata } from './request-metadata';
 import {
   getFallbackErrorCode,
-  isErrorCode,
-  type ErrorCode,
+  isErrorCodeStatusCompatible,
 } from './error-codes';
+import { isErrorCode, type ErrorCode } from '../error-codes';
+
+const INVALID_MESSAGE_ARRAY_FALLBACK = 'Request validation failed.';
 
 @Catch()
 export class HttpExceptionFilter implements ExceptionFilter {
@@ -46,9 +49,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
       ...(fieldErrors === undefined ? {} : { fieldErrors }),
       ...(details === undefined ? {} : { details }),
       error: this.getError(exception, statusCode),
-      path: request.originalUrl,
-      timestamp: new Date().toISOString(),
-      requestId: request.requestId ?? 'unknown',
+      ...createRequestMetadata(request),
     };
 
     response.status(statusCode).json(body);
@@ -58,17 +59,13 @@ export class HttpExceptionFilter implements ExceptionFilter {
     exception: unknown,
     request: AppRequest,
   ): void {
-    const context = `[requestId=${request.requestId ?? 'unknown'}] ${request.method} ${request.originalUrl}`;
-
-    if (exception instanceof Error) {
-      this.logger.error(
-        `${context} - ${exception.name}: ${exception.message}`,
-        exception.stack,
-      );
-      return;
-    }
-
-    this.logger.error(`${context} - Non-Error exception received.`);
+    this.logger.error({
+      event: 'unexpected_http_exception',
+      requestId: request.requestId ?? 'unknown',
+      method: request.method,
+      statusCode: this.getStatusCode(exception),
+      exceptionType: exception instanceof Error ? 'Error' : 'NonError',
+    });
   }
 
   private getMessage(exception: unknown): string | string[] {
@@ -93,8 +90,18 @@ export class HttpExceptionFilter implements ExceptionFilter {
     ) {
       const message = response.message;
 
-      if (typeof message === 'string' || Array.isArray(message)) {
-        return message as string | string[];
+      if (typeof message === 'string') {
+        return message;
+      }
+
+      if (Array.isArray(message)) {
+        const safeMessages = message.filter(
+          (item: unknown): item is string => typeof item === 'string',
+        );
+
+        return safeMessages.length === message.length
+          ? safeMessages
+          : INVALID_MESSAGE_ARRAY_FALLBACK;
       }
     }
 
@@ -130,7 +137,8 @@ export class HttpExceptionFilter implements ExceptionFilter {
         response !== null &&
         typeof response === 'object' &&
         'errorCode' in response &&
-        isErrorCode(response.errorCode)
+        isErrorCode(response.errorCode) &&
+        isErrorCodeStatusCompatible(response.errorCode, statusCode)
       ) {
         return response.errorCode;
       }

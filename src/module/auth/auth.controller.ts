@@ -10,10 +10,8 @@ import {
 import {
   ApiResponse,
   ApiResponsePayload,
-  CurrentAuth,
   RateLimit,
   RateLimitGuard,
-  type AccessTokenPayload,
 } from '../../common/http';
 import {
   ApiCommonAuthErrors,
@@ -27,6 +25,8 @@ import {
 } from '../../openapi/api-response.decorators';
 import { AccessTokenGuard } from './access-token.guard';
 import { AuthService } from './auth.service';
+import type { AccessTokenPayload } from './auth.types';
+import { CurrentAuth } from './decorators/current-auth.decorator';
 import { LoginDto } from './dto/login.dto';
 import { RegisterCustomerDto } from './dto/register-customer.dto';
 import {

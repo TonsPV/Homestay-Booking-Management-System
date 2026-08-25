@@ -8,11 +8,12 @@ import { InjectRepository } from '@nestjs/typeorm';
 import type { EntityManager, Repository } from 'typeorm';
 
 import { getMysqlDuplicateKey } from '../../common/database';
+import { ErrorCode } from '../../common/error-codes';
+import { AppHttpException } from '../../common/http/app-http-exception';
 import {
-  AppHttpException,
-  ErrorCode,
+  createPaginationMeta,
   type PaginationMeta,
-} from '../../common/http';
+} from '../../common/pagination/pagination.types';
 import {
   optionalNullableTrimmedString,
   optionalSearch,
@@ -220,14 +221,7 @@ export class AmenityService {
 
     return {
       items,
-      meta: {
-        pagination: {
-          page,
-          limit,
-          total,
-          totalPages: Math.ceil(total / limit),
-        },
-      },
+      meta: createPaginationMeta(page, limit, total),
     };
   }
 

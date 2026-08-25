@@ -1,100 +1,6 @@
 {
   "openapi": "3.0.0",
   "paths": {
-    "/api/health/live": {
-      "get": {
-        "operationId": "Health_getLiveness",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "allOf": [
-                    {
-                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "statusCode": {
-                          "type": "number",
-                          "example": 200
-                        },
-                        "data": {
-                          "$ref": "#/components/schemas/HealthResponseDto"
-                        }
-                      }
-                    }
-                  ]
-                }
-              }
-            }
-          }
-        },
-        "tags": [
-          "Health"
-        ]
-      }
-    },
-    "/api/health/ready": {
-      "get": {
-        "operationId": "Health_getReadiness",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "allOf": [
-                    {
-                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "statusCode": {
-                          "type": "number",
-                          "example": 200
-                        },
-                        "data": {
-                          "$ref": "#/components/schemas/HealthResponseDto"
-                        }
-                      }
-                    }
-                  ]
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "The request rate limit was exceeded.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "The database is unavailable or did not respond in time.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
-                }
-              }
-            }
-          }
-        },
-        "tags": [
-          "Health"
-        ]
-      }
-    },
     "/api/v1/auth/customers/register": {
       "post": {
         "operationId": "Auth_registerCustomer",
@@ -6572,6 +6478,7 @@
           "BOOKING_CHECKIN_REQUIRES_PAYMENT",
           "BOOKING_CHECKIN_OUTSIDE_STAY_WINDOW",
           "BOOKING_ROOM_NOT_FOUND",
+          "BOOKING_ROOM_MISSING_FOR_BOOKING",
           "BOOKING_ROOM_NOT_READY",
           "BOOKING_CANCELLATION_ALREADY_PAID",
           "BOOKING_CANCELLATION_NOT_ALLOWED",
@@ -6665,6 +6572,7 @@
                       "BOOKING_CHECKIN_REQUIRES_PAYMENT",
                       "BOOKING_CHECKIN_OUTSIDE_STAY_WINDOW",
                       "BOOKING_ROOM_NOT_FOUND",
+                      "BOOKING_ROOM_MISSING_FOR_BOOKING",
                       "BOOKING_ROOM_NOT_READY",
                       "BOOKING_CANCELLATION_ALREADY_PAID",
                       "BOOKING_CANCELLATION_NOT_ALLOWED",
@@ -6776,26 +6684,6 @@
         },
         "required": [
           "pagination"
-        ]
-      },
-      "HealthResponseDto": {
-        "type": "object",
-        "properties": {
-          "status": {
-            "type": "string",
-            "example": "ok",
-            "enum": [
-              "ok"
-            ]
-          },
-          "timestamp": {
-            "type": "string",
-            "format": "date-time"
-          }
-        },
-        "required": [
-          "status",
-          "timestamp"
         ]
       },
       "AuthRegistrationAcceptedDto": {
@@ -7519,7 +7407,7 @@
               "BOOKING_CONFIRMATION_REQUIRES_PAYMENT",
               "BOOKING_CHECKIN_REQUIRES_PAYMENT",
               "BOOKING_CHECKIN_OUTSIDE_STAY_WINDOW",
-              "BOOKING_ROOM_NOT_FOUND",
+              "BOOKING_ROOM_MISSING_FOR_BOOKING",
               "BOOKING_ROOM_NOT_READY",
               "BOOKING_CANCELLATION_ALREADY_PAID",
               null

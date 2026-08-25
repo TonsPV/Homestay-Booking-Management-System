@@ -7,11 +7,9 @@ import {
 } from '@nestjs/common';
 
 import { AccessTokenService } from './access-token.service';
-import {
-  CustomerAuthorizationReader,
-  type AuthenticatedRequest,
-  UserAuthorizationReader,
-} from '../../common/http';
+import type { AuthenticatedRequest } from './auth.types';
+import { CustomerAuthorizationReader } from './authorization/customer-authorization-reader';
+import { UserAuthorizationReader } from './authorization/user-authorization-reader';
 
 @Injectable()
 export class AccessTokenGuard implements CanActivate {

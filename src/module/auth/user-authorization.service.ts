@@ -5,7 +5,7 @@ import type { Repository } from 'typeorm';
 import {
   UserAuthorizationReader,
   type UserAuthorizationState,
-} from '../../common/http';
+} from './authorization/user-authorization-reader';
 import { User } from '../user/schema/user.entity';
 
 @Injectable()

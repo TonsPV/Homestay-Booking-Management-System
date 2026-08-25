@@ -11,21 +11,21 @@ import {
 import {
   ApiResponse,
   ApiResponsePayload,
-  type AccessTokenPayload,
-  CurrentAuth,
   ReqContext,
   type RequestContext,
-  Roles,
-  RolesGuard,
-  UpdateAccountStatusDto,
 } from '../../common/http';
+import { UpdateAccountStatusDto } from '../../common/account/update-account-status.dto';
 import {
   ApiCommonAuthErrors,
   ApiCommonMutationErrors,
   ApiOkEnvelope,
 } from '../../openapi/api-response.decorators';
 import { AccessTokenGuard } from '../auth/access-token.guard';
+import type { AccessTokenPayload } from '../auth/auth.types';
 import { AuditActorType } from '../audit/schema/audit-log.entity';
+import { CurrentAuth } from '../auth/decorators/current-auth.decorator';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { RolesGuard } from '../auth/guards/roles.guard';
 import { CustomerAdminService } from './customer-admin.service';
 import type { AdminCustomerResponse } from './customer-admin.service';
 import { AdminCustomerDto } from './dto/admin-customer-response.dto';

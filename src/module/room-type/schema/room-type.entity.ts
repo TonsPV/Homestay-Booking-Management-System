@@ -18,7 +18,7 @@ import { RoomTypeBed } from './room-type-bed.entity';
 @Entity('room_types')
 @Index('uq_room_types_name', ['name'], { unique: true })
 @Check('chk_room_types_max_guests', 'max_guests > 0')
-@Check('chk_room_types_base_price', 'base_price >= 0')
+@Check('chk_room_types_base_price', 'base_price > 0')
 export class RoomType {
   @PrimaryGeneratedColumn({ type: 'bigint' })
   id: string;
