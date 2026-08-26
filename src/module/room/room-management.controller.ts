@@ -12,10 +12,7 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 
-import {
-  ApiResponse,
-  type ApiResponsePayload,
-} from '../../common/http';
+import { ApiResponse, type ApiResponsePayload } from '../../common/http';
 import {
   ApiCommonAuthErrors,
   ApiCommonMutationErrors,

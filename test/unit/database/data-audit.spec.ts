@@ -36,6 +36,8 @@ describe('data audit', () => {
       'active-booking-calendar',
       'cancelled-booking-calendar',
       'single-success-payment',
+      'positive-price',
+      'payment-lineage',
       'booking-payment-status',
       'room-occupancy',
       'room-image-cover',
@@ -43,8 +45,6 @@ describe('data audit', () => {
       'expired-booking',
       'expired-payment',
       'stale-refund',
-      'customer-claim-single-pending',
-      'customer-claim-state',
     ]);
     expect(new Set(names).size).toBe(names.length);
   });

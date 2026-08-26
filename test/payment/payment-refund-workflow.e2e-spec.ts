@@ -183,6 +183,8 @@ describe('Payment refund/reconciliation workflow (e2e)', () => {
         ]);
       }
 
+      if (ownedBookingIds.length > 0)
+        await bookings.update(ownedBookingIds, { acceptedPaymentId: null });
       if (ownedPaymentIds.length > 0) await payments.delete(ownedPaymentIds);
       if (ownedBookingIds.length > 0) {
         await calendars.delete({ bookingId: In(ownedBookingIds) });

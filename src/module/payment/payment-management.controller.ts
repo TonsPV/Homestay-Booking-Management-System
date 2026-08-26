@@ -10,7 +10,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { ApiHeader } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiHeader } from '@nestjs/swagger';
 
 import {
   ApiResponse,
@@ -44,6 +44,7 @@ import { PaymentMethod } from './schema/payment.entity';
 @Controller('v1/management')
 @UseGuards(AccessTokenGuard, RolesGuard)
 @Roles('ADMIN', 'STAFF')
+@ApiBearerAuth()
 @ApiCommonAuthErrors()
 export class PaymentManagementController {
   constructor(private readonly paymentService: PaymentService) {}

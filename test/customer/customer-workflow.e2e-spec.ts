@@ -399,14 +399,24 @@ describe('Customer workflow (e2e)', () => {
           newPassword: 'ConcurrentCustomer456!',
         }),
     ]);
-    expect(mutationResponses.map((response) => response.status).sort()).toEqual(
+    const mutationStatuses = mutationResponses
+      .map((response) => response.status)
+      .sort();
+    // The two transactions may serialize in either order.  If the lock wins
+    // first, the already-authenticated password request is rechecked against
+    // the now-locked account and is rejected; if the password transaction wins
+    // first, both mutations commit and the status change revokes both tokens.
+    expect([
       [200, 200],
-    );
+      [200, 403],
+    ]).toContainEqual(mutationStatuses);
     const finalCustomer = await customersRepository.findOneByOrFail({
       id: mutationCustomer.id,
     });
     expect(finalCustomer.status).toBe('LOCKED');
-    expect(finalCustomer.tokenVersion).toBe(2);
+    expect(finalCustomer.tokenVersion).toBe(
+      mutationStatuses.includes(403) ? 1 : 2,
+    );
   });
 
   async function createDirectUser(role: 'ADMIN' | 'STAFF'): Promise<User> {

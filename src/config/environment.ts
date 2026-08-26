@@ -69,6 +69,13 @@ export function validateEnvironment(
     250,
     60_000,
   );
+  const healthDatabaseProbeTimeoutMs = readOptionalPositiveInteger(
+    config,
+    'HEALTH_DB_PROBE_TIMEOUT_MS',
+    1000,
+    100,
+    10_000,
+  );
   const bookingMaxActiveUnpaidPerCustomer = readOptionalPositiveInteger(
     config,
     'BOOKING_MAX_ACTIVE_UNPAID_PER_CUSTOMER',
@@ -109,77 +116,6 @@ export function validateEnvironment(
     config,
     'HTTP_URLENCODED_BODY_LIMIT',
     '1mb',
-  );
-  const customerClaimSmsEnabled = readOptionalBoolean(
-    config,
-    'CUSTOMER_CLAIM_SMS_ENABLED',
-    false,
-  );
-  const customerClaimLocalBypassEnabled = readOptionalBoolean(
-    config,
-    'CUSTOMER_CLAIM_LOCAL_BYPASS_ENABLED',
-    false,
-  );
-  const customerClaimSmsProvider = readOptionalString(
-    config,
-    'CUSTOMER_CLAIM_SMS_PROVIDER',
-    'disabled',
-  ).toLowerCase();
-  const customerClaimOtpLifetimeMinutes = readOptionalPositiveInteger(
-    config,
-    'CUSTOMER_CLAIM_OTP_LIFETIME_MINUTES',
-    5,
-    1,
-    15,
-  );
-  const customerClaimOtpMaxAttempts = readOptionalPositiveInteger(
-    config,
-    'CUSTOMER_CLAIM_OTP_MAX_ATTEMPTS',
-    5,
-    1,
-    10,
-  );
-  const customerClaimOtpResendCooldownSeconds = readOptionalPositiveInteger(
-    config,
-    'CUSTOMER_CLAIM_OTP_RESEND_COOLDOWN_SECONDS',
-    60,
-    30,
-    600,
-  );
-  const customerClaimOtpRateWindowMinutes = readOptionalPositiveInteger(
-    config,
-    'CUSTOMER_CLAIM_OTP_RATE_WINDOW_MINUTES',
-    15,
-    1,
-    60,
-  );
-  const customerClaimOtpPhoneWindowLimit = readOptionalPositiveInteger(
-    config,
-    'CUSTOMER_CLAIM_OTP_PHONE_WINDOW_LIMIT',
-    3,
-    1,
-    20,
-  );
-  const customerClaimOtpPhoneDailyLimit = readOptionalPositiveInteger(
-    config,
-    'CUSTOMER_CLAIM_OTP_PHONE_DAILY_LIMIT',
-    10,
-    1,
-    100,
-  );
-  const customerClaimOtpIpWindowLimit = readOptionalPositiveInteger(
-    config,
-    'CUSTOMER_CLAIM_OTP_IP_WINDOW_LIMIT',
-    20,
-    1,
-    200,
-  );
-  const customerClaimTokenLifetimeMinutes = readOptionalPositiveInteger(
-    config,
-    'CUSTOMER_CLAIM_TOKEN_LIFETIME_MINUTES',
-    10,
-    1,
-    30,
   );
   const roomImageUploadDirectory = readOptionalString(
     config,
@@ -244,40 +180,6 @@ export function validateEnvironment(
     throw new Error('CORS_ORIGINS is required in production.');
   }
 
-  if (!['disabled', 'test'].includes(customerClaimSmsProvider)) {
-    throw new Error(
-      'CUSTOMER_CLAIM_SMS_PROVIDER must be disabled or test until a production provider adapter is installed.',
-    );
-  }
-
-  if (customerClaimSmsProvider === 'test' && nodeEnvironment !== 'test') {
-    throw new Error(
-      'CUSTOMER_CLAIM_SMS_PROVIDER=test is allowed only when NODE_ENV=test.',
-    );
-  }
-
-  if (
-    customerClaimLocalBypassEnabled &&
-    (typeof config.NODE_ENV !== 'string' ||
-      (nodeEnvironment !== 'development' && nodeEnvironment !== 'test'))
-  ) {
-    throw new Error(
-      'CUSTOMER_CLAIM_LOCAL_BYPASS_ENABLED requires explicit NODE_ENV=development or test.',
-    );
-  }
-
-  if (customerClaimSmsEnabled && customerClaimSmsProvider === 'disabled') {
-    throw new Error(
-      'CUSTOMER_CLAIM_SMS_ENABLED requires an installed SMS provider.',
-    );
-  }
-
-  if (!customerClaimSmsEnabled && customerClaimSmsProvider !== 'disabled') {
-    throw new Error(
-      'CUSTOMER_CLAIM_SMS_PROVIDER must be disabled when CUSTOMER_CLAIM_SMS_ENABLED is false.',
-    );
-  }
-
   return {
     ...config,
     NODE_ENV: nodeEnvironment,
@@ -286,6 +188,7 @@ export function validateEnvironment(
     DB_POOL_SIZE: databasePoolSize,
     DB_POOL_QUEUE_LIMIT: databasePoolQueueLimit,
     DB_CONNECT_TIMEOUT_MS: databaseConnectTimeoutMs,
+    HEALTH_DB_PROBE_TIMEOUT_MS: healthDatabaseProbeTimeoutMs,
     BOOKING_PAYMENT_TIMEOUT_MINUTES: bookingPaymentTimeoutMinutes,
     BOOKING_MAX_ACTIVE_UNPAID_PER_CUSTOMER: bookingMaxActiveUnpaidPerCustomer,
     BOOKING_MAX_HELD_NIGHTS_PER_CUSTOMER: bookingMaxHeldNightsPerCustomer,
@@ -294,18 +197,6 @@ export function validateEnvironment(
     SWAGGER_ENABLED: swaggerEnabled,
     HTTP_JSON_BODY_LIMIT: httpJsonBodyLimit,
     HTTP_URLENCODED_BODY_LIMIT: httpUrlencodedBodyLimit,
-    CUSTOMER_CLAIM_SMS_ENABLED: customerClaimSmsEnabled,
-    CUSTOMER_CLAIM_LOCAL_BYPASS_ENABLED: customerClaimLocalBypassEnabled,
-    CUSTOMER_CLAIM_SMS_PROVIDER: customerClaimSmsProvider,
-    CUSTOMER_CLAIM_OTP_LIFETIME_MINUTES: customerClaimOtpLifetimeMinutes,
-    CUSTOMER_CLAIM_OTP_MAX_ATTEMPTS: customerClaimOtpMaxAttempts,
-    CUSTOMER_CLAIM_OTP_RESEND_COOLDOWN_SECONDS:
-      customerClaimOtpResendCooldownSeconds,
-    CUSTOMER_CLAIM_OTP_RATE_WINDOW_MINUTES: customerClaimOtpRateWindowMinutes,
-    CUSTOMER_CLAIM_OTP_PHONE_WINDOW_LIMIT: customerClaimOtpPhoneWindowLimit,
-    CUSTOMER_CLAIM_OTP_PHONE_DAILY_LIMIT: customerClaimOtpPhoneDailyLimit,
-    CUSTOMER_CLAIM_OTP_IP_WINDOW_LIMIT: customerClaimOtpIpWindowLimit,
-    CUSTOMER_CLAIM_TOKEN_LIFETIME_MINUTES: customerClaimTokenLifetimeMinutes,
     ROOM_IMAGE_UPLOAD_DIR: roomImageUploadDirectory,
     CORS_ORIGINS: corsOrigins,
     VNPAY_ENABLED: vnpayEnabled,

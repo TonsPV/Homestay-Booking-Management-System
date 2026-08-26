@@ -79,6 +79,10 @@ describe('VNPay collection/Return/IPN workflow (e2e)', () => {
     customerIds.push(customer.id);
 
     harness.registerCleanup(async () => {
+      if (bookingIds.length > 0)
+        await bookings.update([...new Set(bookingIds)], {
+          acceptedPaymentId: null,
+        });
       if (paymentIds.length > 0)
         await payments.delete([...new Set(paymentIds)]);
       if (bookingIds.length > 0)

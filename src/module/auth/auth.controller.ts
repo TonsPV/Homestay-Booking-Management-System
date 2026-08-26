@@ -7,6 +7,7 @@ import {
   Post,
   UseGuards,
 } from '@nestjs/common';
+import { ApiBearerAuth } from '@nestjs/swagger';
 import {
   ApiResponse,
   ApiResponsePayload,
@@ -91,6 +92,7 @@ export class AuthController {
 
   @Get('me')
   @UseGuards(AccessTokenGuard)
+  @ApiBearerAuth()
   @ApiOkEnvelopeUnion([AuthMeCustomerResponseDto, AuthMeUserResponseDto])
   @ApiCommonAuthErrors()
   me(

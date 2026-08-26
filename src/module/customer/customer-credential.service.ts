@@ -29,6 +29,7 @@ export class CustomerCredentialService {
     private readonly customerCredentialPolicy: CustomerCredentialPolicy,
   ) {}
 
+  //change customer password
   async changeOwnPassword(
     customerId: string | undefined,
     body: ChangeCustomerPasswordDto,
@@ -106,6 +107,7 @@ export class CustomerCredentialService {
     });
   }
 
+  //set initial password for customer
   async setInitialPassword(
     customerId: string,
     body: SetInitialCustomerPasswordDto,
@@ -138,6 +140,7 @@ export class CustomerCredentialService {
     });
   }
 
+  //get customer with password hash for update
   private getCustomerWithPassword(
     manager: EntityManager,
     customerId: string,

@@ -16,13 +16,13 @@ import {
   type PaginationMeta,
 } from '../../common/pagination/pagination.types';
 import {
-  optionalDecimalAmount,
+  optionalPositiveDecimalAmount,
   optionalNullableTrimmedString,
   optionalSearch,
   optionalTrimmedString,
   parseBoolean,
   parsePagination,
-  requireDecimalAmount,
+  requirePositiveDecimalAmount,
   requirePositiveInt,
   requireTrimmedString,
 } from '../../common/validation';
@@ -140,7 +140,7 @@ export class RoomTypeService {
       'So khach toi da khong hop le.',
       100,
     );
-    const basePrice = requireDecimalAmount(
+    const basePrice = requirePositiveDecimalAmount(
       body.basePrice,
       'Gia co ban khong hop le.',
     );
@@ -203,7 +203,7 @@ export class RoomTypeService {
             'So khach toi da khong hop le.',
             100,
           );
-    const basePrice = optionalDecimalAmount(
+    const basePrice = optionalPositiveDecimalAmount(
       body.basePrice,
       'Gia co ban khong hop le.',
     );

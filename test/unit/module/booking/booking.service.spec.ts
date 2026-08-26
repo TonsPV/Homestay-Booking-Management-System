@@ -239,6 +239,63 @@ describe('BookingService characterization', () => {
     );
   });
 
+  it('replays a committed booking for the same request identity', async () => {
+    const customer = customerFixture();
+    const room = roomFixture();
+    const savedBooking = bookingFixture({
+      id: '100',
+      checkInDate: '2030-02-01',
+      checkOutDate: '2030-02-04',
+      totalAmount: '3000000.00',
+    });
+    const bookingCreate = jest.fn((value: Booking) => value);
+    const bookingSave = jest.fn((value: Booking) =>
+      Promise.resolve({ ...savedBooking, ...value, id: '100' }),
+    );
+    const findOneBy = jest.fn().mockResolvedValue(null);
+    const manager = createManager({
+      customer,
+      room,
+      bookingCreate,
+      bookingSave,
+      calendarCreate: jest.fn((value: RoomCalendar) => value),
+      calendarInsert: jest.fn().mockResolvedValue({ identifiers: [] }),
+      findOneBy,
+    });
+    dataSource.transaction.mockImplementation(
+      (work: (entityManager: EntityManager) => unknown) =>
+        Promise.resolve(work(manager)),
+    );
+    bookingsRepository.createQueryBuilder.mockReturnValue(
+      createBookingQuery(savedBooking),
+    );
+
+    const body = {
+      roomId: '1',
+      checkInDate: '2030-02-01',
+      checkOutDate: '2030-02-04',
+      guestCount: 2,
+    };
+    await expect(
+      service.createForCustomer('10', body, undefined, 'booking-intent-001'),
+    ).resolves.toMatchObject({ id: '100' });
+
+    const committed = bookingCreate.mock.results[0]?.value as Booking;
+    findOneBy.mockResolvedValue({
+      ...savedBooking,
+      requestIntentActorType: committed.requestIntentActorType,
+      requestIntentActorId: committed.requestIntentActorId,
+      requestIntentKey: committed.requestIntentKey,
+      requestIntentHash: committed.requestIntentHash,
+    });
+
+    await expect(
+      service.createForCustomer('10', body, undefined, 'booking-intent-001'),
+    ).resolves.toMatchObject({ id: '100' });
+    expect(bookingCreate).toHaveBeenCalledTimes(1);
+    expect(findOneBy).toHaveBeenCalledTimes(2);
+  });
+
   it('rejects a booking whose guest count exceeds room capacity', async () => {
     const bookingCreate = jest.fn();
     const manager = createManager({
@@ -902,6 +959,7 @@ interface CreateManagerOptions {
   calendarCreate: jest.Mock;
   calendarInsert: jest.Mock;
   activeUnpaidBookings?: Booking[];
+  findOneBy?: jest.Mock;
 }
 
 function createManager(options: CreateManagerOptions): EntityManager {
@@ -921,6 +979,7 @@ function createManager(options: CreateManagerOptions): EntityManager {
         return {
           create: options.bookingCreate,
           save: options.bookingSave,
+          findOneBy: options.findOneBy ?? jest.fn().mockResolvedValue(null),
           countBy: () => Promise.resolve(activeUnpaidBookings.length),
           find: () => Promise.resolve(activeUnpaidBookings),
         };

@@ -32,13 +32,13 @@ describe('UpdateAccountStatusDto', () => {
     ).rejects.toMatchObject({ status: 400 });
   });
 
-  it.each([
-    AccountStatusEnum.ACTIVE,
-    AccountStatusEnum.LOCKED,
-  ])('accepts %s', async (status: AccountStatus) => {
-    const value = (await pipe.transform({ status }, metadata)) as unknown;
+  it.each([AccountStatusEnum.ACTIVE, AccountStatusEnum.LOCKED])(
+    'accepts %s',
+    async (status: AccountStatus) => {
+      const value = (await pipe.transform({ status }, metadata)) as unknown;
 
-    expect(value).toBeInstanceOf(UpdateAccountStatusDto);
-    expect(value).toMatchObject({ status });
-  });
+      expect(value).toBeInstanceOf(UpdateAccountStatusDto);
+      expect(value).toMatchObject({ status });
+    },
+  );
 });

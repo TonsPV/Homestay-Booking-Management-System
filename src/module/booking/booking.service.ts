@@ -31,11 +31,13 @@ export class BookingService {
     customerId: string | undefined,
     body: CreateBookingDto,
     context?: BookingAuditContext,
+    requestIntentKey?: string,
   ): Promise<BookingResponse> {
     const result = await this.bookingCreationService.createForCustomer(
       customerId,
       body,
       context,
+      requestIntentKey,
     );
 
     return this.getForCustomer(result.customerId, result.bookingId);
@@ -45,11 +47,13 @@ export class BookingService {
     userId: string | undefined,
     body: CreateManagementBookingDto,
     context?: BookingAuditContext,
+    requestIntentKey?: string,
   ): Promise<ManagementBookingResponse> {
     const bookingId = await this.bookingCreationService.createForManagement(
       userId,
       body,
       context,
+      requestIntentKey,
     );
 
     return this.getManagement(bookingId);

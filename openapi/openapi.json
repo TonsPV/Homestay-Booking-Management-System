@@ -1,6 +1,100 @@
 {
   "openapi": "3.0.0",
   "paths": {
+    "/api/health/live": {
+      "get": {
+        "operationId": "Health_getLiveness",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 200
+                        },
+                        "data": {
+                          "$ref": "#/components/schemas/HealthResponseDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Health"
+        ]
+      }
+    },
+    "/api/health/ready": {
+      "get": {
+        "operationId": "Health_getReadiness",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 200
+                        },
+                        "data": {
+                          "$ref": "#/components/schemas/HealthResponseDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "The request rate limit was exceeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is unavailable or did not respond in time.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Health"
+        ]
+      }
+    },
     "/api/v1/auth/customers/register": {
       "post": {
         "operationId": "Auth_registerCustomer",
@@ -281,6 +375,11 @@
             }
           }
         },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
         "tags": [
           "Auth"
         ]
@@ -1002,7 +1101,17 @@
     "/api/v1/bookings": {
       "post": {
         "operationId": "Booking_create",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Optional request identity. Reusing it with the same booking request replays the committed booking.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -1091,6 +1200,11 @@
             }
           }
         },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
         "tags": [
           "Booking"
         ]
@@ -1192,6 +1306,11 @@
             }
           }
         },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
         "tags": [
           "Booking"
         ]
@@ -1258,6 +1377,11 @@
             }
           }
         },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
         "tags": [
           "Booking"
         ]
@@ -1364,6 +1488,11 @@
             }
           }
         },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
         "tags": [
           "Booking"
         ]
@@ -1372,7 +1501,17 @@
     "/api/v1/management/bookings": {
       "post": {
         "operationId": "BookingManagement_create",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "Optional request identity. Reusing it with the same counter-booking request replays the committed booking.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -1461,6 +1600,11 @@
             }
           }
         },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
         "tags": [
           "BookingManagement"
         ]
@@ -1591,6 +1735,11 @@
             }
           }
         },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
         "tags": [
           "BookingManagement"
         ]
@@ -1657,6 +1806,11 @@
             }
           }
         },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
         "tags": [
           "BookingManagement"
         ]
@@ -1763,6 +1917,11 @@
             }
           }
         },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
         "tags": [
           "BookingManagement"
         ]
@@ -2137,6 +2296,11 @@
             }
           }
         },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
         "tags": [
           "CustomerAdmin"
         ]
@@ -2243,6 +2407,11 @@
             }
           }
         },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
         "tags": [
           "CustomerAdmin"
         ]
@@ -2357,99 +2526,6 @@
         "summary": "Set the first password for an eligible Customer",
         "tags": [
           "Management Customers"
-        ]
-      }
-    },
-    "/api/v1/management/dashboard/summary": {
-      "get": {
-        "operationId": "Dashboard_getSummary",
-        "parameters": [
-          {
-            "name": "from",
-            "required": true,
-            "in": "query",
-            "schema": {
-              "format": "date",
-              "example": "2026-07-01",
-              "type": "string"
-            }
-          },
-          {
-            "name": "to",
-            "required": true,
-            "in": "query",
-            "schema": {
-              "format": "date",
-              "example": "2026-07-27",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "allOf": [
-                    {
-                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "statusCode": {
-                          "type": "number",
-                          "example": 200
-                        },
-                        "data": {
-                          "$ref": "#/components/schemas/DashboardSummaryResponse"
-                        }
-                      }
-                    }
-                  ]
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "The dashboard date range is invalid.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Authentication is required.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The authenticated actor does not have access.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "tags": [
-          "Management Dashboard"
         ]
       }
     },
@@ -2573,6 +2649,11 @@
             }
           }
         },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
         "tags": [
           "Payment"
         ]
@@ -2697,6 +2778,11 @@
             }
           }
         },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
         "tags": [
           "Payment"
         ]
@@ -2815,6 +2901,11 @@
             }
           }
         },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
         "tags": [
           "PaymentManagement"
         ]
@@ -2941,6 +3032,11 @@
             }
           }
         },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
         "tags": [
           "PaymentManagement"
         ]
@@ -3054,6 +3150,11 @@
             }
           }
         },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
         "tags": [
           "PaymentManagement"
         ]
@@ -3179,6 +3280,11 @@
             }
           }
         },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
         "tags": [
           "PaymentManagement"
         ]
@@ -3294,6 +3400,11 @@
             }
           }
         },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
         "tags": [
           "PaymentManagement"
         ]
@@ -3400,6 +3511,11 @@
             }
           }
         },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
         "tags": [
           "PaymentManagement"
         ]
@@ -3626,6 +3742,29 @@
         "operationId": "Room_search",
         "parameters": [
           {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "example": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "example": 20,
+              "type": "number"
+            }
+          },
+          {
             "name": "checkIn",
             "required": true,
             "in": "query",
@@ -3700,34 +3839,11 @@
             }
           },
           {
-            "name": "page",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "minimum": 1,
-              "default": 1,
-              "example": 1,
-              "type": "number"
-            }
-          },
-          {
             "name": "sort",
             "required": false,
             "in": "query",
             "schema": {
               "$ref": "#/components/schemas/RoomSearchSort"
-            }
-          },
-          {
-            "name": "limit",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "minimum": 1,
-              "maximum": 100,
-              "default": 20,
-              "example": 20,
-              "type": "number"
             }
           }
         ],
@@ -3946,6 +4062,11 @@
             }
           }
         },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
         "tags": [
           "Room"
         ]
@@ -4096,6 +4217,11 @@
             }
           }
         },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
         "tags": [
           "Room"
         ]
@@ -4160,6 +4286,11 @@
             }
           }
         },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
         "tags": [
           "Room"
         ]
@@ -4266,6 +4397,11 @@
             }
           }
         },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
         "tags": [
           "Room"
         ]
@@ -4390,6 +4526,11 @@
             }
           }
         },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
         "tags": [
           "Room"
         ]
@@ -4527,6 +4668,29 @@
         "operationId": "RoomManagement_available",
         "parameters": [
           {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "example": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "example": 20,
+              "type": "number"
+            }
+          },
+          {
             "name": "checkIn",
             "required": true,
             "in": "query",
@@ -4564,29 +4728,6 @@
               "pattern": "^[1-9][0-9]*$",
               "example": "5",
               "type": "string"
-            }
-          },
-          {
-            "name": "page",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "minimum": 1,
-              "default": 1,
-              "example": 1,
-              "type": "number"
-            }
-          },
-          {
-            "name": "limit",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "minimum": 1,
-              "maximum": 100,
-              "default": 20,
-              "example": 20,
-              "type": "number"
             }
           }
         ],
@@ -5087,6 +5228,11 @@
             }
           }
         },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
         "tags": [
           "RoomImage"
         ]
@@ -5153,6 +5299,11 @@
             }
           }
         },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
         "tags": [
           "RoomImage"
         ]
@@ -5372,6 +5523,11 @@
             }
           }
         },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
         "tags": [
           "RoomTypeAdmin"
         ]
@@ -5476,6 +5632,11 @@
             }
           }
         },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
         "tags": [
           "RoomTypeAdmin"
         ]
@@ -5542,6 +5703,11 @@
             }
           }
         },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
         "tags": [
           "RoomTypeAdmin"
         ]
@@ -5646,6 +5812,11 @@
             }
           }
         },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
         "tags": [
           "RoomTypeAdmin"
         ]
@@ -5740,6 +5911,11 @@
             }
           }
         },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
         "tags": [
           "RoomTypeAdmin"
         ]
@@ -5836,6 +6012,11 @@
             }
           }
         },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
         "tags": [
           "RoomTypeAdmin"
         ]
@@ -5942,6 +6123,11 @@
             }
           }
         },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
         "tags": [
           "RoomTypeAdmin"
         ]
@@ -6039,6 +6225,11 @@
             }
           }
         },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
         "tags": [
           "UserAdmin"
         ]
@@ -6159,6 +6350,11 @@
             }
           }
         },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
         "tags": [
           "UserAdmin"
         ]
@@ -6265,6 +6461,11 @@
             }
           }
         },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
         "tags": [
           "UserAdmin"
         ]
@@ -6371,6 +6572,11 @@
             }
           }
         },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
         "tags": [
           "UserAdmin"
         ]
@@ -6471,6 +6677,7 @@
           "BOOKING_TOTAL_LIMIT_EXCEEDED",
           "BOOKING_ROOM_UNAVAILABLE",
           "BOOKING_CREATE_CONFLICT",
+          "BOOKING_REQUEST_INTENT_CONFLICT",
           "BOOKING_CANCELLATION_REASON_REQUIRED",
           "BOOKING_REFUND_PENDING",
           "BOOKING_TRANSITION_NOT_ALLOWED",
@@ -6565,6 +6772,7 @@
                       "BOOKING_TOTAL_LIMIT_EXCEEDED",
                       "BOOKING_ROOM_UNAVAILABLE",
                       "BOOKING_CREATE_CONFLICT",
+                      "BOOKING_REQUEST_INTENT_CONFLICT",
                       "BOOKING_CANCELLATION_REASON_REQUIRED",
                       "BOOKING_REFUND_PENDING",
                       "BOOKING_TRANSITION_NOT_ALLOWED",
@@ -6684,6 +6892,26 @@
         },
         "required": [
           "pagination"
+        ]
+      },
+      "HealthResponseDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "example": "ok",
+            "enum": [
+              "ok"
+            ]
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "status",
+          "timestamp"
         ]
       },
       "AuthRegistrationAcceptedDto": {
@@ -7789,179 +8017,6 @@
         },
         "required": [
           "password"
-        ]
-      },
-      "BookingStatusCount": {
-        "type": "object",
-        "properties": {
-          "pendingPayment": {
-            "type": "number",
-            "minimum": 0
-          },
-          "confirmed": {
-            "type": "number",
-            "minimum": 0
-          },
-          "checkedIn": {
-            "type": "number",
-            "minimum": 0
-          },
-          "checkedOut": {
-            "type": "number",
-            "minimum": 0
-          },
-          "cancelled": {
-            "type": "number",
-            "minimum": 0
-          }
-        },
-        "required": [
-          "pendingPayment",
-          "confirmed",
-          "checkedIn",
-          "checkedOut",
-          "cancelled"
-        ]
-      },
-      "RoomStatusCount": {
-        "type": "object",
-        "properties": {
-          "ready": {
-            "type": "number",
-            "minimum": 0
-          },
-          "occupied": {
-            "type": "number",
-            "minimum": 0
-          },
-          "cleaning": {
-            "type": "number",
-            "minimum": 0
-          },
-          "maintenance": {
-            "type": "number",
-            "minimum": 0
-          }
-        },
-        "required": [
-          "ready",
-          "occupied",
-          "cleaning",
-          "maintenance"
-        ]
-      },
-      "RevenueByMethod": {
-        "type": "object",
-        "properties": {
-          "vnpay": {
-            "type": "number",
-            "description": "Collected VNPay amount in VND.",
-            "minimum": 0
-          },
-          "manual": {
-            "type": "number",
-            "description": "Collected CASH and BANK_TRANSFER amount in VND.",
-            "minimum": 0
-          },
-          "total": {
-            "type": "number",
-            "description": "Gross collected amount in VND.",
-            "minimum": 0
-          }
-        },
-        "required": [
-          "vnpay",
-          "manual",
-          "total"
-        ]
-      },
-      "PaymentMetrics": {
-        "type": "object",
-        "properties": {
-          "requiresReview": {
-            "type": "number",
-            "minimum": 0
-          },
-          "refundPending": {
-            "type": "number",
-            "minimum": 0
-          }
-        },
-        "required": [
-          "requiresReview",
-          "refundPending"
-        ]
-      },
-      "OccupancyMetrics": {
-        "type": "object",
-        "properties": {
-          "roomNightsReserved": {
-            "type": "number",
-            "minimum": 0
-          },
-          "roomNightsAvailable": {
-            "type": "number",
-            "description": "Operational room-night capacity after blocked nights are excluded.",
-            "minimum": 0
-          },
-          "occupancyRate": {
-            "type": "number",
-            "description": "Percentage from 0 to 100.",
-            "maximum": 100
-          }
-        },
-        "required": [
-          "roomNightsReserved",
-          "roomNightsAvailable",
-          "occupancyRate"
-        ]
-      },
-      "DashboardSummaryResponse": {
-        "type": "object",
-        "properties": {
-          "fromDate": {
-            "type": "string",
-            "format": "date"
-          },
-          "toDate": {
-            "type": "string",
-            "format": "date"
-          },
-          "bookings": {
-            "$ref": "#/components/schemas/BookingStatusCount"
-          },
-          "rooms": {
-            "$ref": "#/components/schemas/RoomStatusCount"
-          },
-          "revenue": {
-            "$ref": "#/components/schemas/RevenueByMethod"
-          },
-          "totalRefunded": {
-            "type": "number",
-            "description": "Amount with completed REFUNDED status in VND.",
-            "minimum": 0
-          },
-          "payments": {
-            "$ref": "#/components/schemas/PaymentMetrics"
-          },
-          "occupancy": {
-            "$ref": "#/components/schemas/OccupancyMetrics"
-          },
-          "generatedAt": {
-            "type": "string",
-            "format": "date-time"
-          }
-        },
-        "required": [
-          "fromDate",
-          "toDate",
-          "bookings",
-          "rooms",
-          "revenue",
-          "totalRefunded",
-          "payments",
-          "occupancy",
-          "generatedAt"
         ]
       },
       "PaymentMethod": {
@@ -9260,7 +9315,8 @@
           "basePrice": {
             "type": "string",
             "example": "900000.00",
-            "pattern": "^\\d+(?:\\.\\d{1,2})?$"
+            "description": "Positive base price; zero is not accepted.",
+            "pattern": "^(?:[1-9][0-9]{0,9}(?:\\.[0-9]{1,2})?|0\\.(?:0[1-9]|[1-9][0-9]?))$"
           }
         },
         "required": [
@@ -9307,7 +9363,8 @@
           "basePrice": {
             "type": "string",
             "example": "950000.00",
-            "pattern": "^\\d+(?:\\.\\d{1,2})?$"
+            "description": "Positive base price; zero is not accepted.",
+            "pattern": "^(?:[1-9][0-9]{0,9}(?:\\.[0-9]{1,2})?|0\\.(?:0[1-9]|[1-9][0-9]?))$"
           }
         }
       },

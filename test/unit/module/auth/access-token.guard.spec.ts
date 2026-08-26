@@ -148,9 +148,7 @@ describe('AccessTokenGuard', () => {
     const rolesReflector = {
       getAllAndOverride: jest.fn(() => ['ADMIN']),
     };
-    const rolesGuard = new RolesGuard(
-      rolesReflector as unknown as Reflector,
-    );
+    const rolesGuard = new RolesGuard(rolesReflector as unknown as Reflector);
 
     await expect(guard.canActivate(context)).resolves.toBe(true);
     expect(rolesGuard.canActivate(context)).toBe(true);

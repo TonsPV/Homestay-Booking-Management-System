@@ -101,6 +101,10 @@ describe('Payment query/manual workflow (e2e)', () => {
     customerBToken = signCustomer(customerB);
 
     harness.registerCleanup(async () => {
+      if (bookingIds.length > 0)
+        await bookings.update([...new Set(bookingIds)], {
+          acceptedPaymentId: null,
+        });
       if (paymentIds.length > 0)
         await payments.delete([...new Set(paymentIds)]);
       if (bookingIds.length > 0) {

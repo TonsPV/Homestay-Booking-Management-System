@@ -8,6 +8,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { createHash } from 'node:crypto';
 import { randomBytes } from 'node:crypto';
 import { DataSource, type EntityManager } from 'typeorm';
 
@@ -21,6 +22,7 @@ import {
   optionalTrimmedString,
   requiredPhone,
   requirePositiveInt,
+  requireTrimmedString,
 } from '../../common/validation';
 import { AuditLogService } from '../audit/audit-log.service';
 import {
@@ -37,6 +39,7 @@ import type { BookingAuditContext } from './booking.types';
 import {
   Booking,
   BookingPaymentStatus,
+  BookingRequestIntentActorType,
   BookingStatus,
 } from './schema/booking.entity';
 import {
@@ -69,6 +72,13 @@ export interface CustomerBookingCreationResult {
   bookingId: string;
 }
 
+interface BookingRequestIntent {
+  actorType: BookingRequestIntentActorType;
+  actorId: string;
+  key: string;
+  hash: string;
+}
+
 @Injectable()
 export class BookingCreationService {
   private readonly logger = new Logger(BookingCreationService.name);
@@ -98,9 +108,16 @@ export class BookingCreationService {
     customerId: string | undefined,
     body: CreateBookingDto,
     context?: BookingAuditContext,
+    requestIntentKey?: string,
   ): Promise<CustomerBookingCreationResult> {
     const activeCustomerId = this.requireActorId(customerId);
     const input = this.normalizeCreateInput(body);
+    const requestIntent = this.buildRequestIntent(
+      BookingRequestIntentActorType.CUSTOMER,
+      activeCustomerId,
+      requestIntentKey,
+      { input },
+    );
     const bookingId = await this.createBookingInTransaction(
       input,
       async (manager) =>
@@ -109,6 +126,7 @@ export class BookingCreationService {
       true,
       AuditActorType.CUSTOMER,
       activeCustomerId,
+      requestIntent,
       context?.requestId,
     );
 
@@ -119,12 +137,19 @@ export class BookingCreationService {
     userId: string | undefined,
     body: CreateManagementBookingDto,
     context?: BookingAuditContext,
+    requestIntentKey?: string,
   ): Promise<string> {
     const createdByUserId = this.requireActorId(userId);
     const input = this.normalizeCreateInput(body);
     const requestedCustomerId = this.optionalId(
       body.customerId,
       'Customer id khong hop le.',
+    );
+    const requestIntent = this.buildRequestIntent(
+      BookingRequestIntentActorType.USER,
+      createdByUserId,
+      requestIntentKey,
+      { input, requestedCustomerId },
     );
 
     return this.createBookingInTransaction(
@@ -135,6 +160,7 @@ export class BookingCreationService {
       false,
       AuditActorType.USER,
       createdByUserId,
+      requestIntent,
       context?.requestId,
     );
   }
@@ -146,10 +172,26 @@ export class BookingCreationService {
     enforceCustomerAdmission: boolean,
     actorType: AuditActorType,
     actorId: string,
+    requestIntent: BookingRequestIntent | null,
     requestId?: string,
   ): Promise<string> {
     try {
       return await this.dataSource.transaction(async (manager) => {
+        const bookingsRepository = manager.getRepository(Booking);
+        const existingBooking =
+          requestIntent === null
+            ? null
+            : await bookingsRepository.findOneBy({
+                requestIntentActorType: requestIntent.actorType,
+                requestIntentActorId: requestIntent.actorId,
+                requestIntentKey: requestIntent.key,
+              });
+
+        if (existingBooking !== null && requestIntent !== null) {
+          this.assertRequestIntentReplay(existingBooking, requestIntent);
+          return existingBooking.id;
+        }
+
         const customer = await resolveCustomer(manager);
 
         if (enforceCustomerAdmission) {
@@ -181,7 +223,6 @@ export class BookingCreationService {
         }
 
         const contact = this.resolveContact(customer, input);
-        const bookingsRepository = manager.getRepository(Booking);
         const booking = bookingsRepository.create({
           bookingCode: this.createBookingCode(),
           customerId: customer.id,
@@ -205,6 +246,10 @@ export class BookingCreationService {
           customerNote: input.customerNote,
           cancelledAt: null,
           cancellationReason: null,
+          requestIntentActorType: requestIntent?.actorType ?? null,
+          requestIntentActorId: requestIntent?.actorId ?? null,
+          requestIntentKey: requestIntent?.key ?? null,
+          requestIntentHash: requestIntent?.hash ?? null,
         });
         const savedBooking = await bookingsRepository.save(booking);
         const calendarRepository = manager.getRepository(RoomCalendar);
@@ -239,7 +284,73 @@ export class BookingCreationService {
         return savedBooking.id;
       });
     } catch (error) {
+      const duplicateKey = getMysqlDuplicateKey(error);
+
+      if (
+        requestIntent !== null &&
+        duplicateKey?.includes('uq_bookings_request_intent')
+      ) {
+        const existingBooking = await this.dataSource
+          .getRepository(Booking)
+          .findOneBy({
+            requestIntentActorType: requestIntent.actorType,
+            requestIntentActorId: requestIntent.actorId,
+            requestIntentKey: requestIntent.key,
+          });
+
+        if (existingBooking !== null) {
+          this.assertRequestIntentReplay(existingBooking, requestIntent);
+          return existingBooking.id;
+        }
+      }
+
       this.throwBookingWriteConflict(error, input.roomId, requestId);
+    }
+  }
+
+  private buildRequestIntent(
+    actorType: BookingRequestIntentActorType,
+    actorId: string,
+    rawKey: string | undefined,
+    semanticRequest: Record<string, unknown>,
+  ): BookingRequestIntent | null {
+    if (rawKey === undefined) {
+      return null;
+    }
+
+    const key = requireTrimmedString(
+      rawKey,
+      'Idempotency-Key khong hop le.',
+      100,
+    );
+
+    if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{7,99}$/.test(key)) {
+      throw new BadRequestException('Idempotency-Key khong hop le.');
+    }
+
+    const hash = createHash('sha256')
+      .update(
+        JSON.stringify({
+          actorType,
+          actorId,
+          ...semanticRequest,
+        }),
+      )
+      .digest('hex');
+
+    return { actorType, actorId, key, hash };
+  }
+
+  private assertRequestIntentReplay(
+    booking: Booking,
+    requestIntent: BookingRequestIntent,
+  ): void {
+    if (booking.requestIntentHash !== requestIntent.hash) {
+      throw new AppHttpException(
+        HttpStatus.CONFLICT,
+        ErrorCode.BOOKING_REQUEST_INTENT_CONFLICT,
+        'Idempotency-Key da duoc su dung cho request booking khac.',
+      );
     }
   }
 

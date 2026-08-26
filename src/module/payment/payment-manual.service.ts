@@ -127,6 +127,7 @@ export class PaymentManualService {
         );
 
         booking.paymentStatus = BookingPaymentStatus.PAID;
+        booking.acceptedPaymentId = payment.id;
         booking.paymentExpiresAt = null;
 
         if (booking.status === BookingStatus.PENDING_PAYMENT) {

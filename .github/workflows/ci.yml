@@ -75,6 +75,8 @@ jobs:
       - run: npm run lint
       - run: npm run build
       - run: npm run migration:run
+      - name: Smoke-test production artifact
+        run: npm run smoke:prod
       - run: npm run schema:check
       - run: npm run data:audit
       - run: npm test -- --runInBand

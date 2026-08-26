@@ -2760,7 +2760,7 @@ describe('Application API (e2e)', () => {
       .expect(200);
   });
 
-  it('processes a signed Return fallback and keeps a later IPN idempotent', async () => {
+  it('keeps a signed Return read-only and lets a later IPN confirm idempotently', async () => {
     const roomId = requireTestRoomId();
     const createResponse = await request(app.getHttpServer())
       .post('/api/v1/bookings')
@@ -2949,8 +2949,12 @@ describe('Application API (e2e)', () => {
       validSignature: true,
       paymentId: payment.id,
       bookingId,
-      paymentStatus: 'SUCCESS',
+      paymentStatus: 'PENDING',
     });
+
+    expect(
+      (await paymentsRepository.findOneByOrFail({ id: payment.id })).status,
+    ).toBe('PENDING');
 
     const ipnResponse = await request(app.getHttpServer())
       .get('/api/v1/payments/vnpay/ipn')
@@ -2961,8 +2965,8 @@ describe('Application API (e2e)', () => {
       .expect(200);
 
     expect(ipnResponse.body).toEqual({
-      RspCode: '02',
-      Message: 'Order already confirmed',
+      RspCode: '00',
+      Message: 'Confirm Success',
     });
 
     const paidPayment = await paymentsRepository.findOneByOrFail({
@@ -2982,6 +2986,19 @@ describe('Application API (e2e)', () => {
       status: 'CONFIRMED',
       paymentStatus: 'PAID',
       paymentExpiresAt: null,
+    });
+
+    const repeatedIpnResponse = await request(app.getHttpServer())
+      .get('/api/v1/payments/vnpay/ipn')
+      .query({
+        ...callbackParameters,
+        vnp_SecureHash: callbackSignature,
+      })
+      .expect(200);
+
+    expect(repeatedIpnResponse.body).toEqual({
+      RspCode: '02',
+      Message: 'Order already confirmed',
     });
 
     const repeatedReturnResponse = await request(app.getHttpServer())
@@ -3677,37 +3694,6 @@ describe('Application API (e2e)', () => {
     expect(await roomsRepository.findOneBy({ id: roomId })).toBeNull();
   });
 
-  it('protects dashboard metrics and serves staff with real aggregates', async () => {
-    const path =
-      '/api/v1/management/dashboard/summary?from=2026-07-01&to=2026-07-31';
-
-    await request(app.getHttpServer()).get(path).expect(401);
-    await request(app.getHttpServer())
-      .get(path)
-      .set('Authorization', `Bearer ${requireCustomerToken()}`)
-      .expect(403);
-
-    const response = await request(app.getHttpServer())
-      .get(path)
-      .set('Authorization', `Bearer ${requireStaffToken()}`)
-      .expect(200);
-    const body = response.body as ApiResponseBody<{
-      fromDate: string;
-      toDate: string;
-      revenue: { total: number };
-      totalRefunded: number;
-      occupancy: { occupancyRate: number };
-    }>;
-
-    expect(body.data).toMatchObject({
-      fromDate: '2026-07-01',
-      toDate: '2026-07-31',
-      revenue: { total: expect.any(Number) as number },
-      totalRefunded: expect.any(Number) as number,
-      occupancy: { occupancyRate: expect.any(Number) as number },
-    });
-  });
-
   afterAll(async () => {
     await e2eHarness.cleanup(async () => {
       if (roomCalendarRepository !== undefined && testRoomId !== undefined) {
@@ -3715,6 +3701,10 @@ describe('Application API (e2e)', () => {
       }
 
       if (bookingsRepository !== undefined && testRoomId !== undefined) {
+        await dataSource.query(
+          'UPDATE bookings SET accepted_payment_id = NULL WHERE room_id = ?',
+          [testRoomId],
+        );
         await dataSource.query(
           `DELETE payment
            FROM payments payment

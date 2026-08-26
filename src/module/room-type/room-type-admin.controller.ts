@@ -12,11 +12,9 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
+import { ApiBearerAuth } from '@nestjs/swagger';
 
-import {
-  ApiResponse,
-  type ApiResponsePayload,
-} from '../../common/http';
+import { ApiResponse, type ApiResponsePayload } from '../../common/http';
 import {
   ApiCommonAuthErrors,
   ApiCommonMutationErrors,
@@ -39,6 +37,7 @@ import {
 @Controller('v1/admin/room-types')
 @UseGuards(AccessTokenGuard, RolesGuard)
 @Roles('ADMIN')
+@ApiBearerAuth()
 @ApiCommonAuthErrors()
 export class RoomTypeAdminController {
   constructor(private readonly roomTypeService: RoomTypeService) {}

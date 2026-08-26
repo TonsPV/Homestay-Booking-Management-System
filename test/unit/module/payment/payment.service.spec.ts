@@ -357,6 +357,31 @@ describe('PaymentService characterization', () => {
     expect(dataSource.transaction).not.toHaveBeenCalled();
   });
 
+  it('keeps the VNPay Return path read-only and leaves confirmation to IPN', async () => {
+    const payment = paymentFixture({
+      method: PaymentMethod.VNPAY,
+      status: PaymentStatus.PENDING,
+      gatewayReference: 'P500',
+    });
+    mockValidCallback(gateway);
+    paymentsRepository.findOneBy.mockResolvedValue(payment);
+
+    await expect(
+      service.handleVnPayReturn({}, 'request-vnpay-return'),
+    ).resolves.toEqual({
+      validSignature: true,
+      paymentId: payment.id,
+      bookingId: payment.bookingId,
+      paymentStatus: PaymentStatus.PENDING,
+      responseCode: '00',
+      transactionStatus: '00',
+    });
+
+    expect(payment.status).toBe(PaymentStatus.PENDING);
+    expect(dataSource.transaction).not.toHaveBeenCalled();
+    expect(auditLogService.record).not.toHaveBeenCalled();
+  });
+
   it('applies a verified successful IPN to both payment and booking', async () => {
     const booking = bookingFixture();
     const payment = paymentFixture({
@@ -580,6 +605,41 @@ describe('PaymentService characterization', () => {
     expect(warnSpy).toHaveBeenCalledWith(
       expect.stringContaining('requestId=request-review-reason'),
     );
+  });
+
+  it('treats a refund-pending accepted payment as the canonical lineage', async () => {
+    const booking = bookingFixture({
+      status: BookingStatus.CONFIRMED,
+      paymentStatus: BookingPaymentStatus.PAID,
+      acceptedPaymentId: '501',
+    });
+    const payment = paymentFixture({
+      method: PaymentMethod.VNPAY,
+      status: PaymentStatus.FAILED,
+      gatewayReference: 'P500',
+      gatewayResponseCode: 'EXPIRED',
+    });
+    const canonicalPayment = refundableVnPayPayment({
+      id: '501',
+      status: PaymentStatus.REFUND_PENDING,
+      refundPreviousStatus: PaymentStatus.SUCCESS,
+    });
+    const manager = createMutationManager(booking, payment, {
+      canonicalPayment,
+    });
+    mockValidCallback(gateway);
+    paymentsRepository.findOneBy.mockResolvedValue(payment);
+    dataSource.transaction.mockImplementation(runTransaction(manager));
+
+    await expect(service.handleVnPayIpn({})).resolves.toEqual({
+      RspCode: '00',
+      Message: 'Confirm Success',
+    });
+    expect(payment).toMatchObject({
+      status: PaymentStatus.REQUIRES_REVIEW,
+      reviewReason: PaymentReviewReason.ANOTHER_SUCCESSFUL_PAYMENT,
+      reviewCanonicalPaymentId: '501',
+    });
   });
 
   it('rejects a VNPay refund when the payment has not succeeded', async () => {
@@ -1782,6 +1842,7 @@ function bookingFixture(overrides: Partial<Booking> = {}): Booking {
     totalAmount: '2000000.00',
     status: BookingStatus.PENDING_PAYMENT,
     paymentStatus: BookingPaymentStatus.UNPAID,
+    acceptedPaymentId: null,
     paymentExpiresAt: new Date('2030-01-01T00:15:00.000Z'),
     customerNote: null,
     cancelledAt: null,

@@ -23,6 +23,9 @@ import { AddUserAuditEntityType1784788000000 } from '../../../src/database/migra
 import { AlignRoomTypeBedMetadata1784789000000 } from '../../../src/database/migrations/1784789000000-AlignRoomTypeBedMetadata';
 import { AddPaymentReviewContext1784790000000 } from '../../../src/database/migrations/1784790000000-AddPaymentReviewContext';
 import { HardenPositivePriceConstraints1784791000000 } from '../../../src/database/migrations/1784791000000-HardenPositivePriceConstraints';
+import { AddBookingRequestIntent1784793000000 } from '../../../src/database/migrations/1784793000000-AddBookingRequestIntent';
+import { HardenPaymentLineage1784792000000 } from '../../../src/database/migrations/1784792000000-HardenPaymentLineage';
+import { RetireCustomerPhoneClaim1784794000000 } from '../../../src/database/migrations/1784794000000-RetireCustomerPhoneClaim';
 
 const MIGRATION_CLASSES = [
   InitialSchemaBaseline1784770000000,
@@ -47,6 +50,9 @@ const MIGRATION_CLASSES = [
   AlignRoomTypeBedMetadata1784789000000,
   AddPaymentReviewContext1784790000000,
   HardenPositivePriceConstraints1784791000000,
+  HardenPaymentLineage1784792000000,
+  AddBookingRequestIntent1784793000000,
+  RetireCustomerPhoneClaim1784794000000,
 ] as const;
 
 describe('database migration contract', () => {
@@ -131,6 +137,30 @@ describe('database migration contract', () => {
     expect(downSql).toEqual(['DROP TABLE room_type_beds']);
   });
 
+  it('preserves the historical query-index migration rollback contract', async () => {
+    const migration = new AddDashboardQueryIndexes1784782000000();
+    const query = jest.fn().mockResolvedValue(undefined);
+    const queryRunner = { query } as unknown as QueryRunner;
+
+    await migration.up(queryRunner);
+    const upSql = query.mock.calls
+      .map(([sql]) => String(sql).replace(/\s+/g, ' '))
+      .join('\n');
+
+    expect(upSql).toContain('idx_bookings_created_at_status');
+    expect(upSql).toContain('idx_payments_status_paid_at');
+    expect(upSql).toContain('idx_payments_status_refunded_at');
+    expect(upSql).toContain('idx_payments_created_at_status');
+    expect(upSql).toContain('idx_room_calendar_status_date');
+
+    query.mockClear();
+    await migration.down(queryRunner);
+    const downCalls = query.mock.calls as unknown as Array<[string]>;
+
+    expect(query).toHaveBeenCalledTimes(5);
+    expect(downCalls[0]?.[0]).toContain('idx_room_calendar_status_date');
+  });
+
   it('hardens positive price constraints and restores the previous checks on rollback', async () => {
     const migration = new HardenPositivePriceConstraints1784791000000();
     const upSql: string[] = [];
@@ -151,6 +181,109 @@ describe('database migration contract', () => {
     expect(upSql.join('\n')).toContain('CHECK (total_amount > 0)');
     expect(downSql.join('\n')).toContain('CHECK (base_price >= 0)');
     expect(downSql.join('\n')).toContain('CHECK (total_amount >= 0)');
+  });
+
+  it('fails closed when legacy zero-price rows are present', async () => {
+    const migration = new HardenPositivePriceConstraints1784791000000();
+    const query = jest.fn((sql: string) => {
+      if (/SELECT 'room_types'/i.test(sql)) {
+        return Promise.resolve([
+          { tableName: 'room_types', id: '7', amount: '0.00' },
+        ]);
+      }
+
+      return Promise.resolve([]);
+    });
+
+    await expect(
+      migration.up({ query } as unknown as QueryRunner),
+    ).rejects.toThrow('Remediate legacy data before rerunning the migration.');
+    expect(
+      query.mock.calls.some(([sql]: [string]) => /ALTER TABLE/i.test(sql)),
+    ).toBe(false);
+  });
+
+  it('fails closed when legacy payment lineage is already ambiguous', async () => {
+    const migration = new HardenPaymentLineage1784792000000();
+    const query = jest.fn((sql: string) => {
+      if (/GROUP BY booking_id/i.test(sql)) {
+        return Promise.resolve([{ bookingId: '42', paymentCount: '2' }]);
+      }
+
+      return Promise.resolve([]);
+    });
+
+    await expect(
+      migration.up({ query } as unknown as QueryRunner),
+    ).rejects.toThrow('Reconcile legacy payment data first.');
+    expect(
+      query.mock.calls.some(([sql]: [string]) => /ALTER TABLE/i.test(sql)),
+    ).toBe(false);
+  });
+
+  it('refuses to drop accepted payment lineage after it has been used', async () => {
+    const migration = new HardenPaymentLineage1784792000000();
+    const query = jest.fn((sql: string) => {
+      if (/accepted_payment_id IS NOT NULL/i.test(sql)) {
+        return Promise.resolve([{ acceptedPaymentCount: '1' }]);
+      }
+
+      return Promise.resolve([]);
+    });
+
+    await expect(
+      migration.down({ query } as unknown as QueryRunner),
+    ).rejects.toThrow('accepted payment pointers exist');
+    expect(
+      query.mock.calls.some(([sql]: [string]) => /DROP FOREIGN KEY/i.test(sql)),
+    ).toBe(false);
+  });
+
+  it('refuses to drop booking request intent after keyed bookings exist', async () => {
+    const migration = new AddBookingRequestIntent1784793000000();
+    const query = jest.fn((sql: string) => {
+      if (/request_intent_actor_type IS NOT NULL/i.test(sql)) {
+        return Promise.resolve([{ requestIntentCount: '1' }]);
+      }
+
+      return Promise.resolve([]);
+    });
+
+    await expect(
+      migration.down({ query } as unknown as QueryRunner),
+    ).rejects.toThrow('keyed bookings exist');
+    expect(
+      query.mock.calls.some(([sql]: [string]) => /DROP CHECK/i.test(sql)),
+    ).toBe(false);
+  });
+
+  it('fails closed before retiring customer claim evidence', async () => {
+    const migration = new RetireCustomerPhoneClaim1784794000000();
+    const query = jest.fn((sql: string) => {
+      if (/FROM customer_claim_challenges/i.test(sql)) {
+        return Promise.resolve([{ challengeCount: '1' }]);
+      }
+
+      return Promise.resolve([]);
+    });
+
+    await expect(
+      migration.up({ query } as unknown as QueryRunner),
+    ).rejects.toThrow('claim evidence exists');
+    expect(
+      query.mock.calls.some(([sql]: [string]) => /DROP TABLE/i.test(sql)),
+    ).toBe(false);
+  });
+
+  it('restores the retired customer claim schema on rollback', async () => {
+    const migration = new RetireCustomerPhoneClaim1784794000000();
+    const downQuery = jest.fn().mockResolvedValue([]);
+
+    await migration.down({ query: downQuery } as unknown as QueryRunner);
+
+    const downSql = downQuery.mock.calls.map(([sql]) => String(sql));
+    expect(downSql[0]).toContain('ADD phone_verified_at datetime(6)');
+    expect(downSql[1]).toContain('CREATE TABLE customer_claim_challenges');
   });
 
   it('refuses to narrow the audit entity enum while USER history exists', async () => {

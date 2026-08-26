@@ -27,14 +27,14 @@ describe('RolesGuard', () => {
   });
 
   it('rejects a user without an id or role', () => {
-    const missingId = createFixture(
-      ['ADMIN'],
-      { actor_type: 'user', role: 'ADMIN' },
-    );
-    const missingRole = createFixture(
-      ['ADMIN'],
-      { actor_type: 'user', user_id: 'user-1' },
-    );
+    const missingId = createFixture(['ADMIN'], {
+      actor_type: 'user',
+      role: 'ADMIN',
+    });
+    const missingRole = createFixture(['ADMIN'], {
+      actor_type: 'user',
+      user_id: 'user-1',
+    });
 
     expect(() => missingId.guard.canActivate(missingId.context)).toThrow(
       ForbiddenException,

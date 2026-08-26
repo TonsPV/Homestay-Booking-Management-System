@@ -64,6 +64,53 @@ export const DATA_AUDIT_CHECKS: readonly DataAuditCheck[] = [
     `,
   },
   {
+    name: 'positive-price',
+    description: 'Persisted room and booking prices are strictly positive.',
+    sql: `
+      SELECT
+        (
+          SELECT COUNT(*)
+          FROM room_types
+          WHERE base_price <= 0
+        )
+        +
+        (
+          SELECT COUNT(*)
+          FROM bookings
+          WHERE total_amount <= 0
+        ) AS violationCount
+    `,
+  },
+  {
+    name: 'payment-lineage',
+    description:
+      'Each accepted payment lineage is represented by the booking authority pointer.',
+    sql: `
+      SELECT COUNT(*) AS violationCount
+      FROM bookings b
+      WHERE
+        (
+          b.accepted_payment_id IS NULL
+          AND EXISTS (
+            SELECT 1
+            FROM payments p
+            WHERE p.booking_id = b.id
+              AND p.status IN ('SUCCESS', 'REFUND_PENDING', 'REFUNDED')
+          )
+        )
+        OR (
+          b.accepted_payment_id IS NOT NULL
+          AND NOT EXISTS (
+            SELECT 1
+            FROM payments p
+            WHERE p.id = b.accepted_payment_id
+              AND p.booking_id = b.id
+              AND p.status IN ('SUCCESS', 'REFUND_PENDING', 'REFUNDED')
+          )
+        )
+    `,
+  },
+  {
     name: 'booking-payment-status',
     description:
       'Booking payment status agrees with successful/refunded payments.',
@@ -196,62 +243,6 @@ export const DATA_AUDIT_CHECKS: readonly DataAuditCheck[] = [
       WHERE status = 'REFUND_PENDING'
         AND refund_requested_at IS NOT NULL
         AND refund_requested_at < DATE_SUB(UTC_TIMESTAMP(6), INTERVAL 7 DAY)
-    `,
-  },
-  {
-    name: 'customer-claim-single-pending',
-    description:
-      'A Customer has at most one pending challenge for each claim purpose.',
-    sql: `
-      SELECT COUNT(*) AS violationCount
-      FROM (
-        SELECT customer_id, purpose
-        FROM customer_claim_challenges
-        WHERE status = 'PENDING'
-        GROUP BY customer_id, purpose
-        HAVING COUNT(*) > 1
-      ) duplicate_pending_claim
-    `,
-  },
-  {
-    name: 'customer-claim-state',
-    description:
-      'Customer claim timestamps and token evidence agree with challenge status.',
-    sql: `
-      SELECT COUNT(*) AS violationCount
-      FROM customer_claim_challenges
-      WHERE
-        (
-          status = 'PENDING'
-          AND (
-            verified_at IS NOT NULL
-            OR claim_token_hash IS NOT NULL
-            OR claim_token_expires_at IS NOT NULL
-            OR consumed_at IS NOT NULL
-          )
-        )
-        OR (
-          status = 'VERIFIED'
-          AND (
-            verified_at IS NULL
-            OR claim_token_hash IS NULL
-            OR claim_token_expires_at IS NULL
-            OR consumed_at IS NOT NULL
-          )
-        )
-        OR (
-          status = 'CONSUMED'
-          AND (
-            verified_at IS NULL
-            OR claim_token_hash IS NULL
-            OR claim_token_expires_at IS NULL
-            OR consumed_at IS NULL
-          )
-        )
-        OR (
-          status IN ('BLOCKED', 'EXPIRED')
-          AND consumed_at IS NOT NULL
-        )
     `,
   },
 ];

@@ -233,7 +233,7 @@ export class PaymentCollectionService {
       return { RspCode: '99', Message: 'Input data required' };
     }
 
-    const result = await this.processVnPayCallback(callback, 'IPN', requestId);
+    const result = await this.processVnPayCallback(callback, requestId);
 
     if (result.outcome === 'NOT_FOUND') {
       return { RspCode: '01', Message: 'Order not found' };
@@ -271,17 +271,26 @@ export class PaymentCollectionService {
       };
     }
 
-    const processed = await this.processVnPayCallback(
-      callback,
-      'Return',
-      requestId,
-    );
-    const payment =
-      processed.paymentId === null
-        ? null
-        : await this.paymentsRepository.findOneBy({
-            id: processed.paymentId,
-          });
+    // VNPay Return is a browser redirect and is not an authoritative payment
+    // notification.  It may only read the current correlated payment state;
+    // all payment/booking mutations are reserved for the IPN path above.
+    const payment = await this.paymentsRepository.findOneBy({
+      gatewayReference: callback.gatewayReference,
+    });
+
+    if (
+      payment !== null &&
+      toVnPayAmount(payment.amount) !== callback.vnpAmount
+    ) {
+      return {
+        validSignature: true,
+        paymentId: payment.id,
+        bookingId: payment.bookingId,
+        paymentStatus: payment.status,
+        responseCode: callback.responseCode,
+        transactionStatus: callback.transactionStatus,
+      };
+    }
 
     return {
       validSignature: true,
@@ -388,7 +397,6 @@ export class PaymentCollectionService {
 
   private async processVnPayCallback(
     callback: ValidVnPayCallback,
-    source: 'IPN' | 'Return',
     requestId?: string,
   ): Promise<VnPayCallbackProcessResult> {
     let paymentSnapshot: Payment | null = null;
@@ -466,17 +474,25 @@ export class PaymentCollectionService {
               .andWhere('canonicalPayment.id <> :paymentId', {
                 paymentId: payment.id,
               })
-              .andWhere('canonicalPayment.status = :status', {
-                status: PaymentStatus.SUCCESS,
+              .andWhere('canonicalPayment.status IN (:...statuses)', {
+                statuses: [
+                  PaymentStatus.SUCCESS,
+                  PaymentStatus.REFUND_PENDING,
+                  PaymentStatus.REFUNDED,
+                ],
               })
               .orderBy('canonicalPayment.id', 'ASC')
               .getOne()
           : null;
 
+        const acceptedPaymentId = booking.acceptedPaymentId ?? null;
+        const canonicalPaymentId =
+          acceptedPaymentId ?? canonicalPayment?.id ?? null;
+
         if (
           successful &&
           (booking.status === BookingStatus.CANCELLED ||
-            canonicalPayment !== null)
+            (canonicalPaymentId !== null && canonicalPaymentId !== payment.id))
         ) {
           reviewReason =
             booking.status === BookingStatus.CANCELLED
@@ -486,7 +502,7 @@ export class PaymentCollectionService {
           payment.reviewReason = reviewReason;
           payment.reviewCanonicalPaymentId =
             reviewReason === PaymentReviewReason.ANOTHER_SUCCESSFUL_PAYMENT
-              ? (canonicalPayment?.id ?? null)
+              ? canonicalPaymentId
               : null;
           payment.gatewayTransactionId = callback.transactionId;
           payment.paidAt = callback.paidAt;
@@ -500,7 +516,7 @@ export class PaymentCollectionService {
             requestId,
             metadata: {
               bookingId: booking.id,
-              source,
+              source: 'IPN',
               paymentStatus: payment.status,
               reviewReason: reviewReason ?? 'UNKNOWN',
             },
@@ -515,6 +531,7 @@ export class PaymentCollectionService {
           payment.reviewCanonicalPaymentId = null;
           payment.gatewayTransactionId = callback.transactionId;
           payment.paidAt = callback.paidAt;
+          booking.acceptedPaymentId = payment.id;
 
           booking.paymentStatus = BookingPaymentStatus.PAID;
           booking.paymentExpiresAt = null;
@@ -541,7 +558,7 @@ export class PaymentCollectionService {
             requestId,
             metadata: {
               bookingId: booking.id,
-              source,
+              source: 'IPN',
               paymentStatus: payment.status,
             },
           });
@@ -567,7 +584,7 @@ export class PaymentCollectionService {
 
       if (outcome === 'REQUIRES_REVIEW') {
         this.logger.warn(
-          `operation=VNPAY_CALLBACK_PROCESS source=${source} paymentId=${activePaymentSnapshot.id} bookingId=${activePaymentSnapshot.bookingId} errorCode=REQUIRES_REVIEW requestId=${requestId ?? 'unknown'} reason=${reviewReason ?? 'UNKNOWN'}`,
+          `operation=VNPAY_CALLBACK_PROCESS source=IPN paymentId=${activePaymentSnapshot.id} bookingId=${activePaymentSnapshot.bookingId} errorCode=REQUIRES_REVIEW requestId=${requestId ?? 'unknown'} reason=${reviewReason ?? 'UNKNOWN'}`,
         );
       }
 
@@ -578,7 +595,7 @@ export class PaymentCollectionService {
       };
     } catch (error) {
       this.logger.error(
-        `operation=VNPAY_CALLBACK_PROCESS source=${source} paymentId=${paymentSnapshot?.id ?? 'unknown'} bookingId=${paymentSnapshot?.bookingId ?? 'unknown'} errorCode=CALLBACK_PROCESSING_FAILED requestId=${requestId ?? 'unknown'}`,
+        `operation=VNPAY_CALLBACK_PROCESS source=IPN paymentId=${paymentSnapshot?.id ?? 'unknown'} bookingId=${paymentSnapshot?.bookingId ?? 'unknown'} errorCode=CALLBACK_PROCESSING_FAILED requestId=${requestId ?? 'unknown'}`,
         getErrorStack(error),
       );
 

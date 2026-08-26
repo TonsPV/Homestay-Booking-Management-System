@@ -9,7 +9,6 @@ import { AuditLog } from '../module/audit/schema/audit-log.entity';
 import { Amenity } from '../module/amenity/schema/amenity.entity';
 import { RoomCalendar } from '../module/booking/schema/room-calendar.entity';
 import { Customer } from '../module/customer/schema/customer.entity';
-import { CustomerClaimChallenge } from '../module/auth/schema/customer-claim-challenge.entity';
 import { Payment } from '../module/payment/schema/payment.entity';
 import { RoomImage } from '../module/room/schema/room-image.entity';
 import { Room } from '../module/room/schema/room.entity';
@@ -34,6 +33,9 @@ import { AddUserAuditEntityType1784788000000 } from './migrations/1784788000000-
 import { AlignRoomTypeBedMetadata1784789000000 } from './migrations/1784789000000-AlignRoomTypeBedMetadata';
 import { AddPaymentReviewContext1784790000000 } from './migrations/1784790000000-AddPaymentReviewContext';
 import { HardenPositivePriceConstraints1784791000000 } from './migrations/1784791000000-HardenPositivePriceConstraints';
+import { HardenPaymentLineage1784792000000 } from './migrations/1784792000000-HardenPaymentLineage';
+import { AddBookingRequestIntent1784793000000 } from './migrations/1784793000000-AddBookingRequestIntent';
+import { RetireCustomerPhoneClaim1784794000000 } from './migrations/1784794000000-RetireCustomerPhoneClaim';
 import { AlignRoomMetadata1784772000000 } from './migrations/1784772000000-AlignRoomMetadata';
 import { AddUserTokenVersion1784773000000 } from './migrations/1784773000000-AddUserTokenVersion';
 import { AlignEntityMetadata1784771000000 } from './migrations/1784771000000-AlignEntityMetadata';
@@ -70,7 +72,6 @@ const AppDataSource = new DataSource({
     Booking,
     Amenity,
     Customer,
-    CustomerClaimChallenge,
     Payment,
     Room,
     RoomCalendar,
@@ -102,6 +103,9 @@ const AppDataSource = new DataSource({
     AlignRoomTypeBedMetadata1784789000000,
     AddPaymentReviewContext1784790000000,
     HardenPositivePriceConstraints1784791000000,
+    HardenPaymentLineage1784792000000,
+    AddBookingRequestIntent1784793000000,
+    RetireCustomerPhoneClaim1784794000000,
   ],
   migrationsTableName: 'typeorm_migrations',
   synchronize: false,

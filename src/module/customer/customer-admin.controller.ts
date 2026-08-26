@@ -7,6 +7,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
+import { ApiBearerAuth } from '@nestjs/swagger';
 
 import {
   ApiResponse,
@@ -34,6 +35,7 @@ import { ListCustomersQueryDto } from './dto/list-customers-query.dto';
 @Controller('v1/customers')
 @UseGuards(AccessTokenGuard, RolesGuard)
 @Roles('ADMIN')
+@ApiBearerAuth()
 @ApiCommonAuthErrors()
 export class CustomerAdminController {
   constructor(private readonly customerAdminService: CustomerAdminService) {}

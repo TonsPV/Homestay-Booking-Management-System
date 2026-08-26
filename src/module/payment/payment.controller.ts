@@ -10,7 +10,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { ApiHeader } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiHeader } from '@nestjs/swagger';
 
 import {
   ApiResponse,
@@ -45,6 +45,7 @@ import {
 @Controller('v1/bookings/:bookingId/payments')
 @UseGuards(AccessTokenGuard, ActorsGuard)
 @Actors('customer')
+@ApiBearerAuth()
 @ApiCommonAuthErrors()
 export class PaymentController {
   constructor(private readonly paymentService: PaymentService) {}

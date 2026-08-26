@@ -7,10 +7,6 @@ import type { User } from '../../../../src/module/user/schema/user.entity';
 import type { AccessTokenService } from '../../../../src/module/auth/access-token.service';
 import { AuthService } from '../../../../src/module/auth/auth.service';
 import type { PasswordHasherService } from '../../../../src/module/auth/password-hasher.service';
-import {
-  LocalCustomerClaimResult,
-  type LocalCustomerClaimService,
-} from '../../../../src/module/auth/local-customer-claim.service';
 
 describe('AuthService', () => {
   let customersRepository: {
@@ -31,9 +27,6 @@ describe('AuthService', () => {
   let accessTokenService: {
     sign: jest.Mock;
     getExpiresInSeconds: jest.Mock;
-  };
-  let localCustomerClaimService: {
-    claimPasswordlessCustomer: jest.Mock;
   };
   let service: AuthService;
 
@@ -58,17 +51,11 @@ describe('AuthService', () => {
       sign: jest.fn(),
       getExpiresInSeconds: jest.fn().mockReturnValue(900),
     };
-    localCustomerClaimService = {
-      claimPasswordlessCustomer: jest
-        .fn()
-        .mockResolvedValue(LocalCustomerClaimResult.DISABLED),
-    };
     service = new AuthService(
       customersRepository as unknown as Repository<Customer>,
       usersRepository as unknown as Repository<User>,
       passwordHasherService as unknown as PasswordHasherService,
       accessTokenService as unknown as AccessTokenService,
-      localCustomerClaimService as unknown as LocalCustomerClaimService,
     );
   });
 
@@ -167,15 +154,12 @@ describe('AuthService', () => {
     });
   });
 
-  it('accepts a local claim when the matching Customer has no password', async () => {
+  it('rejects registration for an existing passwordless Customer', async () => {
     customersRepository.findOneBy.mockResolvedValue(null);
     customersRepository.createQueryBuilder.mockReturnValue(
       createQueryBuilder(customerFixture({ passwordHash: null })),
     );
     passwordHasherService.hash.mockResolvedValue('new-password-hash');
-    localCustomerClaimService.claimPasswordlessCustomer.mockResolvedValue(
-      LocalCustomerClaimResult.CLAIMED,
-    );
 
     await expect(
       service.registerCustomer({
@@ -184,14 +168,7 @@ describe('AuthService', () => {
         phone: '0705840355',
         password: 'StrongPassword123!',
       }),
-    ).resolves.toEqual({ accepted: true });
-    expect(
-      localCustomerClaimService.claimPasswordlessCustomer,
-    ).toHaveBeenCalledWith({
-      phone: '+84705840355',
-      email: 'customer@example.com',
-      passwordHash: 'new-password-hash',
-    });
+    ).rejects.toMatchObject({ status: 409 });
     expect(customersRepository.save).not.toHaveBeenCalled();
   });
 
@@ -396,7 +373,6 @@ function customerFixture(overrides: Partial<Customer> = {}): Customer {
     phone: '+84705840355',
     passwordHash: 'password-hash',
     tokenVersion: 0,
-    phoneVerifiedAt: null,
     status: 'ACTIVE',
     createdAt: new Date('2026-01-01T00:00:00.000Z'),
     updatedAt: new Date('2026-01-01T00:00:00.000Z'),

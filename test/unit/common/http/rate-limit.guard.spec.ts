@@ -1,10 +1,7 @@
 import { type ExecutionContext, HttpException } from '@nestjs/common';
 import type { Reflector } from '@nestjs/core';
 
-import {
-  RateLimit,
-  type RateLimitOptions,
-} from '../../../../src/common/http/rate-limit.decorator';
+import { RateLimit } from '../../../../src/common/http/rate-limit.decorator';
 import { RateLimitGuard } from '../../../../src/common/http/rate-limit.guard';
 
 describe('RateLimitGuard', () => {

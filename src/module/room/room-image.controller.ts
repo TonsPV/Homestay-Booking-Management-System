@@ -7,11 +7,9 @@ import {
   Patch,
   UseGuards,
 } from '@nestjs/common';
+import { ApiBearerAuth } from '@nestjs/swagger';
 
-import {
-  ApiResponse,
-  type ApiResponsePayload,
-} from '../../common/http';
+import { ApiResponse, type ApiResponsePayload } from '../../common/http';
 import {
   ApiCommonAuthErrors,
   ApiOkEnvelope,
@@ -26,6 +24,7 @@ import type { RoomImageResponse } from './room.service';
 @Controller('v1/room-images')
 @UseGuards(AccessTokenGuard, RolesGuard)
 @Roles('ADMIN')
+@ApiBearerAuth()
 @ApiCommonAuthErrors()
 export class RoomImageController {
   constructor(private readonly roomImageService: RoomImageService) {}

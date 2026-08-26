@@ -13,7 +13,7 @@ import {
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
-import { ApiBody, ApiConsumes } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiBody, ApiConsumes } from '@nestjs/swagger';
 import { FileInterceptor } from '@nestjs/platform-express';
 
 import {
@@ -102,6 +102,7 @@ export class RoomController {
 
   @Post()
   @UseGuards(AccessTokenGuard, RolesGuard)
+  @ApiBearerAuth()
   @Roles('ADMIN')
   @HttpCode(HttpStatus.CREATED)
   @ApiCreatedEnvelope(RoomDto)
@@ -117,6 +118,7 @@ export class RoomController {
 
   @Patch(':id')
   @UseGuards(AccessTokenGuard, RolesGuard)
+  @ApiBearerAuth()
   @Roles('ADMIN')
   @ApiOkEnvelope(RoomDto)
   @ApiCommonAuthErrors()
@@ -132,6 +134,7 @@ export class RoomController {
 
   @Delete(':id')
   @UseGuards(AccessTokenGuard, RolesGuard)
+  @ApiBearerAuth()
   @Roles('ADMIN')
   @HttpCode(HttpStatus.OK)
   @ApiOkEnvelope(RoomDto)
@@ -144,6 +147,7 @@ export class RoomController {
 
   @Patch(':id/status')
   @UseGuards(AccessTokenGuard, RolesGuard)
+  @ApiBearerAuth()
   @Roles('ADMIN', 'STAFF')
   @ApiOkEnvelope(RoomDto)
   @ApiCommonAuthErrors()
@@ -189,6 +193,7 @@ export class RoomController {
     },
   })
   @UseGuards(AccessTokenGuard, RolesGuard)
+  @ApiBearerAuth()
   @Roles('ADMIN')
   @UseInterceptors(
     FileInterceptor('file', {

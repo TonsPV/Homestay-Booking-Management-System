@@ -41,6 +41,7 @@ export const ERROR_CODE_HTTP_STATUS = {
   [ErrorCode.BOOKING_TOTAL_LIMIT_EXCEEDED]: HttpStatus.CONFLICT,
   [ErrorCode.BOOKING_ROOM_UNAVAILABLE]: HttpStatus.CONFLICT,
   [ErrorCode.BOOKING_CREATE_CONFLICT]: HttpStatus.CONFLICT,
+  [ErrorCode.BOOKING_REQUEST_INTENT_CONFLICT]: HttpStatus.CONFLICT,
   [ErrorCode.BOOKING_CANCELLATION_REASON_REQUIRED]: HttpStatus.BAD_REQUEST,
   [ErrorCode.BOOKING_REFUND_PENDING]: HttpStatus.CONFLICT,
   [ErrorCode.BOOKING_TRANSITION_NOT_ALLOWED]: HttpStatus.CONFLICT,
@@ -65,9 +66,7 @@ const FALLBACK_ERROR_CODE_HTTP_STATUSES: Partial<
   [ErrorCode.COMMON_SERVICE_UNAVAILABLE]: [502, 503, 504],
 };
 
-export function getExpectedHttpStatus(
-  errorCode: ErrorCodeType,
-): HttpStatus {
+export function getExpectedHttpStatus(errorCode: ErrorCodeType): HttpStatus {
   return ERROR_CODE_HTTP_STATUS[errorCode];
 }
 
@@ -77,7 +76,7 @@ export function isErrorCodeStatusCompatible(
 ): boolean {
   return (
     FALLBACK_ERROR_CODE_HTTP_STATUSES[errorCode]?.includes(statusCode) ??
-    ERROR_CODE_HTTP_STATUS[errorCode] === statusCode
+    Number(ERROR_CODE_HTTP_STATUS[errorCode]) === statusCode
   );
 }
 

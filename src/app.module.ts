@@ -4,12 +4,12 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { validateEnvironment } from './config/environment';
+import { HealthModule } from './common/health/health.module';
 import { AuthModule } from './module/auth/auth.module';
 import { AuditModule } from './module/audit/audit.module';
 import { AmenityModule } from './module/amenity/amenity.module';
 import { BookingModule } from './module/booking/booking.module';
 import { CustomerModule } from './module/customer/customer.module';
-import { DashboardModule } from './module/dashboard/dashboard.module';
 import { PaymentModule } from './module/payment/payment.module';
 import { RoomModule } from './module/room/room.module';
 import { RoomTypeModule } from './module/room-type/room-type.module';
@@ -23,6 +23,7 @@ import { UserModule } from './module/user/user.module';
       validate: validateEnvironment,
     }),
     ScheduleModule.forRoot(),
+    HealthModule,
 
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
@@ -61,7 +62,6 @@ import { UserModule } from './module/user/user.module';
     AmenityModule,
     BookingModule,
     CustomerModule,
-    DashboardModule,
     PaymentModule,
     RoomModule,
     RoomTypeModule,

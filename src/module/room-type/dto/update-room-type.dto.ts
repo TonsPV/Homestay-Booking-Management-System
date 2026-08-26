@@ -52,7 +52,9 @@ export class UpdateRoomTypeDto {
 
   @ApiPropertyOptional({
     example: '950000.00',
-    pattern: '^\\d+(?:\\.\\d{1,2})?$',
+    description: 'Positive base price; zero is not accepted.',
+    pattern:
+      '^(?:[1-9][0-9]{0,9}(?:\\.[0-9]{1,2})?|0\\.(?:0[1-9]|[1-9][0-9]?))$',
     type: String,
   })
   @Allow()

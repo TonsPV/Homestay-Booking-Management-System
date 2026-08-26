@@ -2,7 +2,7 @@
 
 NestJS API for customer authentication, staff administration, customer
 profiles, room inventory and availability, bookings, manual/VNPay payments,
-refund operations, audit records, and an operational dashboard.
+refund operations, and audit records.
 
 ## MVP Payment Scope
 
@@ -87,9 +87,19 @@ npm run start:dev
 
 The API is available at `http://localhost:3000/api`.
 
-Current working-tree limitation: `npm run build` emits `dist/src/main.js`, while
-`npm run start:prod` points to `dist/main`. The production start command therefore
-fails with `MODULE_NOT_FOUND` until the build output or script is aligned.
+`npm run build` emits `dist/main.js`, and `npm run start:prod` starts that same
+artifact. CI runs `npm run smoke:prod` after migrations to verify that the
+production entrypoint can bind a port against the configured database.
+
+The repository currently defines a MySQL-only Compose topology; it does not
+declare an API replica count or a shared production storage/coordination layer.
+Before running more than one API process, provide shared/object-backed room
+image storage, a distributed rate-limit store, and a scheduler lease/leader
+mechanism. Liveness is available at `/api/health/live` without a database
+dependency; readiness is `/api/health/ready` and uses a bounded MySQL probe.
+Both routes were restored after confirming that commit `9194765` removed the
+former health module/tests as part of an unrelated refactor without a health
+replacement or an explicit removal rationale.
 
 ## Database Migrations
 
@@ -106,6 +116,11 @@ npm run migration:run
 The baseline migration cannot be reverted automatically because doing so on a
 pre-existing database could delete production data. Restore a database backup
 instead.
+
+The customer phone-claim/SMS scaffold is retired by the final migration. Its
+preflight fails closed when legacy challenge rows or `phone_verified_at` values
+exist; archive that evidence before rerunning the migration. Password changes
+now use the authenticated current-password flow described below.
 
 ## E2E Database
 
@@ -179,7 +194,9 @@ Changing a Customer password has the same token-revocation behavior:
 `ADMIN` or `STAFF` can set an initial password for a Customer created at the
 counter by sending `{ "password": "TemporaryPassword123!" }` to the management
 endpoint. This operation is accepted only while `passwordHash` is null; later
-calls return `409`. There is no public account-claim or fake email/OTP flow.
+calls return `409`. Customers register with a password and change it through
+`PATCH /api/v1/customers/me/password`; there is no SMS/account-claim or OTP
+flow.
 
 Customer and user phone numbers are normalized to Vietnamese E.164 format,
 such as `+84705840355`, before uniqueness checks and storage. Login accepts the
@@ -392,6 +409,12 @@ capacity, and `HIDDEN` or `MAINTENANCE` rooms cannot be booked. The total amount
 is calculated from the current room type base price and stored as a decimal
 snapshot.
 
+Booking creation accepts an optional `Idempotency-Key` header. For the same
+actor, reusing the key with the same semantic request replays the committed
+booking; reusing it with different input returns `409`. The header remains
+optional during the backwards-compatible rollout, while keyed requests are
+stored with an actor-scoped request hash.
+
 Management transitions are:
 
 - `PENDING_PAYMENT` to `CONFIRMED` or `CANCELLED`
@@ -475,11 +498,10 @@ Public VNPay callbacks:
 - `GET /api/v1/payments/vnpay/ipn`
 
 Current implementation uses IPN as the primary server-to-server path, while a
-correctly signed Return can still apply the shared idempotent update as a
-fallback. The MVP target intentionally narrows this: IPN/webhook is the only
-financial mutation authority and Return becomes verified read-only
-presentation/recovery UX. After Return, the frontend reloads booking/payment
-history and trusts local database state; before IPN it may remain `PENDING`.
+IPN/webhook is the only financial mutation authority and Return is verified
+read-only presentation/recovery UX. After Return, the frontend reloads
+booking/payment history and trusts local database state; before IPN it may
+remain `PENDING`.
 
 When `VNPAY_FRONTEND_RETURN_URL` is empty, Return responds with JSON. When it is
 configured, Return responds with `302` and includes `paymentId`, `bookingId`,

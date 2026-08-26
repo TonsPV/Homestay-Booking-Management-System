@@ -7,18 +7,15 @@ import type { App } from 'supertest/types';
 import { AppModule } from '../../src/app.module';
 import { configureApp } from '../../src/bootstrap/configure-app';
 import migrationDataSource from '../../src/database/data-source';
-import { PasswordHasherService } from '../../src/module/auth/password-hasher.service';
 import { Customer } from '../../src/module/customer/schema/customer.entity';
 import { E2eHarness } from '../e2e-harness';
 
 const PASSWORD = 'StrongPassword123!';
-const DIFFERENT_PASSWORD = 'DifferentPassword456!';
 
-describe('Local passwordless Customer claim (e2e)', () => {
+describe('Customer registration (e2e)', () => {
   let app: INestApplication<App>;
   let harness: E2eHarness | undefined;
   let customers: Repository<Customer>;
-  let passwordHasher: PasswordHasherService;
   const customerIds: string[] = [];
   const suffix = E2eHarness.createUniqueSuffix();
   let sequence = 0;
@@ -34,9 +31,7 @@ describe('Local passwordless Customer claim (e2e)', () => {
     configureApp(app);
     await app.init();
 
-    const dataSource = app.get(DataSource);
-    customers = dataSource.getRepository(Customer);
-    passwordHasher = app.get(PasswordHasherService);
+    customers = app.get(DataSource).getRepository(Customer);
 
     harness.registerCleanup(async () => {
       if (customerIds.length > 0) {
@@ -53,69 +48,36 @@ describe('Local passwordless Customer claim (e2e)', () => {
     }
   });
 
-  it('sets the first local password and logs into the original counter Customer', async () => {
+  it('does not claim an existing passwordless Customer through registration', async () => {
     const counterCustomer = await createCustomer({
       email: null,
       passwordHash: null,
     });
-    const claimEmail = `local-claim-${suffix}@example.com`;
 
     await request(app.getHttpServer())
       .post('/api/v1/auth/customers/register')
       .send({
         fullName: 'Attempted Profile Replacement',
-        email: claimEmail,
+        email: `registration-${suffix}@example.com`,
         phone: counterCustomer.phone,
         password: PASSWORD,
       })
-      .expect(201);
+      .expect(409);
 
-    const claimed = await customers
+    const unchanged = await customers
       .createQueryBuilder('customer')
       .addSelect('customer.passwordHash')
       .where('customer.id = :id', { id: counterCustomer.id })
       .getOneOrFail();
-    expect(claimed).toMatchObject({
+
+    expect(unchanged).toMatchObject({
       id: counterCustomer.id,
       fullName: counterCustomer.fullName,
-      email: claimEmail,
+      email: null,
       phone: counterCustomer.phone,
-      phoneVerifiedAt: null,
-      tokenVersion: counterCustomer.tokenVersion + 1,
+      passwordHash: null,
+      tokenVersion: counterCustomer.tokenVersion,
     });
-    await expect(
-      passwordHasher.verify(PASSWORD, claimed.passwordHash),
-    ).resolves.toBe(true);
-
-    await request(app.getHttpServer())
-      .post('/api/v1/auth/customers/login')
-      .send({ identifier: claimEmail, password: PASSWORD })
-      .expect(200);
-  });
-
-  it('never overwrites the password of an already configured Customer', async () => {
-    const configured = await createCustomer({
-      passwordHash: await passwordHasher.hash(PASSWORD),
-    });
-
-    await request(app.getHttpServer())
-      .post('/api/v1/auth/customers/register')
-      .send({
-        fullName: configured.fullName,
-        email: configured.email,
-        phone: configured.phone,
-        password: DIFFERENT_PASSWORD,
-      })
-      .expect(409);
-
-    await request(app.getHttpServer())
-      .post('/api/v1/auth/customers/login')
-      .send({ identifier: configured.phone, password: PASSWORD })
-      .expect(200);
-    await request(app.getHttpServer())
-      .post('/api/v1/auth/customers/login')
-      .send({ identifier: configured.phone, password: DIFFERENT_PASSWORD })
-      .expect(401);
   });
 
   async function createCustomer(
@@ -124,11 +86,10 @@ describe('Local passwordless Customer claim (e2e)', () => {
     sequence += 1;
     const customer = await customers.save(
       customers.create({
-        fullName: 'Local Counter Customer ' + sequence,
-        email: `local-counter-${suffix}-${sequence}@example.com`,
+        fullName: 'Counter Customer ' + sequence,
+        email: `counter-${suffix}-${sequence}@example.com`,
         phone: '+849' + String(20_000_000 + sequence).slice(-8),
         passwordHash: null,
-        phoneVerifiedAt: null,
         tokenVersion: 0,
         status: 'ACTIVE',
         ...overrides,

@@ -27,17 +27,6 @@ describe('validateEnvironment', () => {
     expect(config.SWAGGER_ENABLED).toBe(true);
     expect(config.HTTP_JSON_BODY_LIMIT).toBe('1mb');
     expect(config.HTTP_URLENCODED_BODY_LIMIT).toBe('1mb');
-    expect(config.CUSTOMER_CLAIM_SMS_ENABLED).toBe(false);
-    expect(config.CUSTOMER_CLAIM_LOCAL_BYPASS_ENABLED).toBe(false);
-    expect(config.CUSTOMER_CLAIM_SMS_PROVIDER).toBe('disabled');
-    expect(config.CUSTOMER_CLAIM_OTP_LIFETIME_MINUTES).toBe(5);
-    expect(config.CUSTOMER_CLAIM_OTP_MAX_ATTEMPTS).toBe(5);
-    expect(config.CUSTOMER_CLAIM_OTP_RESEND_COOLDOWN_SECONDS).toBe(60);
-    expect(config.CUSTOMER_CLAIM_OTP_RATE_WINDOW_MINUTES).toBe(15);
-    expect(config.CUSTOMER_CLAIM_OTP_PHONE_WINDOW_LIMIT).toBe(3);
-    expect(config.CUSTOMER_CLAIM_OTP_PHONE_DAILY_LIMIT).toBe(10);
-    expect(config.CUSTOMER_CLAIM_OTP_IP_WINDOW_LIMIT).toBe(20);
-    expect(config.CUSTOMER_CLAIM_TOKEN_LIFETIME_MINUTES).toBe(10);
     expect(config.ROOM_IMAGE_UPLOAD_DIR).toBe('.data/uploads/room-images');
     expect(config.CORS_ORIGINS).toEqual([]);
     expect(config.VNPAY_FRONTEND_RETURN_URL).toBe('');
@@ -179,116 +168,6 @@ describe('validateEnvironment', () => {
         EXPIRATION_SCHEDULERS_ENABLED: 'sometimes',
       }),
     ).toThrow('EXPIRATION_SCHEDULERS_ENABLED must be true or false.');
-  });
-
-  it('allows deterministic SMS delivery only in an enabled test environment', () => {
-    const config = validateEnvironment({
-      NODE_ENV: 'test',
-      JWT_ACCESS_TOKEN_SECRET: 'a'.repeat(32),
-      CUSTOMER_CLAIM_SMS_ENABLED: 'true',
-      CUSTOMER_CLAIM_SMS_PROVIDER: 'test',
-    });
-
-    expect(config.CUSTOMER_CLAIM_SMS_ENABLED).toBe(true);
-    expect(config.CUSTOMER_CLAIM_SMS_PROVIDER).toBe('test');
-
-    expect(() =>
-      validateEnvironment({
-        NODE_ENV: 'development',
-        JWT_ACCESS_TOKEN_SECRET: 'a'.repeat(32),
-        CUSTOMER_CLAIM_SMS_ENABLED: 'true',
-        CUSTOMER_CLAIM_SMS_PROVIDER: 'test',
-      }),
-    ).toThrow(
-      'CUSTOMER_CLAIM_SMS_PROVIDER=test is allowed only when NODE_ENV=test.',
-    );
-  });
-
-  it('allows local claim bypass only in development or test', () => {
-    expect(
-      validateEnvironment({
-        NODE_ENV: 'development',
-        JWT_ACCESS_TOKEN_SECRET: 'a'.repeat(32),
-        CUSTOMER_CLAIM_LOCAL_BYPASS_ENABLED: 'true',
-      }).CUSTOMER_CLAIM_LOCAL_BYPASS_ENABLED,
-    ).toBe(true);
-    expect(() =>
-      validateEnvironment({
-        NODE_ENV: 'production',
-        JWT_ACCESS_TOKEN_SECRET: 'a'.repeat(32),
-        CORS_ORIGINS: 'https://app.example.com',
-        CUSTOMER_CLAIM_LOCAL_BYPASS_ENABLED: 'true',
-      }),
-    ).toThrow(
-      'CUSTOMER_CLAIM_LOCAL_BYPASS_ENABLED requires explicit NODE_ENV=development or test.',
-    );
-    expect(() =>
-      validateEnvironment({
-        JWT_ACCESS_TOKEN_SECRET: 'a'.repeat(32),
-        CUSTOMER_CLAIM_LOCAL_BYPASS_ENABLED: 'true',
-      }),
-    ).toThrow(
-      'CUSTOMER_CLAIM_LOCAL_BYPASS_ENABLED requires explicit NODE_ENV=development or test.',
-    );
-  });
-
-  it('fails closed for missing, disabled, contradictory, or unsupported SMS providers', () => {
-    const secret = 'a'.repeat(32);
-
-    expect(() =>
-      validateEnvironment({
-        JWT_ACCESS_TOKEN_SECRET: secret,
-        CUSTOMER_CLAIM_SMS_ENABLED: 'true',
-      }),
-    ).toThrow('CUSTOMER_CLAIM_SMS_ENABLED requires an installed SMS provider.');
-    expect(() =>
-      validateEnvironment({
-        NODE_ENV: 'test',
-        JWT_ACCESS_TOKEN_SECRET: secret,
-        CUSTOMER_CLAIM_SMS_PROVIDER: 'test',
-      }),
-    ).toThrow(
-      'CUSTOMER_CLAIM_SMS_PROVIDER must be disabled when CUSTOMER_CLAIM_SMS_ENABLED is false.',
-    );
-    expect(() =>
-      validateEnvironment({
-        JWT_ACCESS_TOKEN_SECRET: secret,
-        CUSTOMER_CLAIM_SMS_ENABLED: 'true',
-        CUSTOMER_CLAIM_SMS_PROVIDER: 'unknown-provider',
-      }),
-    ).toThrow('CUSTOMER_CLAIM_SMS_PROVIDER must be disabled or test');
-  });
-
-  it('validates Customer claim OTP policy bounds', () => {
-    const secret = 'a'.repeat(32);
-    const config = validateEnvironment({
-      JWT_ACCESS_TOKEN_SECRET: secret,
-      CUSTOMER_CLAIM_OTP_LIFETIME_MINUTES: '10',
-      CUSTOMER_CLAIM_OTP_MAX_ATTEMPTS: '4',
-      CUSTOMER_CLAIM_OTP_RESEND_COOLDOWN_SECONDS: '90',
-      CUSTOMER_CLAIM_OTP_RATE_WINDOW_MINUTES: '30',
-      CUSTOMER_CLAIM_OTP_PHONE_WINDOW_LIMIT: '4',
-      CUSTOMER_CLAIM_OTP_PHONE_DAILY_LIMIT: '12',
-      CUSTOMER_CLAIM_OTP_IP_WINDOW_LIMIT: '30',
-      CUSTOMER_CLAIM_TOKEN_LIFETIME_MINUTES: '15',
-    });
-
-    expect(config.CUSTOMER_CLAIM_OTP_LIFETIME_MINUTES).toBe(10);
-    expect(config.CUSTOMER_CLAIM_OTP_MAX_ATTEMPTS).toBe(4);
-    expect(config.CUSTOMER_CLAIM_OTP_RESEND_COOLDOWN_SECONDS).toBe(90);
-    expect(config.CUSTOMER_CLAIM_OTP_RATE_WINDOW_MINUTES).toBe(30);
-    expect(config.CUSTOMER_CLAIM_OTP_PHONE_WINDOW_LIMIT).toBe(4);
-    expect(config.CUSTOMER_CLAIM_OTP_PHONE_DAILY_LIMIT).toBe(12);
-    expect(config.CUSTOMER_CLAIM_OTP_IP_WINDOW_LIMIT).toBe(30);
-    expect(config.CUSTOMER_CLAIM_TOKEN_LIFETIME_MINUTES).toBe(15);
-    expect(() =>
-      validateEnvironment({
-        JWT_ACCESS_TOKEN_SECRET: secret,
-        CUSTOMER_CLAIM_OTP_LIFETIME_MINUTES: '16',
-      }),
-    ).toThrow(
-      'CUSTOMER_CLAIM_OTP_LIFETIME_MINUTES must be an integer from 1 to 15.',
-    );
   });
 
   it('requires VNPay credentials only when VNPay is enabled', () => {

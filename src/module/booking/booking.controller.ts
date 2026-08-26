@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Headers,
   HttpCode,
   HttpStatus,
   Param,
@@ -10,6 +11,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
+import { ApiBearerAuth, ApiHeader } from '@nestjs/swagger';
 
 import {
   ApiResponse,
@@ -37,6 +39,7 @@ import { ListBookingsQueryDto } from './dto/list-bookings-query.dto';
 @Controller('v1/bookings')
 @UseGuards(AccessTokenGuard, ActorsGuard)
 @Actors('customer')
+@ApiBearerAuth()
 @ApiCommonAuthErrors()
 export class BookingController {
   constructor(private readonly bookingService: BookingService) {}
@@ -45,15 +48,25 @@ export class BookingController {
   @HttpCode(HttpStatus.CREATED)
   @ApiCreatedEnvelope(BookingDto)
   @ApiCommonMutationErrors()
+  @ApiHeader({
+    name: 'Idempotency-Key',
+    required: false,
+    description:
+      'Optional request identity. Reusing it with the same booking request replays the committed booking.',
+  })
   create(
     @CurrentAuth() auth: AccessTokenPayload,
+    @Headers('idempotency-key') requestIntentKey: string | undefined,
     @ReqContext() context: RequestContext,
     @Body() body: CreateBookingDto,
   ): Promise<ApiResponsePayload<BookingResponse>> {
     return this.bookingService
-      .createForCustomer(auth.customer_id, body, {
-        requestId: context.requestId,
-      })
+      .createForCustomer(
+        auth.customer_id,
+        body,
+        { requestId: context.requestId },
+        requestIntentKey,
+      )
       .then((booking) =>
         ApiResponse.created(booking, 'Tao booking thanh cong.'),
       );

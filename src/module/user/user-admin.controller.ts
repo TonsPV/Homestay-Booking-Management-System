@@ -10,6 +10,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
+import { ApiBearerAuth } from '@nestjs/swagger';
 
 import {
   ApiResponse,
@@ -40,6 +41,7 @@ import type { AdminUserResponse } from './user-admin.service';
 @Controller('v1/users')
 @UseGuards(AccessTokenGuard, RolesGuard)
 @Roles('ADMIN')
+@ApiBearerAuth()
 @ApiCommonAuthErrors()
 export class UserAdminController {
   constructor(private readonly userAdminService: UserAdminService) {}

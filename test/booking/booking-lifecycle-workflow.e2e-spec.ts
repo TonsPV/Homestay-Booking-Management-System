@@ -138,6 +138,10 @@ describe('Booking lifecycle/expiration workflow (e2e)', () => {
       }
       if (bookingIds.length > 0) {
         await dataSource.query(
+          `UPDATE bookings SET accepted_payment_id = NULL WHERE id IN (${placeholders(bookingIds)})`,
+          bookingIds,
+        );
+        await dataSource.query(
           `DELETE FROM payments WHERE booking_id IN (${placeholders(bookingIds)})`,
           bookingIds,
         );

@@ -6,7 +6,10 @@ import {
   RateLimit,
   RATE_LIMIT_KEY,
 } from '../../../../src/common/http/rate-limit.decorator';
-import { Roles, ROLES_KEY } from '../../../../src/module/auth/decorators/roles.decorator';
+import {
+  Roles,
+  ROLES_KEY,
+} from '../../../../src/module/auth/decorators/roles.decorator';
 
 describe('HTTP authorization metadata decorators', () => {
   it('publish actor, role and rate-limit metadata on a route handler', () => {

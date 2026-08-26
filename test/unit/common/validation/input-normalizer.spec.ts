@@ -7,6 +7,7 @@ import {
   parseBoolean,
   requireAccountStatus,
   requireDecimalAmount,
+  requirePositiveDecimalAmount,
   requirePassword,
   requirePositiveInt,
 } from '../../../../src/common/validation/input-normalizer';
@@ -33,6 +34,13 @@ describe('input normalizer', () => {
     expect(() => requireDecimalAmount('10000000000.00', 'invalid')).toThrow(
       BadRequestException,
     );
+  });
+
+  it('rejects zero for persisted positive-price fields', () => {
+    expect(() => requirePositiveDecimalAmount('0', 'invalid')).toThrow(
+      BadRequestException,
+    );
+    expect(requirePositiveDecimalAmount('0.01', 'invalid')).toBe('0.01');
   });
 
   it('parses positive integers and boolean query values', () => {
