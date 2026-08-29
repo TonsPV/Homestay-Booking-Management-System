@@ -11,15 +11,22 @@ import {
 } from 'vnpay';
 import type { QueryDrResponse, ReturnQueryFromVNPay } from 'vnpay';
 
+export type VnPayLocale = 'vn' | 'en';
+
 interface CreateVnPayUrlInput {
   amount: string;
   transactionReference: string;
   orderInfo: string;
   ipAddress: string | undefined;
-  locale: 'vn' | 'en';
+  locale: VnPayLocale;
   bankCode: VnPayBankCode | undefined;
   createdAt: Date;
   expiresAt: Date;
+}
+
+export interface CreatedVnPayPayment {
+  redirectUrl: string;
+  transactionDate: string;
 }
 
 export interface VnPayTransactionOperationInput {
@@ -45,6 +52,29 @@ export interface VnPayGatewayOperationResult {
   transactionId: string | null;
   transactionType: string | null;
   amount: string | null;
+  responseId: string | null;
+  message: string;
+}
+
+export interface VnPayCallbackVerification {
+  isValid: boolean;
+  merchantCode: string | null;
+  gatewayReference: string | null;
+  gatewayAmount: string | null;
+  providerResponseCode: string | null;
+  providerTransactionStatus: string | null;
+  providerTransactionId: string | null;
+  paidAt: Date | null;
+}
+
+export interface VnPayTransactionResult {
+  isVerified: boolean;
+  isSuccess: boolean;
+  providerResponseCode: string | null;
+  providerTransactionStatus: string | null;
+  providerTransactionId: string | null;
+  providerTransactionType: string | null;
+  gatewayAmount: string | null;
   responseId: string | null;
   message: string;
 }
@@ -97,6 +127,13 @@ export class VnPayGatewayService {
     });
   }
 
+  createPaymentRequest(input: CreateVnPayUrlInput): CreatedVnPayPayment {
+    return {
+      redirectUrl: this.createPaymentUrl(input),
+      transactionDate: formatVnPayDate(input.createdAt),
+    };
+  }
+
   verifyCallback(query: Record<string, unknown>): VerifiedVnPayCallback {
     const configuration = this.getConfiguration();
     const parameters: Record<string, string> = {};
@@ -130,6 +167,37 @@ export class VnPayGatewayService {
       return { isValid: result.isVerified, parameters };
     } catch {
       return { isValid: false, parameters };
+    }
+  }
+
+  verifyPaymentCallback(
+    query: Record<string, unknown>,
+  ): VnPayCallbackVerification {
+    const verified = this.verifyCallback(query);
+    const parameters = verified.parameters;
+    const merchantCode = optionalString(parameters.vnp_TmnCode);
+
+    return {
+      isValid: verified.isValid && merchantCode === this.getTmnCode(),
+      merchantCode,
+      gatewayReference: optionalString(parameters.vnp_TxnRef),
+      gatewayAmount: optionalString(parameters.vnp_Amount),
+      providerResponseCode: optionalString(parameters.vnp_ResponseCode),
+      providerTransactionStatus: optionalString(
+        parameters.vnp_TransactionStatus,
+      ),
+      providerTransactionId: optionalString(parameters.vnp_TransactionNo),
+      paidAt: parseVnPayDate(parameters.vnp_PayDate),
+    };
+  }
+
+  resolveTransactionDate(paymentUrl: string): string | null {
+    try {
+      const value = new URL(paymentUrl).searchParams.get('vnp_CreateDate');
+
+      return value !== null && /^\d{14}$/.test(value) ? value : null;
+    } catch {
+      return null;
     }
   }
 
@@ -198,6 +266,12 @@ export class VnPayGatewayService {
     });
   }
 
+  async requestRefund(
+    input: VnPayRefundInput,
+  ): Promise<VnPayTransactionResult> {
+    return toApplicationTransactionResult(await this.refundFull(input));
+  }
+
   async queryTransaction(
     input: VnPayTransactionOperationInput,
   ): Promise<VnPayGatewayOperationResult> {
@@ -219,6 +293,12 @@ export class VnPayGatewayService {
       tmnCode: configuration.tmnCode,
       transactionReference: input.transactionReference,
     });
+  }
+
+  async lookupTransaction(
+    input: VnPayTransactionOperationInput,
+  ): Promise<VnPayTransactionResult> {
+    return toApplicationTransactionResult(await this.queryTransaction(input));
   }
 
   getTmnCode(): string {
@@ -255,6 +335,16 @@ export function createVnPaySignature(
     hashAlgorithm: HashAlgorithm.SHA512,
     bufferEncode: 'utf8',
   });
+}
+
+export function toVnPayAmount(amount: string): string {
+  const match = /^([0-9]+)[.]([0-9]{2})$/.exec(amount);
+
+  if (match === null) {
+    throw new Error('Payment amount is invalid.');
+  }
+
+  return (BigInt(match[1]) * 100n + BigInt(match[2])).toString();
 }
 
 export function formatVnPayDate(value: Date): string {
@@ -359,6 +449,22 @@ function normalizeOperationResponse(
         ? optionalString(response.vnp_ResponseId)
         : null,
     message: response.message,
+  };
+}
+
+function toApplicationTransactionResult(
+  result: VnPayGatewayOperationResult,
+): VnPayTransactionResult {
+  return {
+    isVerified: result.isVerified,
+    isSuccess: result.isSuccess,
+    providerResponseCode: result.responseCode,
+    providerTransactionStatus: result.transactionStatus,
+    providerTransactionId: result.transactionId,
+    providerTransactionType: result.transactionType,
+    gatewayAmount: result.amount,
+    responseId: result.responseId,
+    message: result.message,
   };
 }
 

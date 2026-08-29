@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { Allow } from 'class-validator';
+import { IsOptional, IsString, Matches } from 'class-validator';
 
 import { CreateBookingDto } from './create-booking.dto';
 
@@ -11,6 +11,8 @@ export class CreateManagementBookingDto extends CreateBookingDto {
     pattern: '^[1-9][0-9]*$',
     type: String,
   })
-  @Allow()
-  customerId?: unknown;
+  @IsOptional()
+  @IsString()
+  @Matches(/^(?:[1-9][0-9]*)?$/)
+  customerId?: string | null;
 }

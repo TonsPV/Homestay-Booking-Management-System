@@ -1,6 +1,8 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Allow } from 'class-validator';
 
+import { PaginationQueryDto } from '../../../common/pagination/pagination-query.dto';
+
 export enum RoomSearchSort {
   RECOMMENDED = 'RECOMMENDED',
   PRICE_ASC = 'PRICE_ASC',
@@ -9,7 +11,7 @@ export enum RoomSearchSort {
   NEWEST = 'NEWEST',
 }
 
-export class SearchRoomsQueryDto {
+export class SearchRoomsQueryDto extends PaginationQueryDto {
   @ApiProperty({ example: '2026-08-01', format: 'date', type: String })
   @Allow()
   checkIn?: unknown;
@@ -48,10 +50,6 @@ export class SearchRoomsQueryDto {
   @Allow()
   maxPrice?: unknown;
 
-  @ApiPropertyOptional({ default: 1, example: 1, minimum: 1, type: Number })
-  @Allow()
-  page?: unknown;
-
   @ApiPropertyOptional({
     default: RoomSearchSort.RECOMMENDED,
     enum: RoomSearchSort,
@@ -60,14 +58,4 @@ export class SearchRoomsQueryDto {
   })
   @Allow()
   sort?: unknown;
-
-  @ApiPropertyOptional({
-    default: 20,
-    example: 20,
-    maximum: 100,
-    minimum: 1,
-    type: Number,
-  })
-  @Allow()
-  limit?: unknown;
 }

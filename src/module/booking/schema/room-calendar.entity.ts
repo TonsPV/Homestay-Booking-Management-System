@@ -9,12 +9,8 @@ import {
 } from 'typeorm';
 
 import { Room } from '../../room/schema/room.entity';
+import { RoomCalendarStatus } from '../domain/room-calendar-status';
 import { Booking } from './booking.entity';
-
-export enum RoomCalendarStatus {
-  RESERVED = 'RESERVED',
-  BLOCKED = 'BLOCKED',
-}
 
 @Entity('room_calendar')
 @Index('uq_room_calendar_room_date', ['roomId', 'stayDate'], {

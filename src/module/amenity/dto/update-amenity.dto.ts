@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { Allow } from 'class-validator';
+import { IsOptional, IsString } from 'class-validator';
 
 export class UpdateAmenityDto {
   @ApiPropertyOptional({
@@ -7,8 +7,9 @@ export class UpdateAmenityDto {
     maxLength: 120,
     type: String,
   })
-  @Allow()
-  name?: unknown;
+  @IsOptional()
+  @IsString()
+  name?: string;
 
   @ApiPropertyOptional({
     example: 'Internet không dây miễn phí trong phòng.',
@@ -16,6 +17,7 @@ export class UpdateAmenityDto {
     nullable: true,
     type: String,
   })
-  @Allow()
-  description?: unknown;
+  @IsOptional()
+  @IsString()
+  description?: string | null;
 }

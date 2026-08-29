@@ -1,20 +1,33 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Allow } from 'class-validator';
+import { Type } from 'class-transformer';
+import {
+  ArrayMaxSize,
+  Allow,
+  IsArray,
+  IsInt,
+  IsOptional,
+  IsString,
+  Max,
+  Min,
+  ValidateNested,
+} from 'class-validator';
 
+import { MAX_BED_TYPES } from '../bed-configuration';
 import { RoomTypeBedInputDto } from './room-type-bed.dto';
 
 export class CreateRoomTypeDto {
   @ApiProperty({ example: 'Phòng đôi', maxLength: 120, type: String })
-  @Allow()
-  name?: unknown;
+  @IsString()
+  name?: string;
 
   @ApiPropertyOptional({
     example: 'Phòng dành cho hai khách.',
     nullable: true,
     type: String,
   })
-  @Allow()
-  description?: unknown;
+  @IsOptional()
+  @IsString()
+  description?: string | null;
 
   @ApiPropertyOptional({
     deprecated: true,
@@ -24,8 +37,9 @@ export class CreateRoomTypeDto {
     nullable: true,
     type: String,
   })
-  @Allow()
-  bedType?: unknown;
+  @IsOptional()
+  @IsString()
+  bedType?: string | null;
 
   @ApiPropertyOptional({
     description:
@@ -34,18 +48,27 @@ export class CreateRoomTypeDto {
     maxItems: 6,
     type: [RoomTypeBedInputDto],
   })
-  @Allow()
-  beds?: unknown;
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(MAX_BED_TYPES)
+  @ValidateNested({ each: true })
+  @Type(() => RoomTypeBedInputDto)
+  beds?: RoomTypeBedInputDto[] | null;
 
   @ApiProperty({ example: 2, maximum: 100, minimum: 1, type: Number })
-  @Allow()
-  maxGuests?: unknown;
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  maxGuests?: number;
 
   @ApiProperty({
     example: '900000.00',
-    pattern: '^\\d+(?:\\.\\d{1,2})?$',
+    description: 'Positive base price; zero is not accepted.',
+    pattern:
+      '^(?:[1-9][0-9]{0,9}(?:\\.[0-9]{1,2})?|0\\.(?:0[1-9]|[1-9][0-9]?))$',
     type: String,
   })
+  /** Accepts both the documented decimal string and existing numeric callers. */
   @Allow()
-  basePrice?: unknown;
+  basePrice?: string | number;
 }

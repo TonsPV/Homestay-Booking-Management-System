@@ -13,12 +13,7 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 
-import {
-  ApiResponse,
-  type ApiResponsePayload,
-  Roles,
-  RolesGuard,
-} from '../../common/http';
+import { ApiResponse, type ApiResponsePayload } from '../../common/http';
 import {
   ApiCommonAuthErrors,
   ApiCommonMutationErrors,
@@ -26,6 +21,8 @@ import {
   ApiOkEnvelope,
 } from '../../openapi/api-response.decorators';
 import { AccessTokenGuard } from '../auth/access-token.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { RolesGuard } from '../auth/guards/roles.guard';
 import { AmenityService, type AdminAmenityResponse } from './amenity.service';
 import { CreateAmenityDto } from './dto/create-amenity.dto';
 import { AdminAmenityDto } from './dto/amenity-response.dto';

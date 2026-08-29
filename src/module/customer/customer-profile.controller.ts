@@ -1,20 +1,17 @@
 import { Body, Controller, Get, Patch, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 
-import {
-  Actors,
-  ActorsGuard,
-  ApiResponse,
-  ApiResponsePayload,
-  CurrentAuth,
-  type AccessTokenPayload,
-} from '../../common/http';
+import { ApiResponse, ApiResponsePayload } from '../../common/http';
 import {
   ApiCommonAuthErrors,
   ApiCommonMutationErrors,
   ApiOkEnvelope,
 } from '../../openapi/api-response.decorators';
 import { AccessTokenGuard } from '../auth/access-token.guard';
+import type { AccessTokenPayload } from '../auth/auth.types';
+import { Actors } from '../auth/decorators/actors.decorator';
+import { CurrentAuth } from '../auth/decorators/current-auth.decorator';
+import { ActorsGuard } from '../auth/guards/actors.guard';
 import { AuthCustomerDto } from '../auth/dto/auth-response.dto';
 import { CustomerProfileService } from './customer-profile.service';
 import type { CustomerProfileResponse } from './customer-profile.service';

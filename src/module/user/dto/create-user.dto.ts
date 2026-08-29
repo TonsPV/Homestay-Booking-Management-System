@@ -1,28 +1,29 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Allow } from 'class-validator';
+import { IsIn, IsOptional, IsString } from 'class-validator';
 
 import { UserRoleEnum } from '../../../common/domain/account.enums';
 
 export class CreateUserDto {
   @ApiProperty({ example: 'Nguyen Van Staff', maxLength: 120, type: String })
-  @Allow()
-  fullName?: unknown;
+  @IsString()
+  fullName?: string;
 
   @ApiProperty({
     example: 'staff@example.com',
     maxLength: 160,
     type: String,
   })
-  @Allow()
-  email?: unknown;
+  @IsString()
+  email?: string;
 
   @ApiPropertyOptional({
     example: '0901234567',
     nullable: true,
     type: String,
   })
-  @Allow()
-  phone?: unknown;
+  @IsOptional()
+  @IsString()
+  phone?: string | null;
 
   @ApiProperty({
     example: 'StrongPassword123!',
@@ -31,8 +32,8 @@ export class CreateUserDto {
     type: String,
     writeOnly: true,
   })
-  @Allow()
-  password?: unknown;
+  @IsString()
+  password?: string;
 
   @ApiPropertyOptional({
     description: 'Only STAFF accounts can be issued through this endpoint.',
@@ -40,6 +41,7 @@ export class CreateUserDto {
     example: 'STAFF',
     type: String,
   })
-  @Allow()
-  role?: unknown;
+  @IsOptional()
+  @IsIn([UserRoleEnum.STAFF])
+  role?: UserRoleEnum;
 }

@@ -1,16 +1,18 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { Allow } from 'class-validator';
+import { IsEnum, IsInt, Max, Min } from 'class-validator';
 
-import { BedType } from '../bed-configuration';
+import { BedType, MAX_BED_QUANTITY } from '../bed-configuration';
 
 export class RoomTypeBedInputDto {
   @ApiProperty({ enum: BedType, enumName: 'BedType', type: String })
-  @Allow()
-  type?: unknown;
+  @IsEnum(BedType)
+  type?: BedType;
 
   @ApiProperty({ example: 1, maximum: 20, minimum: 1, type: Number })
-  @Allow()
-  quantity?: unknown;
+  @IsInt()
+  @Min(1)
+  @Max(MAX_BED_QUANTITY)
+  quantity?: number;
 }
 
 export class RoomTypeBedResponseDto {

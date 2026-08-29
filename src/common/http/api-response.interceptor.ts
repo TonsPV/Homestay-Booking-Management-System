@@ -9,7 +9,8 @@ import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
 
 import { ApiSuccessResponse, isApiResponsePayload } from './api-response';
-import type { AppRequest } from './auth.types';
+import { createRequestMetadata } from './request-metadata';
+import type { AppRequest } from './request.types';
 
 @Injectable()
 export class ApiResponseInterceptor implements NestInterceptor {
@@ -36,9 +37,7 @@ export class ApiResponseInterceptor implements NestInterceptor {
           statusCode: response.statusCode,
           message: payload.message ?? 'Thanh cong.',
           data: payload.data ?? null,
-          path: request.originalUrl,
-          timestamp: new Date().toISOString(),
-          requestId: request.requestId ?? 'unknown',
+          ...createRequestMetadata(request),
         };
 
         if (payload.meta !== undefined) {

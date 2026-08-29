@@ -9,8 +9,8 @@ import { AuditLog } from '../module/audit/schema/audit-log.entity';
 import { Amenity } from '../module/amenity/schema/amenity.entity';
 import { RoomCalendar } from '../module/booking/schema/room-calendar.entity';
 import { Customer } from '../module/customer/schema/customer.entity';
-import { CustomerClaimChallenge } from '../module/auth/schema/customer-claim-challenge.entity';
 import { Payment } from '../module/payment/schema/payment.entity';
+import { PaymentRefund } from '../module/payment/schema/payment-refund.entity';
 import { RoomImage } from '../module/room/schema/room-image.entity';
 import { Room } from '../module/room/schema/room.entity';
 import { RoomType } from '../module/room-type/schema/room-type.entity';
@@ -33,6 +33,13 @@ import { CreateAuditLogs1784787000000 } from './migrations/1784787000000-CreateA
 import { AddUserAuditEntityType1784788000000 } from './migrations/1784788000000-AddUserAuditEntityType';
 import { AlignRoomTypeBedMetadata1784789000000 } from './migrations/1784789000000-AlignRoomTypeBedMetadata';
 import { AddPaymentReviewContext1784790000000 } from './migrations/1784790000000-AddPaymentReviewContext';
+import { HardenPositivePriceConstraints1784791000000 } from './migrations/1784791000000-HardenPositivePriceConstraints';
+import { HardenPaymentLineage1784792000000 } from './migrations/1784792000000-HardenPaymentLineage';
+import { AddBookingRequestIntent1784793000000 } from './migrations/1784793000000-AddBookingRequestIntent';
+import { RetireCustomerPhoneClaim1784794000000 } from './migrations/1784794000000-RetireCustomerPhoneClaim';
+import { CreatePaymentRefundsAndBackfill1784795000000 } from './migrations/1784795000000-CreatePaymentRefundsAndBackfill';
+import { HardenAcceptedPaymentOwnership1784796000000 } from './migrations/1784796000000-HardenAcceptedPaymentOwnership';
+import { RemoveLegacyPaymentRefundColumns1784797000000 } from './migrations/1784797000000-RemoveLegacyPaymentRefundColumns';
 import { AlignRoomMetadata1784772000000 } from './migrations/1784772000000-AlignRoomMetadata';
 import { AddUserTokenVersion1784773000000 } from './migrations/1784773000000-AddUserTokenVersion';
 import { AlignEntityMetadata1784771000000 } from './migrations/1784771000000-AlignEntityMetadata';
@@ -69,8 +76,8 @@ const AppDataSource = new DataSource({
     Booking,
     Amenity,
     Customer,
-    CustomerClaimChallenge,
     Payment,
+    PaymentRefund,
     Room,
     RoomCalendar,
     RoomImage,
@@ -100,6 +107,13 @@ const AppDataSource = new DataSource({
     AddUserAuditEntityType1784788000000,
     AlignRoomTypeBedMetadata1784789000000,
     AddPaymentReviewContext1784790000000,
+    HardenPositivePriceConstraints1784791000000,
+    HardenPaymentLineage1784792000000,
+    AddBookingRequestIntent1784793000000,
+    RetireCustomerPhoneClaim1784794000000,
+    CreatePaymentRefundsAndBackfill1784795000000,
+    HardenAcceptedPaymentOwnership1784796000000,
+    RemoveLegacyPaymentRefundColumns1784797000000,
   ],
   migrationsTableName: 'typeorm_migrations',
   synchronize: false,

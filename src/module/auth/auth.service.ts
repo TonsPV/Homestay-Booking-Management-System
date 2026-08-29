@@ -9,7 +9,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import type { Repository } from 'typeorm';
 
 import { getMysqlDuplicateKey } from '../../common/database';
-import type { AccessTokenPayload } from '../../common/http';
+import type { AccessTokenPayload } from './auth.types';
 import {
   getVietnamesePhoneLookupVariants,
   isEmail,
@@ -33,10 +33,6 @@ import {
   type UserStatus,
 } from '../user/schema/user.entity';
 import { PasswordHasherService } from './password-hasher.service';
-import {
-  LocalCustomerClaimResult,
-  LocalCustomerClaimService,
-} from './local-customer-claim.service';
 
 interface NormalizedRegisterCustomerInput {
   fullName: string;
@@ -105,7 +101,6 @@ export class AuthService {
     private readonly usersRepository: Repository<User>,
     private readonly passwordHasherService: PasswordHasherService,
     private readonly accessTokenService: AccessTokenService,
-    private readonly localCustomerClaimService: LocalCustomerClaimService,
   ) {}
 
   async registerCustomer(
@@ -126,10 +121,6 @@ export class AuthService {
     ]);
 
     if (existingEmail !== null || existingPhone !== null) {
-      if (await this.tryLocalPasswordlessClaim(input, passwordHash)) {
-        return { accepted: true };
-      }
-
       this.logRegistrationDuplicate(existingEmail, existingPhone);
       throw this.registrationConflictException();
     }
@@ -153,10 +144,6 @@ export class AuthService {
       this.logger.warn(
         `Customer registration rejected. reason=${this.getDuplicateReason(duplicateKey)}`,
       );
-
-      if (await this.tryLocalPasswordlessClaim(input, passwordHash)) {
-        return { accepted: true };
-      }
 
       throw this.registrationConflictException();
     }
@@ -421,27 +408,6 @@ export class AuthService {
     return new ConflictException(
       'Khong the dang ky bang email hoac so dien thoai nay.',
     );
-  }
-
-  private async tryLocalPasswordlessClaim(
-    input: NormalizedRegisterCustomerInput,
-    passwordHash: string,
-  ): Promise<boolean> {
-    const result =
-      await this.localCustomerClaimService.claimPasswordlessCustomer({
-        phone: input.phone,
-        email: input.email,
-        passwordHash,
-      });
-
-    if (result !== LocalCustomerClaimResult.CLAIMED) {
-      return false;
-    }
-
-    this.logger.warn(
-      'Passwordless Customer claimed through development/test bypass.',
-    );
-    return true;
   }
 
   private logRegistrationDuplicate(

@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Headers,
   HttpCode,
   HttpStatus,
   Param,
@@ -10,14 +11,11 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
+import { ApiBearerAuth, ApiHeader } from '@nestjs/swagger';
 
 import {
-  Actors,
-  ActorsGuard,
   ApiResponse,
   type ApiResponsePayload,
-  type AccessTokenPayload,
-  CurrentAuth,
   ReqContext,
   type RequestContext,
 } from '../../common/http';
@@ -28,6 +26,10 @@ import {
   ApiOkEnvelope,
 } from '../../openapi/api-response.decorators';
 import { AccessTokenGuard } from '../auth/access-token.guard';
+import type { AccessTokenPayload } from '../auth/auth.types';
+import { Actors } from '../auth/decorators/actors.decorator';
+import { CurrentAuth } from '../auth/decorators/current-auth.decorator';
+import { ActorsGuard } from '../auth/guards/actors.guard';
 import { BookingService, type BookingResponse } from './booking.service';
 import { BookingDto } from './dto/booking-response.dto';
 import { CancelBookingDto } from './dto/cancel-booking.dto';
@@ -37,6 +39,7 @@ import { ListBookingsQueryDto } from './dto/list-bookings-query.dto';
 @Controller('v1/bookings')
 @UseGuards(AccessTokenGuard, ActorsGuard)
 @Actors('customer')
+@ApiBearerAuth()
 @ApiCommonAuthErrors()
 export class BookingController {
   constructor(private readonly bookingService: BookingService) {}
@@ -45,15 +48,25 @@ export class BookingController {
   @HttpCode(HttpStatus.CREATED)
   @ApiCreatedEnvelope(BookingDto)
   @ApiCommonMutationErrors()
+  @ApiHeader({
+    name: 'Idempotency-Key',
+    required: false,
+    description:
+      'Optional request identity. Reusing it with the same booking request replays the committed booking.',
+  })
   create(
     @CurrentAuth() auth: AccessTokenPayload,
+    @Headers('idempotency-key') requestIntentKey: string | undefined,
     @ReqContext() context: RequestContext,
     @Body() body: CreateBookingDto,
   ): Promise<ApiResponsePayload<BookingResponse>> {
     return this.bookingService
-      .createForCustomer(auth.customer_id, body, {
-        requestId: context.requestId,
-      })
+      .createForCustomer(
+        auth.customer_id,
+        body,
+        { requestId: context.requestId },
+        requestIntentKey,
+      )
       .then((booking) =>
         ApiResponse.created(booking, 'Tao booking thanh cong.'),
       );

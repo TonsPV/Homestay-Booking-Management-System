@@ -8,7 +8,8 @@ import {
 } from '@nestjs/common';
 import { DataSource, type EntityManager } from 'typeorm';
 
-import { AppHttpException, ErrorCode } from '../../common/http';
+import { ErrorCode } from '../../common/error-codes';
+import { AppHttpException } from '../../common/http/app-http-exception';
 import { requireLoginPassword, requirePassword } from '../../common/validation';
 import { PasswordHasherService } from '../auth/password-hasher.service';
 import { CustomerCredentialPolicy } from './customer-credential.policy';
@@ -28,6 +29,7 @@ export class CustomerCredentialService {
     private readonly customerCredentialPolicy: CustomerCredentialPolicy,
   ) {}
 
+  //change customer password
   async changeOwnPassword(
     customerId: string | undefined,
     body: ChangeCustomerPasswordDto,
@@ -105,6 +107,7 @@ export class CustomerCredentialService {
     });
   }
 
+  //set initial password for customer
   async setInitialPassword(
     customerId: string,
     body: SetInitialCustomerPasswordDto,
@@ -137,6 +140,7 @@ export class CustomerCredentialService {
     });
   }
 
+  //get customer with password hash for update
   private getCustomerWithPassword(
     manager: EntityManager,
     customerId: string,

@@ -5,14 +5,18 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { LessThan, type Repository, type SelectQueryBuilder } from 'typeorm';
+import { type Repository, type SelectQueryBuilder } from 'typeorm';
 
-import type { PaginationMeta } from '../../common/http';
+import {
+  createPaginationMeta,
+  type PaginationMeta,
+} from '../../common/pagination/pagination.types';
 import { parsePagination } from '../../common/validation';
 import { Booking } from '../booking/schema/booking.entity';
 import type { ListPaymentsQueryDto } from './dto/list-payments-query.dto';
 import type { CustomerPaymentResponse, PaymentResponse } from './payment.types';
-import { Payment, PaymentMethod, PaymentStatus } from './schema/payment.entity';
+import { Payment } from './schema/payment.entity';
+import { PaymentMethod, PaymentStatus } from './domain/payment-state';
 
 export interface PaymentListResult {
   items: PaymentResponse[];
@@ -98,10 +102,14 @@ export class PaymentQueryService {
   countStaleRefunds(now = new Date()): Promise<number> {
     const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
 
-    return this.paymentsRepository.countBy({
-      status: PaymentStatus.REFUND_PENDING,
-      refundRequestedAt: LessThan(sevenDaysAgo),
-    });
+    return this.paymentsRepository
+      .createQueryBuilder('payment')
+      .innerJoin('payment.refund', 'refund')
+      .where('payment.status = :status', {
+        status: PaymentStatus.REFUND_PENDING,
+      })
+      .andWhere('refund.requestedAt < :cutoff', { cutoff: sevenDaysAgo })
+      .getCount();
   }
 
   async getPaymentEntity(id: string): Promise<Payment> {
@@ -117,6 +125,8 @@ export class PaymentQueryService {
   }
 
   toResponse(payment: Payment): PaymentResponse {
+    const refund = payment.refund ?? null;
+
     return {
       id: payment.id,
       bookingId: payment.bookingId,
@@ -132,19 +142,19 @@ export class PaymentQueryService {
       gatewayResponseCode: payment.gatewayResponseCode,
       gatewayTransactionStatus: payment.gatewayTransactionStatus,
       gatewayTransactionDate: payment.gatewayTransactionDate,
-      refundRequestId: payment.refundRequestId,
-      refundPreviousStatus: payment.refundPreviousStatus,
-      refundGatewayTransactionId: payment.refundGatewayTransactionId,
-      refundResponseCode: payment.refundResponseCode,
-      refundTransactionStatus: payment.refundTransactionStatus,
-      refundMessage: payment.refundMessage,
-      refundReason: payment.refundReason,
+      refundRequestId: refund?.requestId ?? null,
+      refundPreviousStatus: refund?.previousPaymentStatus ?? null,
+      refundGatewayTransactionId: refund?.gatewayTransactionId ?? null,
+      refundResponseCode: refund?.responseCode ?? null,
+      refundTransactionStatus: refund?.transactionStatus ?? null,
+      refundMessage: refund?.message ?? null,
+      refundReason: refund?.reason ?? null,
       createdByUserId: payment.createdByUserId,
-      refundedByUserId: payment.refundedByUserId,
+      refundedByUserId: refund?.refundedByUserId ?? null,
       paidAt: payment.paidAt,
-      refundedAt: payment.refundedAt,
-      refundRequestedAt: payment.refundRequestedAt,
-      refundLastQueriedAt: payment.refundLastQueriedAt,
+      refundedAt: refund?.refundedAt ?? null,
+      refundRequestedAt: refund?.requestedAt ?? null,
+      refundLastQueriedAt: refund?.lastQueriedAt ?? null,
       expiresAt: payment.expiresAt,
       createdByUser:
         payment.createdByUser === null
@@ -154,11 +164,11 @@ export class PaymentQueryService {
               fullName: payment.createdByUser.fullName,
             },
       refundedByUser:
-        payment.refundedByUser === null
+        refund?.refundedByUser === null || refund?.refundedByUser === undefined
           ? null
           : {
-              id: payment.refundedByUser.id,
-              fullName: payment.refundedByUser.fullName,
+              id: refund.refundedByUser.id,
+              fullName: refund.refundedByUser.fullName,
             },
       createdAt: payment.createdAt,
       updatedAt: payment.updatedAt,
@@ -175,7 +185,7 @@ export class PaymentQueryService {
       status: payment.status,
       gatewayReference: payment.gatewayReference,
       paidAt: payment.paidAt,
-      refundedAt: payment.refundedAt,
+      refundedAt: payment.refund?.refundedAt ?? null,
       expiresAt: payment.expiresAt,
       createdAt: payment.createdAt,
       updatedAt: payment.updatedAt,
@@ -200,6 +210,7 @@ export class PaymentQueryService {
     const method = this.optionalPaymentMethod(query.method);
     const paymentsQuery = this.paymentsRepository
       .createQueryBuilder('payment')
+      .leftJoinAndSelect('payment.refund', 'refund')
       .andWhere('payment.bookingId = :bookingId', { bookingId })
       .orderBy('payment.createdAt', 'DESC')
       .addOrderBy('payment.id', 'DESC')
@@ -218,14 +229,7 @@ export class PaymentQueryService {
 
     return {
       items: payments.map((payment) => this.toCustomerResponse(payment)),
-      meta: {
-        pagination: {
-          page,
-          limit,
-          total,
-          totalPages: Math.ceil(total / limit),
-        },
-      },
+      meta: createPaginationMeta(page, limit, total),
     };
   }
 
@@ -267,14 +271,7 @@ export class PaymentQueryService {
 
     return {
       items: payments.map((payment) => this.toResponse(payment)),
-      meta: {
-        pagination: {
-          page,
-          limit,
-          total,
-          totalPages: Math.ceil(total / limit),
-        },
-      },
+      meta: createPaginationMeta(page, limit, total),
     };
   }
 
@@ -282,7 +279,8 @@ export class PaymentQueryService {
     return this.paymentsRepository
       .createQueryBuilder('payment')
       .leftJoinAndSelect('payment.createdByUser', 'createdByUser')
-      .leftJoinAndSelect('payment.refundedByUser', 'refundedByUser');
+      .leftJoinAndSelect('payment.refund', 'refund')
+      .leftJoinAndSelect('refund.refundedByUser', 'refundedByUser');
   }
 
   private optionalPaymentMethod(value: unknown): PaymentMethod | undefined {

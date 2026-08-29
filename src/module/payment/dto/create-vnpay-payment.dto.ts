@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { Allow } from 'class-validator';
+import { IsIn, IsOptional } from 'class-validator';
 
 export class CreateVnpayPaymentDto {
   @ApiPropertyOptional({
@@ -7,8 +7,9 @@ export class CreateVnpayPaymentDto {
     example: 'VNBANK',
     type: String,
   })
-  @Allow()
-  bankCode?: unknown;
+  @IsOptional()
+  @IsIn(['', 'VNPAYQR', 'VNBANK', 'INTCARD'])
+  bankCode?: string | null;
 
   @ApiPropertyOptional({
     default: 'vn',
@@ -16,6 +17,7 @@ export class CreateVnpayPaymentDto {
     example: 'vn',
     type: String,
   })
-  @Allow()
-  locale?: unknown;
+  @IsOptional()
+  @IsIn(['', 'vn', 'en'])
+  locale?: string | null;
 }

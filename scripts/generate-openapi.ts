@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 import { NestFactory } from '@nestjs/core';
 
 import { AppModule } from '../src/app.module';
-import { configureApp } from '../src/common/http';
+import { configureApp } from '../src/bootstrap/configure-app';
 import { createOpenApiDocument } from '../src/openapi/openapi';
 import { assertOpenApiResponseSchemas } from '../src/openapi/openapi-contract';
 

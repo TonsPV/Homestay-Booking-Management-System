@@ -7,6 +7,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import type { SelectQueryBuilder } from 'typeorm';
 import { Repository } from 'typeorm';
 
+import { createPaginationMeta } from '../../common/pagination/pagination.types';
 import {
   optionalDecimalAmount,
   optionalSearch,
@@ -21,12 +22,12 @@ import {
   type SearchRoomsQueryDto,
 } from './dto/search-rooms-query.dto';
 import type { RoomImage } from './schema/room-image.entity';
-import { Room, RoomStatus } from './schema/room.entity';
-import {
-  RoomCalendar,
-  RoomCalendarStatus,
-} from '../booking/schema/room-calendar.entity';
-import { BookingStayPolicy } from '../booking/booking-stay.policy';
+import { Room } from './schema/room.entity';
+import { RoomStatus } from './domain/room-status';
+import { RoomCalendar } from '../booking/schema/room-calendar.entity';
+import { RoomCalendarStatus } from '../booking/domain/room-calendar-status';
+import { BookingStayPolicy } from '../booking/domain/booking-stay.policy';
+import { throwMappedBookingDomainError } from '../booking/booking-domain-error.mapper';
 import type {
   ManagementRoomCalendarSummary,
   ManagementRoomListResult,
@@ -132,25 +133,14 @@ export class RoomQueryService {
         calendarSummary:
           calendarSummaries.get(room.id) ?? this.emptyCalendarSummary(),
       })),
-      meta: {
-        pagination: {
-          page,
-          limit,
-          total,
-          totalPages: Math.ceil(total / limit),
-        },
-      },
+      meta: createPaginationMeta(page, limit, total),
     };
   }
 
   async listAvailable(
     query: ListAvailableRoomsQueryDto,
   ): Promise<RoomListResult> {
-    const stayRange = this.bookingStayPolicy.requireStayRange(
-      query.checkIn,
-      query.checkOut,
-      { checkIn: 'checkIn', checkOut: 'checkOut' },
-    );
+    const stayRange = this.requireStayRange(query.checkIn, query.checkOut);
 
     const guests = requirePositiveInt(
       query.guests,
@@ -189,11 +179,7 @@ export class RoomQueryService {
   }
 
   async search(query: SearchRoomsQueryDto): Promise<PublicRoomListResult> {
-    const stayRange = this.bookingStayPolicy.requireStayRange(
-      query.checkIn,
-      query.checkOut,
-      { checkIn: 'checkIn', checkOut: 'checkOut' },
-    );
+    const stayRange = this.requireStayRange(query.checkIn, query.checkOut);
 
     const guests = requirePositiveInt(
       query.guests,
@@ -559,14 +545,7 @@ export class RoomQueryService {
 
     return {
       items: rooms.map(mapRoom),
-      meta: {
-        pagination: {
-          page,
-          limit,
-          total,
-          totalPages: Math.ceil(total / limit),
-        },
-      },
+      meta: createPaginationMeta(page, limit, total),
     };
   }
 
@@ -605,6 +584,17 @@ export class RoomQueryService {
       )`,
       { checkIn, checkOut },
     );
+  }
+
+  private requireStayRange(checkIn: unknown, checkOut: unknown) {
+    try {
+      return this.bookingStayPolicy.requireStayRange(checkIn, checkOut);
+    } catch (error) {
+      throwMappedBookingDomainError(error, {
+        checkIn: 'checkIn',
+        checkOut: 'checkOut',
+      });
+    }
   }
 
   private requireId(value: unknown, message: string): string {

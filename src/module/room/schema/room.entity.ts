@@ -12,15 +12,8 @@ import {
 } from 'typeorm';
 
 import { RoomType } from '../../room-type/schema/room-type.entity';
+import { RoomStatus } from '../domain/room-status';
 import { RoomImage } from './room-image.entity';
-
-export enum RoomStatus {
-  READY = 'READY',
-  OCCUPIED = 'OCCUPIED',
-  CLEANING = 'CLEANING',
-  MAINTENANCE = 'MAINTENANCE',
-  HIDDEN = 'HIDDEN',
-}
 
 @Entity('rooms')
 @Index('uq_rooms_room_number', ['roomNumber'], { unique: true })

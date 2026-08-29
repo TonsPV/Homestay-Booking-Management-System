@@ -10,7 +10,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, type QueryDeepPartialEntity, type Repository } from 'typeorm';
 
 import { getMysqlDuplicateKey } from '../../common/database';
-import { AppHttpException, ErrorCode } from '../../common/http';
+import { ErrorCode } from '../../common/error-codes';
+import { AppHttpException } from '../../common/http/app-http-exception';
 import {
   getVietnamesePhoneLookupVariants,
   optionalNullableEmail,
@@ -37,6 +38,7 @@ export class CustomerProfileService {
     private readonly customersRepository: Repository<Customer>,
   ) {}
 
+  //lay customer profile by id
   async getMe(
     customerId: string | undefined,
   ): Promise<CustomerProfileResponse> {
@@ -45,6 +47,7 @@ export class CustomerProfileService {
     return this.toCustomerProfileResponse(customer);
   }
 
+  //update customer profile
   async updateMe(
     customerId: string | undefined,
     body: UpdateCustomerProfileDto,
@@ -108,6 +111,7 @@ export class CustomerProfileService {
     );
   }
 
+  //lay customer active by id
   private async getActiveCustomer(
     customerId: string | undefined,
   ): Promise<Customer> {
@@ -130,6 +134,7 @@ export class CustomerProfileService {
     return customer;
   }
 
+  //check email is available for update
   private async ensureEmailIsAvailable(
     email: string,
     currentCustomerId: string,
@@ -150,6 +155,7 @@ export class CustomerProfileService {
     }
   }
 
+  //check phone is available for update
   private async ensurePhoneIsAvailable(
     phone: string,
     currentCustomerId: string,
@@ -172,6 +178,7 @@ export class CustomerProfileService {
     }
   }
 
+  //handle duplicate key error when update customer profile
   private throwCustomerDuplicateConflict(error: unknown): never {
     const duplicateKey = getMysqlDuplicateKey(error);
 
@@ -198,6 +205,7 @@ export class CustomerProfileService {
     throw new ConflictException('Thong tin customer da ton tai.');
   }
 
+  //create AppHttpException for contact conflict
   private contactConflict(
     field: 'email' | 'phone',
     errorCode:

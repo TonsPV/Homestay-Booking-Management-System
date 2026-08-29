@@ -5,7 +5,7 @@ import {
   PaymentMethod,
   PaymentReviewReason,
   PaymentStatus,
-} from '../schema/payment.entity';
+} from '../domain/payment-state';
 
 const nullablePaymentStatuses = [
   ...Object.values(PaymentStatus),

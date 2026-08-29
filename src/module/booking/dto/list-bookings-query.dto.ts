@@ -1,23 +1,10 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Allow } from 'class-validator';
 
-import { BookingStatus } from '../schema/booking.entity';
+import { PaginationQueryDto } from '../../../common/pagination/pagination-query.dto';
+import { BookingStatus } from '../domain/booking-state';
 
-export class ListBookingsQueryDto {
-  @ApiPropertyOptional({ default: 1, example: 1, minimum: 1, type: Number })
-  @Allow()
-  page?: unknown;
-
-  @ApiPropertyOptional({
-    default: 20,
-    example: 20,
-    maximum: 100,
-    minimum: 1,
-    type: Number,
-  })
-  @Allow()
-  limit?: unknown;
-
+export class ListBookingsQueryDto extends PaginationQueryDto {
   @ApiPropertyOptional({
     enum: BookingStatus,
     example: BookingStatus.CONFIRMED,

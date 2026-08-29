@@ -6,32 +6,19 @@ import {
   Index,
   JoinColumn,
   ManyToOne,
+  OneToOne,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
 
 import { Booking } from '../../booking/schema/booking.entity';
 import { User } from '../../user/schema/user.entity';
-
-export enum PaymentMethod {
-  CASH = 'CASH',
-  BANK_TRANSFER = 'BANK_TRANSFER',
-  VNPAY = 'VNPAY',
-}
-
-export enum PaymentStatus {
-  PENDING = 'PENDING',
-  SUCCESS = 'SUCCESS',
-  FAILED = 'FAILED',
-  REQUIRES_REVIEW = 'REQUIRES_REVIEW',
-  REFUND_PENDING = 'REFUND_PENDING',
-  REFUNDED = 'REFUNDED',
-}
-
-export enum PaymentReviewReason {
-  BOOKING_CANCELLED = 'BOOKING_CANCELLED',
-  ANOTHER_SUCCESSFUL_PAYMENT = 'ANOTHER_SUCCESSFUL_PAYMENT',
-}
+import {
+  PaymentMethod,
+  PaymentReviewReason,
+  PaymentStatus,
+} from '../domain/payment-state';
+import { PaymentRefund } from './payment-refund.entity';
 
 @Entity('payments')
 @Index('uq_payments_gateway_transaction', ['gatewayTransactionId'], {
@@ -41,17 +28,12 @@ export enum PaymentReviewReason {
   unique: true,
 })
 @Index('uq_payments_idempotency', ['idempotencyKey'], { unique: true })
-@Index('uq_payments_refund_idempotency', ['refundIdempotencyKey'], {
-  unique: true,
-})
-@Index('uq_payments_refund_request', ['refundRequestId'], { unique: true })
+@Index('uq_payments_id_booking', ['id', 'bookingId'], { unique: true })
 @Index('idx_payments_booking', ['bookingId'])
 @Index('idx_payments_status', ['status'])
 @Index('idx_payments_created_by_user', ['createdByUserId'])
-@Index('idx_payments_refunded_by_user', ['refundedByUserId'])
 @Index('idx_payments_expires_at', ['expiresAt'])
 @Index('idx_payments_status_paid_at', ['status', 'paidAt'])
-@Index('idx_payments_status_refunded_at', ['status', 'refundedAt'])
 @Index('idx_payments_created_at_status', ['createdAt', 'status'])
 @Check('chk_payments_amount', 'amount > 0')
 @Check('chk_payments_currency', "currency = 'VND'")
@@ -164,69 +146,8 @@ export class Payment {
   })
   idempotencyKey: string | null;
 
-  @Column({
-    name: 'refund_idempotency_key',
-    type: 'varchar',
-    length: 100,
-    nullable: true,
-  })
-  refundIdempotencyKey: string | null;
-
-  @Column({
-    name: 'refund_request_id',
-    type: 'varchar',
-    length: 32,
-    nullable: true,
-  })
-  refundRequestId: string | null;
-
-  @Column({
-    name: 'refund_previous_status',
-    type: 'varchar',
-    length: 30,
-    nullable: true,
-  })
-  refundPreviousStatus: PaymentStatus | null;
-
-  @Column({
-    name: 'refund_gateway_transaction_id',
-    type: 'varchar',
-    length: 160,
-    nullable: true,
-  })
-  refundGatewayTransactionId: string | null;
-
-  @Column({
-    name: 'refund_response_code',
-    type: 'varchar',
-    length: 10,
-    nullable: true,
-  })
-  refundResponseCode: string | null;
-
-  @Column({
-    name: 'refund_transaction_status',
-    type: 'varchar',
-    length: 10,
-    nullable: true,
-  })
-  refundTransactionStatus: string | null;
-
-  @Column({
-    name: 'refund_message',
-    type: 'varchar',
-    length: 255,
-    nullable: true,
-  })
-  refundMessage: string | null;
-
-  @Column({
-    name: 'refund_reason',
-    type: 'varchar',
-    length: 500,
-    nullable: true,
-  })
-  refundReason: string | null;
+  @OneToOne(() => PaymentRefund, (refund) => refund.payment)
+  refund: PaymentRefund | null;
 
   @Column({ name: 'created_by_user_id', type: 'bigint', nullable: true })
   createdByUserId: string | null;
@@ -238,16 +159,6 @@ export class Payment {
   })
   createdByUser: User | null;
 
-  @Column({ name: 'refunded_by_user_id', type: 'bigint', nullable: true })
-  refundedByUserId: string | null;
-
-  @ManyToOne(() => User, { nullable: true })
-  @JoinColumn({
-    name: 'refunded_by_user_id',
-    foreignKeyConstraintName: 'fk_payments_refunded_by_user',
-  })
-  refundedByUser: User | null;
-
   @Column({
     name: 'paid_at',
     type: 'datetime',
@@ -255,30 +166,6 @@ export class Payment {
     nullable: true,
   })
   paidAt: Date | null;
-
-  @Column({
-    name: 'refunded_at',
-    type: 'datetime',
-    precision: 6,
-    nullable: true,
-  })
-  refundedAt: Date | null;
-
-  @Column({
-    name: 'refund_requested_at',
-    type: 'datetime',
-    precision: 6,
-    nullable: true,
-  })
-  refundRequestedAt: Date | null;
-
-  @Column({
-    name: 'refund_last_queried_at',
-    type: 'datetime',
-    precision: 6,
-    nullable: true,
-  })
-  refundLastQueriedAt: Date | null;
 
   @Column({
     name: 'expires_at',

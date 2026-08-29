@@ -1,6 +1,6 @@
 import { createParamDecorator, ExecutionContext } from '@nestjs/common';
 
-import type { AppRequest } from './auth.types';
+import type { AppRequest } from './request.types';
 
 export interface RequestContext {
   requestId: string | undefined;

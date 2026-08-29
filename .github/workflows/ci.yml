@@ -40,7 +40,6 @@ jobs:
       DB_POOL_SIZE: 10
       DB_POOL_QUEUE_LIMIT: 50
       DB_CONNECT_TIMEOUT_MS: 5000
-      HEALTH_DB_PROBE_TIMEOUT_MS: 1000
       JWT_ACCESS_TOKEN_SECRET: ci-only-secret-at-least-32-characters-long
       JWT_ACCESS_TOKEN_EXPIRES_IN: 1h
       BOOKING_PAYMENT_TIMEOUT_MINUTES: 15
@@ -76,6 +75,8 @@ jobs:
       - run: npm run lint
       - run: npm run build
       - run: npm run migration:run
+      - name: Smoke-test production artifact
+        run: npm run smoke:prod
       - run: npm run schema:check
       - run: npm run data:audit
       - run: npm test -- --runInBand

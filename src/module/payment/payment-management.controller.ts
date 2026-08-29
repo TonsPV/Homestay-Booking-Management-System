@@ -10,17 +10,13 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { ApiHeader } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiHeader } from '@nestjs/swagger';
 
 import {
   ApiResponse,
   type ApiResponsePayload,
-  type AccessTokenPayload,
-  CurrentAuth,
   ReqContext,
   type RequestContext,
-  Roles,
-  RolesGuard,
 } from '../../common/http';
 import {
   ApiCommonAuthErrors,
@@ -30,6 +26,10 @@ import {
   ApiOkEnvelope,
 } from '../../openapi/api-response.decorators';
 import { AccessTokenGuard } from '../auth/access-token.guard';
+import type { AccessTokenPayload } from '../auth/auth.types';
+import { CurrentAuth } from '../auth/decorators/current-auth.decorator';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { RolesGuard } from '../auth/guards/roles.guard';
 import { CreateManualPaymentDto } from './dto/create-manual-payment.dto';
 import { ListPaymentsQueryDto } from './dto/list-payments-query.dto';
 import { RefundPaymentDto } from './dto/refund-payment.dto';
@@ -38,12 +38,13 @@ import {
   PaymentManagementMetaDto,
 } from './dto/payment-response.dto';
 import { PaymentService, type PaymentResponse } from './payment.service';
-import { PaymentStatus } from './schema/payment.entity';
-import { PaymentMethod } from './schema/payment.entity';
+import { PaymentStatus } from './domain/payment-state';
+import { PaymentMethod } from './domain/payment-state';
 
 @Controller('v1/management')
 @UseGuards(AccessTokenGuard, RolesGuard)
 @Roles('ADMIN', 'STAFF')
+@ApiBearerAuth()
 @ApiCommonAuthErrors()
 export class PaymentManagementController {
   constructor(private readonly paymentService: PaymentService) {}

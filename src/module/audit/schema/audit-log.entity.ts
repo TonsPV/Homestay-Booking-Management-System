@@ -6,31 +6,11 @@ import {
   PrimaryGeneratedColumn,
 } from 'typeorm';
 
-export enum AuditActorType {
-  CUSTOMER = 'CUSTOMER',
-  USER = 'USER',
-  SYSTEM = 'SYSTEM',
-}
-
-export enum AuditAction {
-  BOOKING_CREATED = 'BOOKING_CREATED',
-  BOOKING_STATUS_CHANGED = 'BOOKING_STATUS_CHANGED',
-  BOOKING_CANCELLED = 'BOOKING_CANCELLED',
-  ROOM_STATUS_CHANGED = 'ROOM_STATUS_CHANGED',
-  PAYMENT_CONFIRMED = 'PAYMENT_CONFIRMED',
-  REFUND_REQUESTED = 'REFUND_REQUESTED',
-  REFUND_COMPLETED = 'REFUND_COMPLETED',
-  ACCOUNT_LOCKED = 'ACCOUNT_LOCKED',
-  ACCOUNT_UNLOCKED = 'ACCOUNT_UNLOCKED',
-}
-
-export enum AuditEntityType {
-  BOOKING = 'BOOKING',
-  ROOM = 'ROOM',
-  PAYMENT = 'PAYMENT',
-  CUSTOMER = 'CUSTOMER',
-  USER = 'USER',
-}
+import {
+  AuditAction,
+  AuditActorType,
+  AuditEntityType,
+} from '../domain/audit-log';
 
 export type AuditMetadata = Record<string, boolean | number | string | null>;
 

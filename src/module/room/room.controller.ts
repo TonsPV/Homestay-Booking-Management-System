@@ -13,18 +13,14 @@ import {
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
-import { ApiBody, ApiConsumes } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiBody, ApiConsumes } from '@nestjs/swagger';
 import { FileInterceptor } from '@nestjs/platform-express';
 
 import {
   ApiResponse,
   type ApiResponsePayload,
-  CurrentAuth,
   ReqContext,
   type RequestContext,
-  Roles,
-  RolesGuard,
-  type AccessTokenPayload,
 } from '../../common/http';
 import {
   ApiCommonAuthErrors,
@@ -34,7 +30,11 @@ import {
 } from '../../openapi/api-response.decorators';
 import { ROOM_IMAGE_MAX_FILE_SIZE } from '../../config/room-image-storage';
 import { AccessTokenGuard } from '../auth/access-token.guard';
-import { AuditActorType } from '../audit/schema/audit-log.entity';
+import type { AccessTokenPayload } from '../auth/auth.types';
+import { CurrentAuth } from '../auth/decorators/current-auth.decorator';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { AuditActorType } from '../audit/domain/audit-log';
 import { CreateRoomImageDto } from './dto/create-room-image.dto';
 import { CreateRoomDto } from './dto/create-room.dto';
 import { ListRoomsQueryDto } from './dto/list-rooms-query.dto';
@@ -102,6 +102,7 @@ export class RoomController {
 
   @Post()
   @UseGuards(AccessTokenGuard, RolesGuard)
+  @ApiBearerAuth()
   @Roles('ADMIN')
   @HttpCode(HttpStatus.CREATED)
   @ApiCreatedEnvelope(RoomDto)
@@ -117,6 +118,7 @@ export class RoomController {
 
   @Patch(':id')
   @UseGuards(AccessTokenGuard, RolesGuard)
+  @ApiBearerAuth()
   @Roles('ADMIN')
   @ApiOkEnvelope(RoomDto)
   @ApiCommonAuthErrors()
@@ -132,6 +134,7 @@ export class RoomController {
 
   @Delete(':id')
   @UseGuards(AccessTokenGuard, RolesGuard)
+  @ApiBearerAuth()
   @Roles('ADMIN')
   @HttpCode(HttpStatus.OK)
   @ApiOkEnvelope(RoomDto)
@@ -144,6 +147,7 @@ export class RoomController {
 
   @Patch(':id/status')
   @UseGuards(AccessTokenGuard, RolesGuard)
+  @ApiBearerAuth()
   @Roles('ADMIN', 'STAFF')
   @ApiOkEnvelope(RoomDto)
   @ApiCommonAuthErrors()
@@ -189,6 +193,7 @@ export class RoomController {
     },
   })
   @UseGuards(AccessTokenGuard, RolesGuard)
+  @ApiBearerAuth()
   @Roles('ADMIN')
   @UseInterceptors(
     FileInterceptor('file', {

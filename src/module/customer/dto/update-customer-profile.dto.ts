@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { Allow } from 'class-validator';
+import { IsOptional, IsString } from 'class-validator';
 
 export class UpdateCustomerProfileDto {
   @ApiPropertyOptional({
@@ -7,8 +7,9 @@ export class UpdateCustomerProfileDto {
     maxLength: 120,
     type: String,
   })
-  @Allow()
-  fullName?: unknown;
+  @IsOptional()
+  @IsString()
+  fullName?: string;
 
   @ApiPropertyOptional({
     example: 'tan@example.com',
@@ -16,10 +17,12 @@ export class UpdateCustomerProfileDto {
     nullable: true,
     type: String,
   })
-  @Allow()
-  email?: unknown;
+  @IsOptional()
+  @IsString()
+  email?: string | null;
 
   @ApiPropertyOptional({ example: '0705840355', type: String })
-  @Allow()
-  phone?: unknown;
+  @IsOptional()
+  @IsString()
+  phone?: string | null;
 }

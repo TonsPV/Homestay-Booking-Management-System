@@ -1,5 +1,5 @@
 import { ApiHideProperty, ApiProperty } from '@nestjs/swagger';
-import { Allow } from 'class-validator';
+import { IsOptional, IsString } from 'class-validator';
 
 export class LoginDto {
   @ApiProperty({
@@ -7,26 +7,30 @@ export class LoginDto {
     example: 'tan@example.com',
     type: String,
   })
-  @Allow()
-  identifier?: unknown;
+  @IsOptional()
+  @IsString()
+  identifier?: string;
 
   @ApiHideProperty()
-  @Allow()
-  emailOrPhone?: unknown;
+  @IsOptional()
+  @IsString()
+  emailOrPhone?: string;
 
   @ApiHideProperty()
-  @Allow()
-  email?: unknown;
+  @IsOptional()
+  @IsString()
+  email?: string;
 
   @ApiHideProperty()
-  @Allow()
-  phone?: unknown;
+  @IsOptional()
+  @IsString()
+  phone?: string;
 
   @ApiProperty({
     example: 'StrongPassword123!',
     type: String,
     writeOnly: true,
   })
-  @Allow()
-  password?: unknown;
+  @IsString()
+  password?: string;
 }

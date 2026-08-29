@@ -256,6 +256,31 @@ export function optionalDecimalAmount(
   return requireDecimalAmount(value, message);
 }
 
+/** Normalize a persisted money amount and reject the legacy zero value. */
+export function requirePositiveDecimalAmount(
+  value: unknown,
+  message: string,
+): string {
+  const amount = requireDecimalAmount(value, message);
+
+  if (amount === '0.00') {
+    throw new BadRequestException(message);
+  }
+
+  return amount;
+}
+
+export function optionalPositiveDecimalAmount(
+  value: unknown,
+  message: string,
+): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  return requirePositiveDecimalAmount(value, message);
+}
+
 export function parseBoolean(
   value: unknown,
   defaultValue: boolean,

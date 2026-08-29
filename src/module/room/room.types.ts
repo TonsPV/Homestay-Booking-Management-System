@@ -1,6 +1,6 @@
-import type { PaginationMeta } from '../../common/http';
-import type { RoomCalendarStatus } from '../booking/schema/room-calendar.entity';
-import type { RoomStatus } from './schema/room.entity';
+import type { PaginationMeta } from '../../common/pagination/pagination.types';
+import type { RoomCalendarStatus } from '../booking/domain/room-calendar-status';
+import type { RoomStatus } from './domain/room-status';
 import type { BedConfiguration } from '../room-type/bed-configuration';
 
 export enum RoomTodayAvailabilityStatus {

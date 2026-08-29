@@ -10,7 +10,6 @@ import { AuditModule } from './module/audit/audit.module';
 import { AmenityModule } from './module/amenity/amenity.module';
 import { BookingModule } from './module/booking/booking.module';
 import { CustomerModule } from './module/customer/customer.module';
-import { DashboardModule } from './module/dashboard/dashboard.module';
 import { PaymentModule } from './module/payment/payment.module';
 import { RoomModule } from './module/room/room.module';
 import { RoomTypeModule } from './module/room-type/room-type.module';
@@ -54,8 +53,11 @@ import { UserModule } from './module/user/user.module';
 
         autoLoadEntities: true,
 
-        // Không để TypeORM tự ý sửa cấu trúc database.
+        // Không dùng synchronize; schema được quản lý bằng migration.
         synchronize: false,
+        migrations: [__dirname + '/database/migrations/*{.js,.ts}'],
+        migrationsTableName: 'typeorm_migrations',
+        migrationsRun: true,
       }),
     }),
     AuthModule,
@@ -63,7 +65,6 @@ import { UserModule } from './module/user/user.module';
     AmenityModule,
     BookingModule,
     CustomerModule,
-    DashboardModule,
     PaymentModule,
     RoomModule,
     RoomTypeModule,

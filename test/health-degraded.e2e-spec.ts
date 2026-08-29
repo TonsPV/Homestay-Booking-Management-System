@@ -7,7 +7,7 @@ import type { App } from 'supertest/types';
 
 import { HealthModule } from '../src/common/health/health.module';
 import { HEALTH_DATABASE_POOL } from '../src/common/health/health-database-probe.service';
-import { configureApp } from '../src/common/http';
+import { configureApp } from '../src/bootstrap/configure-app';
 import { validateEnvironment } from '../src/config/environment';
 
 interface ApiErrorBody {

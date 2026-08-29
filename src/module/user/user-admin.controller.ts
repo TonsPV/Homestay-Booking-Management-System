@@ -10,18 +10,15 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
+import { ApiBearerAuth } from '@nestjs/swagger';
 
 import {
   ApiResponse,
   ApiResponsePayload,
-  CurrentAuth,
   ReqContext,
   type RequestContext,
-  Roles,
-  RolesGuard,
-  UpdateAccountStatusDto,
-  type AccessTokenPayload,
 } from '../../common/http';
+import { UpdateAccountStatusDto } from '../../common/account/update-account-status.dto';
 import {
   ApiCommonAuthErrors,
   ApiCommonMutationErrors,
@@ -29,8 +26,12 @@ import {
   ApiOkEnvelope,
 } from '../../openapi/api-response.decorators';
 import { AccessTokenGuard } from '../auth/access-token.guard';
+import type { AccessTokenPayload } from '../auth/auth.types';
+import { CurrentAuth } from '../auth/decorators/current-auth.decorator';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { RolesGuard } from '../auth/guards/roles.guard';
 import { AuthUserDto } from '../auth/dto/auth-response.dto';
-import { AuditActorType } from '../audit/schema/audit-log.entity';
+import { AuditActorType } from '../audit/domain/audit-log';
 import { CreateUserDto } from './dto/create-user.dto';
 import { ListUsersQueryDto } from './dto/list-users-query.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -40,6 +41,7 @@ import type { AdminUserResponse } from './user-admin.service';
 @Controller('v1/users')
 @UseGuards(AccessTokenGuard, RolesGuard)
 @Roles('ADMIN')
+@ApiBearerAuth()
 @ApiCommonAuthErrors()
 export class UserAdminController {
   constructor(private readonly userAdminService: UserAdminService) {}

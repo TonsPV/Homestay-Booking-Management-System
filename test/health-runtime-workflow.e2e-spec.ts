@@ -4,7 +4,7 @@ import request from 'supertest';
 import type { App } from 'supertest/types';
 
 import { AppModule } from '../src/app.module';
-import { configureApp } from '../src/common/http';
+import { configureApp } from '../src/bootstrap/configure-app';
 import migrationDataSource from '../src/database/data-source';
 import { HealthDatabaseProbeService } from '../src/common/health/health-database-probe.service';
 import { E2eHarness } from './e2e-harness';

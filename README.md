@@ -1,493 +1,333 @@
 # Homestay Booking Management System API
 
-NestJS API for customer authentication, staff administration, customer
-profiles, room types, rooms, and room images.
+Backend API for a homestay operation: customer accounts, staff administration,
+room inventory and availability, bookings, manual payments, VNPay payments,
+refunds, and audit records. The application is a NestJS modular monolith backed
+by MySQL and is delivered as a single backend application.
 
-## Requirements
+## Overview
 
-- Node.js 22+
-- MySQL 8.4
-- npm
-
-## Environment
-
-Create `.env` from `.env.example` and provide the database credentials.
-`JWT_ACCESS_TOKEN_SECRET` is required and must contain at least 32 characters.
-The application intentionally refuses to start when this value is missing or
-too short.
-
-```env
-NODE_ENV=development
-APP_PORT=3000
-CORS_ORIGINS=http://localhost:5173
-SWAGGER_ENABLED=false
-HTTP_JSON_BODY_LIMIT=1mb
-HTTP_URLENCODED_BODY_LIMIT=1mb
-DB_HOST=127.0.0.1
-DB_PORT=3306
-DB_USERNAME=property_user
-DB_PASSWORD=your_database_password
-DB_DATABASE=property_management
-JWT_ACCESS_TOKEN_SECRET=replace_with_a_long_random_secret
-JWT_ACCESS_TOKEN_EXPIRES_IN=1h
-BOOKING_PAYMENT_TIMEOUT_MINUTES=15
-VNPAY_ENABLED=false
-VNPAY_TMN_CODE=
-VNPAY_HASH_SECRET=
-VNPAY_PAYMENT_URL=https://sandbox.vnpayment.vn/paymentv2/vpcpay.html
-VNPAY_RETURN_URL=http://localhost:3000/api/v1/payments/vnpay/return
-VNPAY_FRONTEND_RETURN_URL=
-```
-
-Set `VNPAY_ENABLED=true` only after receiving a Sandbox terminal code and hash
-secret. The VNPay IPN URL registered for the terminal is:
+The main business relationships are:
 
 ```text
-https://<public-api-origin>/api/v1/payments/vnpay/ipn
+Customer/staff client
+    +--> Booking ----> Room calendar
+    +--> Payment ----> VNPay (online payment/refund/query)
+                   |
+                   +--> Booking payment lifecycle
 ```
 
-`CORS_ORIGINS` accepts a comma-separated list of exact frontend origins.
-Production startup requires a non-empty allowlist. When VNPay is enabled in
-production, `VNPAY_RETURN_URL` must also be a public HTTPS URL.
-`VNPAY_FRONTEND_RETURN_URL` is optional. When configured, the verified backend
-Return endpoint responds with a redirect to that frontend result page.
-Swagger UI and its JSON endpoint are controlled by `SWAGGER_ENABLED`; production
-defaults to disabled. JSON and URL-encoded request bodies are bounded by the
-two `HTTP_*_BODY_LIMIT` settings.
+Booking, Payment, and Room own the important consistency rules. Critical
+mutations use TypeORM transactions and database pessimistic locks. Retryable
+booking/payment/VNPay-refund commands use idempotency data so a retry can be
+replayed or rejected as a conflict.
 
-## Install And Run
+For the detailed module map and lock boundaries, see
+[`docs/architecture.md`](docs/architecture.md). For payment behavior, see
+[`docs/payment-flows.md`](docs/payment-flows.md). The Payment/Refund data-model
+decision is recorded in
+[`docs/decisions/payment-refund-model-decision.md`](docs/decisions/payment-refund-model-decision.md).
+
+## Tech Stack
+
+- Node.js 22.x and TypeScript
+- NestJS 11
+- TypeORM with MySQL 8.4
+- `class-validator` / `class-transformer`
+- Swagger/OpenAPI
+- Jest, ts-jest, and Supertest
+- VNPay SDK (`vnpay`)
+- Sharp for room-image processing
+- Helmet and `@nestjs/schedule`
+
+## Architecture
+
+This is a modular monolith organized by business module. Controllers handle
+HTTP concerns, facade/capability services coordinate use cases, policies hold
+small business decisions, and TypeORM-backed stores perform persistence inside
+the caller's transaction.
+
+```text
+HTTP request
+    |
+    v
+Guards + DTO validation + controllers
+    |
+    v
+Facade/capability services
+    |
+    +--> business policies / lifecycle coordination
+    |
+    +--> TypeORM transaction runner + persistence stores --> MySQL
+    |
+    +--> VnPayGatewayService -----------------------------> VNPay
+    +--> RoomImageStorageService --------------------------> local filesystem
+```
+
+Some core workflows use small domain policies and persistence boundaries to
+make transaction/locking rules explicit, but the project intentionally keeps a
+simple modular-monolith structure without introducing a separate architecture
+framework.
+
+See [`docs/architecture.md`](docs/architecture.md) for ownership and runtime
+details.
+
+## Main Modules
+
+| Module | Responsibility |
+|---|---|
+| Auth | Customer/user login, access tokens, actor and role guards |
+| Customer | Customer profile, password, and customer administration |
+| User | ADMIN-managed staff accounts |
+| Amenity | Public catalog and ADMIN CRUD/restore |
+| RoomType | Room types, beds, amenities, and ADMIN management |
+| Room | Inventory, status, availability, calendar blocks, images, search |
+| Booking | Creation, queries, cancellation, status lifecycle, expiry |
+| Payment | Manual payment, VNPay collection, callbacks, refund, reconciliation |
+| Audit | Transactional business audit records |
+| Common/Health | HTTP envelope, validation, request context, liveness/readiness |
+
+Public and management routes are separated where visibility or actor permissions
+differ. The full contract is in [`openapi/openapi.json`](openapi/openapi.json).
+
+## Core Business Flows
+
+- **Booking:** validate dates, capacity, customer/contact data, and room
+  availability; create the booking, reserve each stay night, and write the
+  audit record in one transaction.
+- **Manual payment:** a STAFF/ADMIN records `CASH` or `BANK_TRANSFER`; the
+  server uses the booking total, locks the booking, creates a successful payment,
+  and lets the lifecycle coordinator mark the booking paid/confirmed.
+- **VNPay:** the customer creates a pending payment and receives a signed URL.
+  VNPay IPN is the server-to-server mutation path. Return is read-only
+  presentation; it does not confirm a payment.
+- **Refund:** manual refunds complete locally. VNPay refunds use a pending
+  state before the external call and only become `REFUNDED` after a verified
+  full-refund result. Unknown results remain available for reconciliation.
+
+Detailed diagrams and status handling are in
+[`docs/payment-flows.md`](docs/payment-flows.md).
+
+## Transaction, Locking, and Idempotency
+
+- TypeORM transactions are used for booking creation/cancellation/expiry,
+  calendar reservation/blocking, payment acceptance, and refund state changes.
+- Critical workflows use `pessimistic_write` (`FOR UPDATE` at the database
+  level) for records such as Booking, Payment, Room, or a canonical payment.
+- Booking creation stores an optional actor-scoped request intent. Manual
+  payment, VNPay creation, and VNPay refund commands require an
+  `Idempotency-Key` where applicable.
+- A matching operation/key is replayed or reconciled; reuse for another
+  booking/payment or an incompatible operation is rejected.
+- Cross-entity state changes are owned by
+  `BookingPaymentLifecycleService`, which keeps Booking, Payment, Room Calendar,
+  and audit updates together in the application workflow.
+
+The exact lock order and transaction boundaries are documented in
+[`docs/architecture.md`](docs/architecture.md).
+
+## Project Structure
+
+```text
+src/
+├── bootstrap/          # global HTTP setup
+├── common/             # HTTP, validation, health, transaction support
+├── config/             # environment and image-storage configuration
+├── database/           # datasource, migrations, scripts, seed
+├── openapi/            # Swagger setup and contract checks
+└── module/
+    ├── auth/
+    ├── customer/
+    ├── user/
+    ├── amenity/
+    ├── room-type/
+    ├── room/
+    ├── booking/
+    ├── payment/
+    └── audit/
+
+scripts/                # schema, data, OpenAPI, and smoke checks
+test/
+├── unit/               # unit/service/policy/config/contract tests
+└── <feature>/          # MySQL-backed HTTP workflow tests
+```
+
+## Getting Started
+
+### Requirements
+
+- Node.js 22.x
+- npm
+- MySQL 8.4, or Docker Desktop/Engine for the repository's MySQL Compose
+  service
+
+### Environment Variables
+
+The application reads `.env`, except when `NODE_ENV=test`, when it reads
+`.env.test`. Start from the example files and replace all credential/secret
+placeholders; do not commit `.env` files.
+
+```bash
+cp .env.example .env
+```
+
+PowerShell:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+Edit `.env` before starting MySQL or the API. VNPay is disabled by default in
+the development example; enable it and provide sandbox credentials when you
+need to exercise the online-payment flow.
+
+| Area | Variables |
+|---|---|
+| Runtime | `NODE_ENV`, `APP_PORT`, `CORS_ORIGINS`, `SWAGGER_ENABLED`, `HTTP_JSON_BODY_LIMIT`, `HTTP_URLENCODED_BODY_LIMIT` |
+| Database | `DB_HOST`, `DB_PORT`, `DB_USERNAME`, `DB_PASSWORD`, `DB_DATABASE`, `DB_POOL_SIZE`, `DB_POOL_QUEUE_LIMIT`, `DB_CONNECT_TIMEOUT_MS`, `HEALTH_DB_PROBE_TIMEOUT_MS` |
+| Auth | `JWT_ACCESS_TOKEN_SECRET`, `JWT_ACCESS_TOKEN_EXPIRES_IN` |
+| Booking/expiry | `BOOKING_PAYMENT_TIMEOUT_MINUTES`, `BOOKING_MAX_ACTIVE_UNPAID_PER_CUSTOMER`, `BOOKING_MAX_HELD_NIGHTS_PER_CUSTOMER`, `BOOKING_MAX_ADVANCE_DAYS`, `EXPIRATION_SCHEDULERS_ENABLED` |
+| Images | `ROOM_IMAGE_UPLOAD_DIR` |
+| VNPay | `VNPAY_ENABLED`, `VNPAY_TMN_CODE`, `VNPAY_HASH_SECRET`, `VNPAY_PAYMENT_URL`, `VNPAY_RETURN_URL`, `VNPAY_FRONTEND_RETURN_URL`, `VNPAY_REQUEST_TIMEOUT_MS` |
+| Admin seed | `SEED_ADMIN_FULL_NAME`, `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PHONE`, `SEED_ADMIN_PASSWORD` |
+| Compose only | `MYSQL_ROOT_PASSWORD` |
+
+`JWT_ACCESS_TOKEN_SECRET` must be at least 32 characters and must not be one of
+the example values. When VNPay is enabled, the terminal code must be exactly
+8 alphanumeric characters and the hash secret must be at least 16 characters.
+Production requires a non-empty exact CORS allowlist. With VNPay enabled in
+production, `VNPAY_RETURN_URL` must be public HTTPS; a configured
+`VNPAY_FRONTEND_RETURN_URL` must also be public HTTPS.
+
+### Install, Database, and Run
 
 ```bash
 npm install
-npm run migration:run
+
+# Optional: use the repository's MySQL-only Compose topology.
+docker compose up -d mysql
+
 npm run start:dev
 ```
 
-The API is available at `http://localhost:3000/api`.
+The API listens on `http://localhost:3000/api` by default. If an existing MySQL
+instance is used, configure the `DB_*` variables and skip the Compose command.
+When the API starts, TypeORM automatically runs pending migrations against the
+configured database.
+
+To create a local ADMIN account, set the `SEED_ADMIN_*` variables and run:
+
+```bash
+npm run seed:admin
+```
+
+`compose.yaml` provisions MySQL only; this repository does not provide an API
+container or a production orchestration manifest.
 
 ## Database Migrations
 
-The first migration is an idempotent baseline for the eight tables that
-existed before migrations were introduced. It uses `CREATE TABLE IF NOT EXISTS`,
-so it can be recorded safely on the existing development database and can also
-initialize an empty database.
+TypeORM `synchronize` is disabled. Schema changes remain explicit migrations in
+`src/database/migrations`; the runtime applies pending migrations automatically
+when the API starts. The CLI commands are still available for checking or
+applying migrations before startup.
 
 ```bash
 npm run migration:show
 npm run migration:run
+npm run schema:check
+npm run data:audit
 ```
 
-The baseline migration cannot be reverted automatically because doing so on a
-pre-existing database could delete production data. Restore a database backup
-instead.
+`npm run migration:revert` exists, but do not use it casually against a shared
+or pre-existing database. The baseline migration is intentionally not a safe
+automatic data-destructive rollback.
 
-## E2E Database
-
-Create `.env.test` from `.env.test.example` and point it to a dedicated MySQL
-database whose name ends with `_test`. The E2E setup loads only `.env.test` and
-stops before migrations or test data changes when `NODE_ENV` is not `test`, the
-database name is empty, or the name does not end with `_test`.
+## Testing
 
 ```bash
-npm run test:e2e
-```
-
-## Main Endpoints
-
-### Authentication
-
-- `POST /api/v1/auth/customers/register`
-- `POST /api/v1/auth/customers/login`
-- `POST /api/v1/auth/users/login`
-- `GET /api/v1/auth/me`
-
-Registration is limited to five requests per IP every 15 minutes. Login is
-limited to ten requests per IP every 15 minutes.
-
-### Customer And User Administration
-
-- `GET /api/v1/customers/me`
-- `PATCH /api/v1/customers/me`
-- `PATCH /api/v1/customers/me/password`
-- `PATCH /api/v1/management/customers/:id/initial-password`
-- `POST /api/v1/users`
-- `GET /api/v1/users`
-- `PATCH /api/v1/users/:id`
-- `PATCH /api/v1/users/:id/status`
-- `GET /api/v1/customers`
-- `PATCH /api/v1/customers/:id/status`
-
-The account-issuing endpoint creates `STAFF` accounts only. An admin cannot
-lock or demote their own account. Account status endpoints accept:
-
-```json
-{
-  "status": "LOCKED"
-}
-```
-
-Resetting a user password increments the user's token version. Access tokens
-issued before that change are rejected, and the user must log in again.
-
-Changing a Customer password has the same token-revocation behavior:
-
-```json
-{
-  "currentPassword": "CurrentPassword123!",
-  "newPassword": "NewPassword456!"
-}
-```
-
-`ADMIN` or `STAFF` can set an initial password for a Customer created at the
-counter by sending `{ "password": "TemporaryPassword123!" }` to the management
-endpoint. This operation is accepted only while `passwordHash` is null; later
-calls return `409`. There is no public account-claim or fake email/OTP flow.
-
-Customer and user phone numbers are normalized to Vietnamese E.164 format,
-such as `+84705840355`, before uniqueness checks and storage. Login accepts the
-equivalent `0`, `84`, or `+84` form. Existing noncanonical phone data should be
-audited and cleaned in a controlled maintenance task; migrations do not rewrite
-production phone values automatically.
-
-```bash
-npm run phone:normalize:check
-npm run phone:normalize:run
-```
-
-The first command is a read-only preflight. The apply command rechecks invalid
-values and canonical collisions while holding database locks, then updates all
-eligible records in one transaction. Production apply additionally requires the
-explicit `--allow-production` flag.
-
-### Room Types
-
-Public:
-
-- `GET /api/v1/room-types`
-- `GET /api/v1/room-types/:id`
-
-Admin:
-
-- `POST /api/v1/admin/room-types`
-- `GET /api/v1/admin/room-types`
-- `GET /api/v1/admin/room-types/:id`
-- `PATCH /api/v1/admin/room-types/:id`
-- `DELETE /api/v1/admin/room-types/:id`
-- `PATCH /api/v1/admin/room-types/:id/restore`
-- `PUT /api/v1/admin/room-types/:id/amenities`
-
-Room type list endpoints accept `page`, `limit`, and `search`. The admin list
-also accepts `includeDeleted=true`.
-
-`basePrice` is returned as a decimal string such as `"1250000.00"` to preserve
-money precision. Deleting a room type is a soft delete and is rejected while an
-active room still references that type.
-
-The RoomType admin namespace is intentionally retained because its list and
-detail responses can include soft-deleted records and support restoration,
-which is a different management view from the public resource.
-
-### Amenities
-
-Public:
-
-- `GET /api/v1/amenities`
-- `GET /api/v1/amenities/:id`
-
-Admin:
-
-- `POST /api/v1/admin/amenities`
-- `GET /api/v1/admin/amenities`
-- `GET /api/v1/admin/amenities/:id`
-- `PATCH /api/v1/admin/amenities/:id`
-- `DELETE /api/v1/admin/amenities/:id`
-- `PATCH /api/v1/admin/amenities/:id/restore`
-
-Amenities are a shared catalog assigned to RoomType records. `PUT
-/api/v1/admin/room-types/:id/amenities` replaces the complete assignment and
-accepts `{ "amenityIds": ["1", "2"] }`; sending an empty array removes every
-assignment. Deleted amenities are excluded from public Amenity, RoomType, and
-Room responses.
-
-### Rooms
-
-Public:
-
-- `GET /api/v1/rooms`
-- `GET /api/v1/rooms/:id`
-- `GET /api/v1/rooms/search`
-
-Management (`ADMIN` or `STAFF`):
-
-- `GET /api/v1/management/rooms`
-- `GET /api/v1/management/rooms/:id`
-- `GET /api/v1/management/rooms/:roomId/calendar`
-- `POST /api/v1/management/rooms/:roomId/blocks`
-- `DELETE /api/v1/management/rooms/:roomId/blocks`
-
-Admin and staff operations:
-
-- `POST /api/v1/rooms`
-- `PATCH /api/v1/rooms/:id`
-- `DELETE /api/v1/rooms/:id`
-- `PATCH /api/v1/rooms/:id/status`
-- `POST /api/v1/rooms/:roomId/images`
-- `DELETE /api/v1/room-images/:imageId`
-- `PATCH /api/v1/room-images/:imageId/set-cover`
-
-Room URLs describe resources rather than actors. Public reads exclude
-`HIDDEN` and `MAINTENANCE` rooms. Management reads include every active room
-status and support filtering by `status`. Room status updates accept `STAFF`
-and `ADMIN`, while all other write operations require `ADMIN`.
-
-Create a room with:
-
-```json
-{
-  "roomTypeId": "5",
-  "roomNumber": "A101",
-  "name": "Phong A101",
-  "description": "Phong gan san vuon"
-}
-```
-
-Room images are uploaded as `multipart/form-data`. The `file` field is
-required; `sortOrder` and `isCover` are optional text fields:
-
-```text
-file=<JPEG, PNG, or WebP binary>
-sortOrder=0
-isCover=true
-```
-
-The upload must not exceed 8 MiB. The API validates the decoded image,
-limits it to 25 megapixels, resizes it to at most 2560x2560, stores it as
-WebP, and returns a relative `imageUrl` under `/media/room-images/...`.
-Configure `ROOM_IMAGE_UPLOAD_DIR` as a dedicated directory; runtime files are
-ignored by Git.
-
-Search requires `checkIn`, `checkOut`, and `guests`, for example:
-`GET /api/v1/rooms/search?checkIn=2026-08-01&checkOut=2026-08-03&guests=2`.
-Optional filters are `roomTypeId`, repeated `amenityIds`, `minPrice`,
-`maxPrice`, `page`, and `limit`. Multiple amenity IDs use AND semantics: the
-RoomType must contain every selected active amenity.
-
-Room status is one of `READY`, `OCCUPIED`, `CLEANING`, `MAINTENANCE`, or
-`HIDDEN`. Staff can update operational statuses but only admins can set
-`HIDDEN` or reopen a room that is already `HIDDEN`. Room deletion is permanent
-when there is no booking/calendar history; otherwise the API returns `409` and
-the room should be set to `HIDDEN`.
-
-Management calendar ranges use the same half-open `[from, to)` convention as
-bookings. Admin and staff can block a room for operational reasons:
-
-```http
-POST /api/v1/management/rooms/21/blocks
-Content-Type: application/json
-
-{
-  "from": "2030-08-01",
-  "to": "2030-08-04",
-  "reason": "Bao tri may lanh"
-}
-```
-
-Use
-`GET /api/v1/management/rooms/21/calendar?from=2030-08-01&to=2030-09-01`
-to read blocked and reserved nights. Reserved entries expose only the booking
-ID and booking code. Use the same `from` and `to` query parameters with
-`DELETE /api/v1/management/rooms/21/blocks` to remove blocked nights.
-Unblocking never removes booking reservations. A conflicting booking or block
-returns `409` and rolls back the entire requested range. Calendar requests are
-limited to 366 nights.
-
-### Bookings
-
-Customer:
-
-- `POST /api/v1/bookings`
-- `GET /api/v1/bookings`
-- `GET /api/v1/bookings/:id`
-- `PATCH /api/v1/bookings/:id/cancel`
-
-Management (`ADMIN` or `STAFF`):
-
-- `POST /api/v1/management/bookings`
-- `GET /api/v1/management/bookings`
-- `GET /api/v1/management/bookings/:id`
-- `PATCH /api/v1/management/bookings/:id/status`
-
-Customer booking creation uses the authenticated customer as the owner.
-Contact fields are optional snapshots and default to the customer profile:
-
-```json
-{
-  "roomId": "5",
-  "checkInDate": "2030-08-01",
-  "checkOutDate": "2030-08-03",
-  "guestCount": 2,
-  "customerNote": "Phong tang tret neu con"
-}
-```
-
-For a counter booking, management may provide an existing `customerId`.
-Without `customerId`, `contactName` and `contactPhone` are required. The
-service finds the customer by normalized phone or creates a customer without a
-password:
-
-```json
-{
-  "roomId": "5",
-  "checkInDate": "2030-08-01",
-  "checkOutDate": "2030-08-03",
-  "guestCount": 2,
-  "contactName": "Pham Van Tan",
-  "contactPhone": "0705 840 355",
-  "contactEmail": "tan@example.com"
-}
-```
-
-Booking creation and nightly `room_calendar` reservations run in one
-transaction. The unique room/date constraint is the final double-booking
-guard. A stay is limited to 90 nights, guest count cannot exceed room type
-capacity, and `HIDDEN` or `MAINTENANCE` rooms cannot be booked. The total amount
-is calculated from the current room type base price and stored as a decimal
-snapshot.
-
-Management transitions are:
-
-- `PENDING_PAYMENT` to `CONFIRMED` or `CANCELLED`
-- `CONFIRMED` to `CHECKED_IN` or `CANCELLED`
-- `CHECKED_IN` to `CHECKED_OUT`
-
-Customer cancellation is allowed from `PENDING_PAYMENT` or `CONFIRMED`.
-Cancellation keeps the booking record and removes its calendar reservations in
-the same transaction. A paid booking must be refunded by an admin instead of
-being cancelled directly. Check-in requires `paymentStatus=PAID`.
-Only staff-created counter bookings may be confirmed while still unpaid.
-Check-in is accepted from the booking check-in date until before its check-out
-date. A successful check-in sets the Room to `OCCUPIED`; check-out sets it to
-`CLEANING` unless the Room is under a hidden or maintenance override.
-
-New bookings receive a `paymentExpiresAt` timestamp. A scheduled cleanup marks
-an expired `PENDING_PAYMENT` booking as `CANCELLED` and removes its calendar
-reservations. The timeout is configured by
-`BOOKING_PAYMENT_TIMEOUT_MINUTES`, which defaults to 15.
-
-### Payments
-
-Customer payment history:
-
-- `GET /api/v1/bookings/:bookingId/payments`
-- `POST /api/v1/bookings/:bookingId/payments`
-
-Management (`ADMIN` or `STAFF`):
-
-- `GET /api/v1/management/payments`
-- `GET /api/v1/management/bookings/:bookingId/payments`
-- `POST /api/v1/management/bookings/:bookingId/payments`
-
-Admin:
-
-- `POST /api/v1/management/payments/:id/refund`
-- `POST /api/v1/management/payments/:id/reconcile-refund`
-
-Manual payment supports `CASH` or `BANK_TRANSFER`. Management payment creation
-requires an `Idempotency-Key` header and does not accept an amount from the
-client:
-
-```http
-Idempotency-Key: counter-booking-21-cash-001
-```
-
-```json
-{
-  "method": "CASH"
-}
-```
-
-The server copies the immutable booking total into the payment. Payment and
-booking updates run in one transaction. A successful payment sets
-`paymentStatus=PAID`, clears `paymentExpiresAt`, and moves a
-`PENDING_PAYMENT` booking to `CONFIRMED`. `CONFIRMED + UNPAID` remains valid
-for reservations that will pay at the property, but they cannot check in until
-payment is recorded.
-
-Customer VNPay payment creation also requires an `Idempotency-Key`. The body is
-optional:
-
-```http
-Idempotency-Key: booking-21-vnpay-attempt-001
-```
-
-```json
-{
-  "bankCode": "VNBANK",
-  "locale": "vn"
-}
-```
-
-`bankCode` accepts `VNPAYQR`, `VNBANK`, or `INTCARD`; omit it to let the
-customer choose on VNPay. The response includes `paymentUrl` and `expiresAt`.
-The frontend must redirect the browser to `paymentUrl`.
-
-Public VNPay callbacks:
-
-- `GET /api/v1/payments/vnpay/return`
-- `GET /api/v1/payments/vnpay/ipn`
-
-IPN is the primary server-to-server update path. A correctly signed Return can
-apply the same idempotent update as a fallback when IPN has not arrived, which
-keeps local Sandbox testing usable without making the frontend a source of
-payment truth. Both paths lock the Booking and Payment rows; whichever callback
-arrives second observes an already processed payment instead of writing twice.
-After Return, the frontend must still reload booking/payment history and use the
-database status returned by the API.
-
-When `VNPAY_FRONTEND_RETURN_URL` is empty, Return responds with JSON. When it is
-configured, Return responds with `302` and includes `paymentId`, `bookingId`,
-`paymentStatus`, and verified gateway result codes in the frontend URL.
-
-Expired online attempts are marked `FAILED` with response code `EXPIRED`.
-Customer or management cancellation closes a pending VNPay attempt in the same
-transaction with response code `CANCELLED`.
-If a valid successful IPN arrives after its booking has already been cancelled,
-the payment becomes `REQUIRES_REVIEW`; the cancelled booking and released room
-calendar are not silently restored. Management can find these transactions via
-`GET /api/v1/management/payments?status=REQUIRES_REVIEW`.
-
-Only an admin can refund. Manual payments support a local full refund before
-check-in. VNPay refunds require an `Idempotency-Key` and use a two-phase flow:
-the Payment becomes `REFUND_PENDING` before the gateway call, then becomes
-`REFUNDED` only after a verified full-refund response. Timeouts and ambiguous
-responses remain pending for `queryDr` reconciliation; the same key never
-sends a second refund. Booking transitions are blocked while reconciliation
-is pending.
-
-## Frontend Integration
-
-When `SWAGGER_ENABLED=true`, runtime OpenAPI documentation is available at
-`/api/docs`, with the raw document at `/api/docs-json`. The committed snapshot is
-[`openapi/openapi.json`](openapi/openapi.json). Regenerate it after a contract
-change:
-
-```bash
-npm run openapi:generate
-```
-
-Room Calendar request and response types in the Frontend are generated from
-this snapshot with the Frontend `npm run contract:generate` script.
-
-## Verification
-
-```bash
-npm run build
-npm run lint
 npm test -- --runInBand
 npm run test:e2e -- --runInBand
 npm run test:cov
+npm run lint
+npm run build
+npx tsc -p tsconfig.build.json --noEmit
 ```
 
-`test:cov` produces separate unit and E2E coverage reports. This keeps isolated
-unit coverage visible while also measuring controller and service execution
-through the real API and test database.
+Before E2E tests, create `.env.test` from `.env.test.example` and point it to a
+dedicated MySQL database whose name ends with `_test`:
+
+```bash
+cp .env.test.example .env.test
+```
+
+PowerShell equivalent:
+
+```powershell
+Copy-Item .env.test.example .env.test
+```
+
+The E2E setup checks `NODE_ENV=test` and the `_test` database suffix before
+migrations, inserts, deletes, or cleanup. It refuses to run against a normal
+development or production database. E2E schedulers are disabled by the example
+configuration.
+
+## OpenAPI / Swagger
+
+Set `SWAGGER_ENABLED=true` to expose:
+
+- Swagger UI: `http://localhost:3000/api/docs`
+- JSON document: `http://localhost:3000/api/docs-json`
+
+The committed snapshot is `openapi/openapi.json`.
+
+```bash
+npm run openapi:generate
+npm run openapi:check
+npm run openapi:validate
+```
+
+Regenerate the snapshot after a route or DTO contract change.
+
+Health endpoints are available independently of Swagger:
+
+- `GET /api/health/live` — process liveness
+- `GET /api/health/ready` — bounded MySQL readiness probe
+
+## Important Design Decisions
+
+1. VNPay IPN is the financial mutation authority; browser Return is verified
+   presentation and recovery UX only.
+2. Booking, Payment, and Room Calendar changes that must agree are committed in
+   a single transaction where the workflow owns them.
+3. Pessimistic locks serialize concurrent booking/payment/refund decisions;
+   database uniqueness constraints remain the final conflict guard.
+4. `BookingPaymentLifecycleService` owns cross-entity payment side effects.
+5. External VNPay refund calls happen outside the database transaction; uncertain
+   outcomes remain `REFUND_PENDING` for reconciliation.
+6. Migrations are explicit and `synchronize` is disabled.
+
+## Current Limitations
+
+- The MVP supports full payments and one online provider (VNPay); partial,
+  installment, split, overpayment, and payment-ledger allocation are outside
+  the current scope.
+- Room images use local filesystem storage. Filesystem and MySQL writes are not
+  one atomic transaction, and there is no object-storage adapter in this repo.
+- Rate limiting and the minute-based expiry schedulers are process-local. A
+  multi-instance deployment would need shared rate-limit storage and scheduler
+  coordination.
+- Compose provisions only MySQL. API packaging, deployment topology, secret
+  management, and TLS termination are outside this repository.
+- VNPay production configuration, reconciliation operations, and financial
+  controls need deployment-specific validation; this project does not claim
+  PCI compliance or absolute production security.
+
+## Future Improvements
+
+- Add object-backed room-image storage and a cleanup/retention process.
+- Add distributed rate-limit and scheduler coordination if multiple API
+  instances are needed.
+- Add operational metrics/tracing for payment, reconciliation, and scheduler
+  outcomes.
+- Add another payment provider or a payment ledger only when business scope
+  requires it.

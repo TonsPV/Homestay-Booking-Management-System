@@ -1,5 +1,5 @@
-import { BookingPaymentStatus, BookingStatus } from './schema/booking.entity';
-import type { BookingTransitionCapability } from './booking-transition.policy';
+import { BookingPaymentStatus, BookingStatus } from './domain/booking-state';
+import type { BookingTransitionCapabilityResponse } from './booking-domain-error.mapper';
 import type { CustomerCredentialCapabilities } from '../customer/customer-credential.policy';
 
 export interface BookingAuditContext {
@@ -49,5 +49,5 @@ export interface BookingResponse {
 
 export interface ManagementBookingResponse extends BookingResponse {
   credentialCapabilities: CustomerCredentialCapabilities;
-  transitionCapabilities: BookingTransitionCapability[];
+  transitionCapabilities: BookingTransitionCapabilityResponse[];
 }

@@ -1,7 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { Allow } from 'class-validator';
+import { IsEnum } from 'class-validator';
 
-import { RoomStatus } from '../schema/room.entity';
+import { RoomStatus } from '../domain/room-status';
 
 export class UpdateRoomStatusDto {
   @ApiProperty({
@@ -9,6 +9,6 @@ export class UpdateRoomStatusDto {
     example: RoomStatus.MAINTENANCE,
     type: String,
   })
-  @Allow()
-  status?: unknown;
+  @IsEnum(RoomStatus)
+  status?: RoomStatus;
 }

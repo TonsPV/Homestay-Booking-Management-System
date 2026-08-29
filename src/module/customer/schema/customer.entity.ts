@@ -42,14 +42,6 @@ export class Customer {
   tokenVersion: number;
 
   @Column({
-    name: 'phone_verified_at',
-    type: 'datetime',
-    precision: 6,
-    nullable: true,
-  })
-  phoneVerifiedAt: Date | null;
-
-  @Column({
     type: 'enum',
     enum: AccountStatusEnum,
     default: AccountStatusEnum.ACTIVE,

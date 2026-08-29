@@ -4,17 +4,17 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { DataSource, type EntityManager } from 'typeorm';
 
-import { getMysqlDuplicateKey } from '../../common/database';
+import { TransactionRunner } from '../../common/application/transaction';
 import { requireTrimmedString } from '../../common/validation';
-import {
-  RoomCalendar,
-  RoomCalendarStatus,
-} from '../booking/schema/room-calendar.entity';
+import { RoomCalendar } from '../booking/schema/room-calendar.entity';
+import { RoomCalendarStatus } from '../booking/domain/room-calendar-status';
 import { BlockRoomDatesDto } from './dto/block-room-dates.dto';
 import { RoomCalendarRangeQueryDto } from './dto/room-calendar-range-query.dto';
-import { Room } from './schema/room.entity';
+import {
+  RoomCalendarBlockConflictError,
+  RoomCalendarManagementStore,
+} from './ports/room-calendar-management.store';
 
 const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
 const MAX_CALENDAR_RANGE_DAYS = 366;
@@ -36,7 +36,10 @@ export interface UnblockRoomDatesResponse {
 
 @Injectable()
 export class RoomAvailabilityService {
-  constructor(private readonly dataSource: DataSource) {}
+  constructor(
+    private readonly transactions: TransactionRunner,
+    private readonly roomCalendar: RoomCalendarManagementStore,
+  ) {}
 
   async list(
     roomId: string,
@@ -45,17 +48,11 @@ export class RoomAvailabilityService {
     this.validateRoomId(roomId);
     const range = this.requireDateRange(query.from, query.to);
 
-    await this.requireRoom(this.dataSource.manager, roomId, false);
+    if (!(await this.roomCalendar.roomExists(roomId))) {
+      throw new NotFoundException('Khong tim thay phong.');
+    }
 
-    const entries = await this.dataSource
-      .getRepository(RoomCalendar)
-      .createQueryBuilder('calendar')
-      .leftJoinAndSelect('calendar.booking', 'booking')
-      .where('calendar.roomId = :roomId', { roomId })
-      .andWhere('calendar.stayDate >= :from', { from: range.from })
-      .andWhere('calendar.stayDate < :to', { to: range.to })
-      .orderBy('calendar.stayDate', 'ASC')
-      .getMany();
+    const entries = await this.roomCalendar.listRange(roomId, range);
 
     return entries.map((entry) => this.toResponse(entry));
   }
@@ -73,33 +70,18 @@ export class RoomAvailabilityService {
     );
 
     try {
-      return await this.dataSource.transaction(async (manager) => {
-        await this.requireRoom(manager, roomId, true);
+      return await this.transactions.run(async (transaction) => {
+        if (!(await this.roomCalendar.lockRoom(transaction, roomId))) {
+          throw new NotFoundException('Khong tim thay phong.');
+        }
 
-        const repository = manager.getRepository(RoomCalendar);
-        const entries = this.enumerateDates(range.from, range.to).map(
-          (stayDate) =>
-            repository.create({
-              roomId,
-              bookingId: null,
-              stayDate,
-              status: RoomCalendarStatus.BLOCKED,
-              reason,
-            }),
+        const savedEntries = await this.roomCalendar.blockDates(
+          transaction,
+          roomId,
+          this.enumerateDates(range.from, range.to),
+          reason,
+          range,
         );
-
-        await repository.insert(entries);
-
-        const savedEntries = await repository
-          .createQueryBuilder('calendar')
-          .where('calendar.roomId = :roomId', { roomId })
-          .andWhere('calendar.stayDate >= :from', { from: range.from })
-          .andWhere('calendar.stayDate < :to', { to: range.to })
-          .andWhere('calendar.status = :status', {
-            status: RoomCalendarStatus.BLOCKED,
-          })
-          .orderBy('calendar.stayDate', 'ASC')
-          .getMany();
 
         return savedEntries.map((entry) => this.toResponse(entry));
       });
@@ -115,44 +97,19 @@ export class RoomAvailabilityService {
     this.validateRoomId(roomId);
     const range = this.requireDateRange(query.from, query.to);
 
-    return this.dataSource.transaction(async (manager) => {
-      await this.requireRoom(manager, roomId, true);
+    return this.transactions.run(async (transaction) => {
+      if (!(await this.roomCalendar.lockRoom(transaction, roomId))) {
+        throw new NotFoundException('Khong tim thay phong.');
+      }
 
-      const result = await manager
-        .getRepository(RoomCalendar)
-        .createQueryBuilder()
-        .delete()
-        .from(RoomCalendar)
-        .where('room_id = :roomId', { roomId })
-        .andWhere('stay_date >= :from', { from: range.from })
-        .andWhere('stay_date < :to', { to: range.to })
-        .andWhere('status = :status', {
-          status: RoomCalendarStatus.BLOCKED,
-        })
-        .execute();
-
-      return { removedCount: result.affected ?? 0 };
+      return {
+        removedCount: await this.roomCalendar.unblockDates(
+          transaction,
+          roomId,
+          range,
+        ),
+      };
     });
-  }
-
-  private async requireRoom(
-    manager: EntityManager,
-    roomId: string,
-    lock: boolean,
-  ): Promise<void> {
-    let query = manager
-      .getRepository(Room)
-      .createQueryBuilder('room')
-      .where('room.id = :roomId', { roomId })
-      .andWhere('room.deletedAt IS NULL');
-
-    if (lock) {
-      query = query.setLock('pessimistic_write');
-    }
-
-    if ((await query.getOne()) === null) {
-      throw new NotFoundException('Khong tim thay phong.');
-    }
   }
 
   private requireDateRange(
@@ -220,12 +177,7 @@ export class RoomAvailabilityService {
   }
 
   private throwCalendarWriteConflict(error: unknown): never {
-    const duplicateKey = getMysqlDuplicateKey(error);
-
-    if (
-      duplicateKey !== undefined &&
-      duplicateKey.includes('room_calendar_room_date')
-    ) {
+    if (error instanceof RoomCalendarBlockConflictError) {
       throw new ConflictException(
         'Phong da duoc dat hoac bi khoa trong khoang ngay nay.',
       );

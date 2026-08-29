@@ -7,18 +7,24 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import type { Repository, SelectQueryBuilder } from 'typeorm';
 
-import type { PaginationMeta } from '../../common/http';
+import {
+  createPaginationMeta,
+  type PaginationMeta,
+} from '../../common/pagination/pagination.types';
 import { optionalSearch, parsePagination } from '../../common/validation';
 import { CustomerCredentialPolicy } from '../customer/customer-credential.policy';
-import { Payment, PaymentStatus } from '../payment/schema/payment.entity';
-import { BookingTransitionPolicy } from './booking-transition.policy';
+import { Payment } from '../payment/schema/payment.entity';
+import { PaymentStatus } from '../payment/domain/payment-state';
+import { toBookingTransitionCapabilityResponse } from './booking-domain-error.mapper';
+import { BookingTransitionPolicy } from './domain/booking-transition.policy';
 import type {
   BookingResponse,
   ManagementBookingResponse,
 } from './booking.types';
 import type { ListBookingsQueryDto } from './dto/list-bookings-query.dto';
 import type { ListManagementBookingsQueryDto } from './dto/list-management-bookings-query.dto';
-import { Booking, BookingStatus } from './schema/booking.entity';
+import { Booking } from './schema/booking.entity';
+import { BookingStatus } from './domain/booking-state';
 
 export interface BookingListResult {
   items: BookingResponse[];
@@ -154,14 +160,13 @@ export class BookingQueryService {
     return {
       ...this.toResponse(booking),
       credentialCapabilities,
-      transitionCapabilities: this.bookingTransitionPolicy.getCapabilities(
-        booking,
-        {
+      transitionCapabilities: this.bookingTransitionPolicy
+        .getCapabilities(booking, {
           refundPending,
           roomExists: booking.room !== null,
           roomStatus: booking.room?.status,
-        },
-      ),
+        })
+        .map(toBookingTransitionCapabilityResponse),
     };
   }
 
@@ -186,14 +191,7 @@ export class BookingQueryService {
 
     return {
       items: bookings.map((booking) => this.toResponse(booking)),
-      meta: {
-        pagination: {
-          page,
-          limit,
-          total,
-          totalPages: Math.ceil(total / limit),
-        },
-      },
+      meta: createPaginationMeta(page, limit, total),
     };
   }
 

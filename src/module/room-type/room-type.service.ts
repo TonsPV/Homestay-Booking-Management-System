@@ -9,19 +9,20 @@ import { InjectRepository } from '@nestjs/typeorm';
 import type { EntityManager, Repository } from 'typeorm';
 
 import { getMysqlDuplicateKey } from '../../common/database';
+import { ErrorCode } from '../../common/error-codes';
+import { AppHttpException } from '../../common/http/app-http-exception';
 import {
-  AppHttpException,
-  ErrorCode,
+  createPaginationMeta,
   type PaginationMeta,
-} from '../../common/http';
+} from '../../common/pagination/pagination.types';
 import {
-  optionalDecimalAmount,
+  optionalPositiveDecimalAmount,
   optionalNullableTrimmedString,
   optionalSearch,
   optionalTrimmedString,
   parseBoolean,
   parsePagination,
-  requireDecimalAmount,
+  requirePositiveDecimalAmount,
   requirePositiveInt,
   requireTrimmedString,
 } from '../../common/validation';
@@ -139,7 +140,7 @@ export class RoomTypeService {
       'So khach toi da khong hop le.',
       100,
     );
-    const basePrice = requireDecimalAmount(
+    const basePrice = requirePositiveDecimalAmount(
       body.basePrice,
       'Gia co ban khong hop le.',
     );
@@ -202,7 +203,7 @@ export class RoomTypeService {
             'So khach toi da khong hop le.',
             100,
           );
-    const basePrice = optionalDecimalAmount(
+    const basePrice = optionalPositiveDecimalAmount(
       body.basePrice,
       'Gia co ban khong hop le.',
     );
@@ -443,7 +444,7 @@ export class RoomTypeService {
 
     return {
       items,
-      meta: this.toPaginationMeta(page, limit, total),
+      meta: createPaginationMeta(page, limit, total),
     };
   }
 
@@ -815,21 +816,6 @@ export class RoomTypeService {
     return {
       ...this.toPublicResponse(roomType),
       deletedAt: roomType.deletedAt,
-    };
-  }
-
-  private toPaginationMeta(
-    page: number,
-    limit: number,
-    total: number,
-  ): PaginationMeta {
-    return {
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
     };
   }
 }
