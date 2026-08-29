@@ -10,27 +10,21 @@ import type { RoomImageStorageService } from '../../../../src/module/room/room-i
 import { RoomMutationService } from '../../../../src/module/room/room-mutation.service';
 import { RoomQueryService } from '../../../../src/module/room/room-query.service';
 import { RoomService } from '../../../../src/module/room/room.service';
-import {
-  Room,
-  RoomStatus,
-} from '../../../../src/module/room/schema/room.entity';
+import { Room } from '../../../../src/module/room/schema/room.entity';
+import { RoomStatus } from '../../../../src/module/room/domain/room-status';
 import { RoomType } from '../../../../src/module/room-type/schema/room-type.entity';
-import {
-  RoomCalendar,
-  RoomCalendarStatus,
-} from '../../../../src/module/booking/schema/room-calendar.entity';
+import { RoomCalendar } from '../../../../src/module/booking/schema/room-calendar.entity';
+import { RoomCalendarStatus } from '../../../../src/module/booking/domain/room-calendar-status';
 import type { AuditActorContext } from '../../../../src/module/audit/audit-log.service';
 import {
   AuditAction,
   AuditActorType,
   AuditEntityType,
-} from '../../../../src/module/audit/schema/audit-log.entity';
-import {
-  Booking,
-  BookingStatus,
-} from '../../../../src/module/booking/schema/booking.entity';
-import { BookingStayPolicy } from '../../../../src/module/booking/booking-stay.policy';
-import { RoomStatusTransitionPolicy } from '../../../../src/module/room/room-status-transition.policy';
+} from '../../../../src/module/audit/domain/audit-log';
+import { Booking } from '../../../../src/module/booking/schema/booking.entity';
+import { BookingStatus } from '../../../../src/module/booking/domain/booking-state';
+import { BookingStayPolicy } from '../../../../src/module/booking/domain/booking-stay.policy';
+import { RoomStatusTransitionPolicy } from '../../../../src/module/room/domain/room-status-transition.policy';
 import { RoomTodayAvailabilityStatus } from '../../../../src/module/room/room.types';
 
 describe('RoomService', () => {
@@ -114,9 +108,7 @@ describe('RoomService', () => {
     const roomQueryService = new RoomQueryService(
       roomsRepository as unknown as Repository<Room>,
       roomCalendarsRepository as unknown as Repository<RoomCalendar>,
-      new BookingStayPolicy({
-        getOrThrow: jest.fn().mockReturnValue(10_000),
-      } as never),
+      new BookingStayPolicy(10_000),
     );
     const roomMutationService = new RoomMutationService(
       roomsRepository as unknown as Repository<Room>,

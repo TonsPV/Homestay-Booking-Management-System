@@ -15,15 +15,16 @@ import migrationDataSource from '../../src/database/data-source';
 import { AccessTokenService } from '../../src/module/auth/access-token.service';
 import { PasswordHasherService } from '../../src/module/auth/password-hasher.service';
 import { Amenity } from '../../src/module/amenity/schema/amenity.entity';
+import { Booking } from '../../src/module/booking/schema/booking.entity';
 import {
-  Booking,
   BookingPaymentStatus,
   BookingStatus,
-} from '../../src/module/booking/schema/booking.entity';
+} from '../../src/module/booking/domain/booking-state';
 import { RoomCalendar } from '../../src/module/booking/schema/room-calendar.entity';
 import { BookingService } from '../../src/module/booking/booking.service';
 import { Customer } from '../../src/module/customer/schema/customer.entity';
 import { Payment } from '../../src/module/payment/schema/payment.entity';
+import { PaymentRefund } from '../../src/module/payment/schema/payment-refund.entity';
 import { PaymentService } from '../../src/module/payment/payment.service';
 import {
   createVnPaySignature,
@@ -218,6 +219,7 @@ describe('Application API (e2e)', () => {
   let bookingsRepository: Repository<Booking>;
   let roomCalendarRepository: Repository<RoomCalendar>;
   let paymentsRepository: Repository<Payment>;
+  let paymentRefundsRepository: Repository<PaymentRefund>;
   let vnPayGatewayService: VnPayGatewayService;
   let e2eHarness: E2eHarness;
   let adminToken: string;
@@ -267,6 +269,7 @@ describe('Application API (e2e)', () => {
     bookingsRepository = dataSource.getRepository(Booking);
     roomCalendarRepository = dataSource.getRepository(RoomCalendar);
     paymentsRepository = dataSource.getRepository(Payment);
+    paymentRefundsRepository = dataSource.getRepository(PaymentRefund);
     vnPayGatewayService = app.get(VnPayGatewayService);
 
     const testAdmin = await usersRepository.save(
@@ -429,6 +432,9 @@ describe('Application API (e2e)', () => {
         'fk_room_calendar_booking',
         'fk_room_type_amenities_room_type',
         'fk_room_type_amenities_amenity',
+        'fk_payment_refunds_payment',
+        'fk_payment_refunds_refunded_by_user',
+        'fk_bookings_accepted_payment_owner',
       ]),
     );
     expect(indexes.map(({ indexName }) => indexName)).toEqual(
@@ -436,11 +442,16 @@ describe('Application API (e2e)', () => {
         'uq_room_calendar_room_date',
         'uq_payments_idempotency',
         'uq_payments_gateway_reference',
-        'uq_payments_refund_idempotency',
+        'uq_payments_id_booking',
+        'uq_payment_refunds_payment',
+        'uq_payment_refunds_idempotency',
+        'uq_payment_refunds_request',
         'idx_bookings_created_at_status',
+        'idx_bookings_accepted_payment_owner',
         'idx_payments_status_paid_at',
-        'idx_payments_status_refunded_at',
         'idx_payments_created_at_status',
+        'idx_payment_refunds_refunded_by_user',
+        'idx_payment_refunds_requested_at',
         'idx_room_calendar_status_date',
       ]),
     );
@@ -3110,8 +3121,12 @@ describe('Application API (e2e)', () => {
         await paymentsRepository.findOneByOrFail({ id: paid.payment.id }),
       ).toMatchObject({
         status: 'REFUND_PENDING',
-        refundIdempotencyKey: refundKey,
       });
+      expect(
+        await paymentRefundsRepository.findOneByOrFail({
+          paymentId: paid.payment.id,
+        }),
+      ).toMatchObject({ idempotencyKey: refundKey });
 
       await request(app.getHttpServer())
         .post(`/api/v1/management/payments/${paid.payment.id}/refund`)
@@ -3132,8 +3147,12 @@ describe('Application API (e2e)', () => {
         await paymentsRepository.findOneByOrFail({ id: paid.payment.id }),
       ).toMatchObject({
         status: 'REFUND_PENDING',
-        refundGatewayTransactionId: null,
       });
+      expect(
+        await paymentRefundsRepository.findOneByOrFail({
+          paymentId: paid.payment.id,
+        }),
+      ).toMatchObject({ gatewayTransactionId: null });
 
       const blockedTransition = await request(app.getHttpServer())
         .patch(`/api/v1/management/bookings/${paid.bookingId}/status`)
@@ -3154,9 +3173,10 @@ describe('Application API (e2e)', () => {
         .post(`/api/v1/management/payments/${paid.payment.id}/reconcile-refund`)
         .expect(401);
 
-      await paymentsRepository.update(paid.payment.id, {
-        refundGatewayTransactionId: '987654321012346',
-      });
+      await paymentRefundsRepository.update(
+        { paymentId: paid.payment.id },
+        { gatewayTransactionId: '987654321012346' },
+      );
       querySpy.mockResolvedValueOnce({
         isVerified: true,
         isSuccess: true,
@@ -3288,9 +3308,12 @@ describe('Application API (e2e)', () => {
         await paymentsRepository.findOneByOrFail({ id: paid.payment.id }),
       ).toMatchObject({
         status: 'SUCCESS',
-        refundIdempotencyKey: refundKey,
-        refundResponseCode: '91',
       });
+      expect(
+        await paymentRefundsRepository.findOneByOrFail({
+          paymentId: paid.payment.id,
+        }),
+      ).toMatchObject({ idempotencyKey: refundKey, responseCode: '91' });
       expect(
         await bookingsRepository.findOneByOrFail({ id: paid.bookingId }),
       ).toMatchObject({
@@ -3703,6 +3726,14 @@ describe('Application API (e2e)', () => {
       if (bookingsRepository !== undefined && testRoomId !== undefined) {
         await dataSource.query(
           'UPDATE bookings SET accepted_payment_id = NULL WHERE room_id = ?',
+          [testRoomId],
+        );
+        await dataSource.query(
+          `DELETE refund
+           FROM payment_refunds refund
+           INNER JOIN payments payment ON payment.id = refund.payment_id
+           INNER JOIN bookings booking ON booking.id = payment.booking_id
+           WHERE booking.room_id = ?`,
           [testRoomId],
         );
         await dataSource.query(

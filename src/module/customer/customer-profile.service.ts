@@ -111,7 +111,7 @@ export class CustomerProfileService {
     );
   }
 
-  //lay customer active by id 
+  //lay customer active by id
   private async getActiveCustomer(
     customerId: string | undefined,
   ): Promise<Customer> {

@@ -1,22 +1,26 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Allow } from 'class-validator';
+import { IsInt, IsOptional, IsString, Matches, Min } from 'class-validator';
 
 export class CreateBookingDto {
   @ApiProperty({ example: '21', pattern: '^[1-9][0-9]*$', type: String })
-  @Allow()
-  roomId?: unknown;
+  @IsString()
+  @Matches(/^[1-9][0-9]*$/)
+  roomId?: string;
 
   @ApiProperty({ example: '2026-08-01', format: 'date', type: String })
-  @Allow()
-  checkInDate?: unknown;
+  @IsString()
+  @Matches(/^\s*\d{4}-\d{2}-\d{2}\s*$/)
+  checkInDate?: string;
 
   @ApiProperty({ example: '2026-08-03', format: 'date', type: String })
-  @Allow()
-  checkOutDate?: unknown;
+  @IsString()
+  @Matches(/^\s*\d{4}-\d{2}-\d{2}\s*$/)
+  checkOutDate?: string;
 
   @ApiProperty({ example: 2, minimum: 1, type: Number })
-  @Allow()
-  guestCount?: unknown;
+  @IsInt()
+  @Min(1)
+  guestCount?: number;
 
   @ApiPropertyOptional({
     description: 'Overrides the authenticated Customer profile contact.',
@@ -24,15 +28,17 @@ export class CreateBookingDto {
     maxLength: 120,
     type: String,
   })
-  @Allow()
-  contactName?: unknown;
+  @IsOptional()
+  @IsString()
+  contactName?: string;
 
   @ApiPropertyOptional({
     example: '0901234567',
     type: String,
   })
-  @Allow()
-  contactPhone?: unknown;
+  @IsOptional()
+  @IsString()
+  contactPhone?: string;
 
   @ApiPropertyOptional({
     example: 'guest@example.com',
@@ -40,14 +46,16 @@ export class CreateBookingDto {
     nullable: true,
     type: String,
   })
-  @Allow()
-  contactEmail?: unknown;
+  @IsOptional()
+  @IsString()
+  contactEmail?: string | null;
 
   @ApiPropertyOptional({
     example: 'Vui lòng chuẩn bị phòng yên tĩnh.',
     nullable: true,
     type: String,
   })
-  @Allow()
-  customerNote?: unknown;
+  @IsOptional()
+  @IsString()
+  customerNote?: string | null;
 }

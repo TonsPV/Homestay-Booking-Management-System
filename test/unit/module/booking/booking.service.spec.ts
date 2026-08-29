@@ -1,38 +1,47 @@
 import { Logger, UnauthorizedException } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
-import {
-  type DataSource,
-  type EntityManager,
-  QueryFailedError,
-  type Repository,
-} from 'typeorm';
+import { type DataSource, type EntityManager, type Repository } from 'typeorm';
 
-import { AuditLogService } from '../../../../src/module/audit/audit-log.service';
+import { TypeOrmTransactionRunner } from '../../../../src/common/infrastructure/persistence/typeorm-transaction.runner';
+import type { TransactionContext } from '../../../../src/common/application/transaction';
+import { TransactionalAuditLog } from '../../../../src/module/audit/ports/transactional-audit-log';
 import {
   AuditAction,
   AuditActorType,
   AuditEntityType,
-} from '../../../../src/module/audit/schema/audit-log.entity';
+} from '../../../../src/module/audit/domain/audit-log';
 import { Customer } from '../../../../src/module/customer/schema/customer.entity';
 import { ErrorCode } from '../../../../src/common/error-codes';
 import { Payment } from '../../../../src/module/payment/schema/payment.entity';
-import {
-  Room,
-  RoomStatus,
-} from '../../../../src/module/room/schema/room.entity';
+import { Room } from '../../../../src/module/room/schema/room.entity';
+import { RoomStatus } from '../../../../src/module/room/domain/room-status';
 import { RoomType } from '../../../../src/module/room-type/schema/room-type.entity';
 import { BookingCreationService } from '../../../../src/module/booking/booking-creation.service';
 import { BookingLifecycleService } from '../../../../src/module/booking/booking-lifecycle.service';
 import { BookingQueryService } from '../../../../src/module/booking/booking-query.service';
 import { BookingService } from '../../../../src/module/booking/booking.service';
-import { BookingStayPolicy } from '../../../../src/module/booking/booking-stay.policy';
-import { BookingTransitionPolicy } from '../../../../src/module/booking/booking-transition.policy';
+import { BookingPaymentLifecycleService } from '../../../../src/module/booking/booking-payment-lifecycle.service';
+import { BookingStayPolicy } from '../../../../src/module/booking/domain/booking-stay.policy';
+import { BookingTransitionPolicy } from '../../../../src/module/booking/domain/booking-transition.policy';
+import { Booking } from '../../../../src/module/booking/schema/booking.entity';
 import {
-  Booking,
   BookingPaymentStatus,
   BookingStatus,
-} from '../../../../src/module/booking/schema/booking.entity';
+} from '../../../../src/module/booking/domain/booking-state';
 import { RoomCalendar } from '../../../../src/module/booking/schema/room-calendar.entity';
+import {
+  TypeOrmBookingCreationStore,
+  TypeOrmBookingCustomerStore,
+  TypeOrmBookingRoomStore,
+} from '../../../../src/module/booking/infrastructure/persistence/typeorm-booking-creation.store';
+import {
+  TypeOrmBookingLifecycleStore,
+  TypeOrmBookingPaymentStateStore,
+} from '../../../../src/module/booking/infrastructure/persistence/typeorm-booking-lifecycle.store';
+import { TypeOrmRoomCalendarStore } from '../../../../src/module/booking/infrastructure/persistence/typeorm-room-calendar.store';
+import { TypeOrmPaymentAcceptanceStore } from '../../../../src/module/payment/infrastructure/persistence/typeorm-payment-acceptance.store';
+import { TypeOrmPaymentRefundStore } from '../../../../src/module/payment/infrastructure/persistence/typeorm-payment-refund.store';
+import { RoomCalendarReservationConflictError } from '../../../../src/module/booking/ports/room-calendar.store';
 
 describe('BookingService characterization', () => {
   let bookingsRepository: {
@@ -53,9 +62,6 @@ describe('BookingService characterization', () => {
       transaction: jest.fn(),
     };
     auditRecord = jest.fn().mockResolvedValue(undefined);
-    const auditLogService = {
-      record: auditRecord,
-    } as unknown as AuditLogService;
     const configValues: Record<string, number> = {
       BOOKING_PAYMENT_TIMEOUT_MINUTES: 15,
       BOOKING_MAX_ACTIVE_UNPAID_PER_CUSTOMER: 3,
@@ -65,17 +71,58 @@ describe('BookingService characterization', () => {
     const config = {
       getOrThrow: jest.fn((key: string) => configValues[key]),
     };
+    const transactionRunner = new TypeOrmTransactionRunner(
+      dataSource as unknown as DataSource,
+    );
+    const auditLogService = {
+      record: jest.fn(async (context: TransactionContext, input) => {
+        await auditRecord(transactionRunner.managerFor(context), input);
+      }),
+    } as unknown as TransactionalAuditLog;
+    const bookingLifecycleStore = new TypeOrmBookingLifecycleStore(
+      transactionRunner,
+    );
+    const bookingPaymentStateStore = new TypeOrmBookingPaymentStateStore(
+      transactionRunner,
+    );
+    const roomCalendarStore = new TypeOrmRoomCalendarStore(transactionRunner);
+    const lifecycleCoordinator = new BookingPaymentLifecycleService(
+      transactionRunner,
+      config as unknown as ConfigService,
+      new BookingTransitionPolicy(),
+      bookingLifecycleStore,
+      bookingPaymentStateStore,
+      roomCalendarStore,
+      auditLogService,
+      new TypeOrmPaymentAcceptanceStore(
+        dataSource as unknown as DataSource,
+        transactionRunner,
+      ),
+      new TypeOrmPaymentRefundStore(
+        dataSource as unknown as DataSource,
+        transactionRunner,
+      ),
+    );
     service = new BookingService(
       new BookingCreationService(
-        dataSource as unknown as DataSource,
+        transactionRunner,
         config as unknown as ConfigService,
-        new BookingStayPolicy(config as unknown as ConfigService),
+        new BookingStayPolicy(365),
+        new TypeOrmBookingCreationStore(
+          dataSource as unknown as DataSource,
+          transactionRunner,
+        ),
+        new TypeOrmBookingCustomerStore(transactionRunner),
+        new TypeOrmBookingRoomStore(transactionRunner),
+        new TypeOrmRoomCalendarStore(transactionRunner),
         auditLogService,
       ),
       new BookingLifecycleService(
-        dataSource as unknown as DataSource,
-        config as unknown as ConfigService,
+        transactionRunner,
         new BookingTransitionPolicy(),
+        lifecycleCoordinator,
+        bookingLifecycleStore,
+        bookingPaymentStateStore,
         auditLogService,
       ),
       new BookingQueryService(
@@ -458,11 +505,7 @@ describe('BookingService characterization', () => {
       .spyOn(Logger.prototype, 'warn')
       .mockImplementation(() => undefined);
     dataSource.transaction.mockRejectedValue(
-      new QueryFailedError('INSERT', [], {
-        code: 'ER_DUP_ENTRY',
-        message:
-          "Duplicate entry '1-2030-02-01' for key 'room_calendar_room_date'",
-      }),
+      new RoomCalendarReservationConflictError(),
     );
 
     await expect(

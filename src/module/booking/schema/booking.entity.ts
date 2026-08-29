@@ -14,25 +14,11 @@ import { Customer } from '../../customer/schema/customer.entity';
 import { Payment } from '../../payment/schema/payment.entity';
 import { Room } from '../../room/schema/room.entity';
 import { User } from '../../user/schema/user.entity';
-
-export enum BookingRequestIntentActorType {
-  CUSTOMER = 'CUSTOMER',
-  USER = 'USER',
-}
-
-export enum BookingStatus {
-  PENDING_PAYMENT = 'PENDING_PAYMENT',
-  CONFIRMED = 'CONFIRMED',
-  CHECKED_IN = 'CHECKED_IN',
-  CHECKED_OUT = 'CHECKED_OUT',
-  CANCELLED = 'CANCELLED',
-}
-
-export enum BookingPaymentStatus {
-  UNPAID = 'UNPAID',
-  PAID = 'PAID',
-  REFUNDED = 'REFUNDED',
-}
+import {
+  BookingPaymentStatus,
+  BookingRequestIntentActorType,
+  BookingStatus,
+} from '../domain/booking-state';
 
 @Entity('bookings')
 @Index('uq_bookings_code', ['bookingCode'], { unique: true })
@@ -43,7 +29,7 @@ export enum BookingPaymentStatus {
 @Index('idx_bookings_payment_status', ['paymentStatus'])
 @Index('idx_bookings_payment_expires_at', ['paymentExpiresAt'])
 @Index('idx_bookings_created_at_status', ['createdAt', 'status'])
-@Index('uq_bookings_accepted_payment', ['acceptedPaymentId'], { unique: true })
+@Index('idx_bookings_accepted_payment_owner', ['acceptedPaymentId', 'id'])
 @Index(
   'uq_bookings_request_intent',
   ['requestIntentActorType', 'requestIntentActorId', 'requestIntentKey'],
@@ -148,11 +134,19 @@ export class Booking {
   @Column({ name: 'accepted_payment_id', type: 'bigint', nullable: true })
   acceptedPaymentId: string | null;
 
-  @ManyToOne(() => Payment, { nullable: true })
-  @JoinColumn({
-    name: 'accepted_payment_id',
-    foreignKeyConstraintName: 'fk_bookings_accepted_payment',
+  @ManyToOne(() => Payment, {
+    nullable: true,
+    onDelete: 'RESTRICT',
+    onUpdate: 'RESTRICT',
   })
+  @JoinColumn([
+    {
+      name: 'accepted_payment_id',
+      referencedColumnName: 'id',
+      foreignKeyConstraintName: 'fk_bookings_accepted_payment_owner',
+    },
+    { name: 'id', referencedColumnName: 'bookingId' },
+  ])
   acceptedPayment: Payment | null;
 
   @Column({

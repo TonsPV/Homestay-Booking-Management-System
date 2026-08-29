@@ -7,7 +7,7 @@ import {
   PaymentService,
   type VnPayReturnResponse,
 } from '../../../../src/module/payment/payment.service';
-import { PaymentStatus } from '../../../../src/module/payment/schema/payment.entity';
+import { PaymentStatus } from '../../../../src/module/payment/domain/payment-state';
 import { VnPayController } from '../../../../src/module/payment/vnpay.controller';
 
 describe('VnPayController', () => {

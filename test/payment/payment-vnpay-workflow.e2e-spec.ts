@@ -7,23 +7,24 @@ import type { App } from 'supertest/types';
 import { AppModule } from '../../src/app.module';
 import { configureApp } from '../../src/bootstrap/configure-app';
 import migrationDataSource from '../../src/database/data-source';
+import { Booking } from '../../src/module/booking/schema/booking.entity';
 import {
-  Booking,
   BookingPaymentStatus,
   BookingStatus,
-} from '../../src/module/booking/schema/booking.entity';
+} from '../../src/module/booking/domain/booking-state';
 import { Customer } from '../../src/module/customer/schema/customer.entity';
+import { Payment } from '../../src/module/payment/schema/payment.entity';
 import {
-  Payment,
   PaymentMethod,
   PaymentReviewReason,
   PaymentStatus,
-} from '../../src/module/payment/schema/payment.entity';
+} from '../../src/module/payment/domain/payment-state';
 import {
   createVnPaySignature,
   formatVnPayDate,
 } from '../../src/module/payment/vnpay-gateway.service';
-import { Room, RoomStatus } from '../../src/module/room/schema/room.entity';
+import { Room } from '../../src/module/room/schema/room.entity';
+import { RoomStatus } from '../../src/module/room/domain/room-status';
 import { RoomType } from '../../src/module/room-type/schema/room-type.entity';
 import { E2eHarness } from '../e2e-harness';
 
@@ -367,11 +368,7 @@ describe('VNPay collection/Return/IPN workflow (e2e)', () => {
         gatewayTransactionDate: null,
         idempotencyKey: 'key-' + reference,
         createdByUserId: null,
-        refundedByUserId: null,
         paidAt: null,
-        refundedAt: null,
-        refundRequestedAt: null,
-        refundLastQueriedAt: null,
         expiresAt: new Date(Date.now() + 60_000),
       }),
     );

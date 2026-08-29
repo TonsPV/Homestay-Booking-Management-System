@@ -15,7 +15,7 @@ import {
   AuditLogService,
   type AuditActorContext,
 } from '../audit/audit-log.service';
-import { AuditAction, AuditEntityType } from '../audit/schema/audit-log.entity';
+import { AuditAction, AuditEntityType } from '../audit/domain/audit-log';
 import {
   optionalAccountStatus,
   optionalSearch,

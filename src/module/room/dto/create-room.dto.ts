@@ -1,34 +1,37 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Allow } from 'class-validator';
+import { IsIn, IsOptional, IsString, Matches } from 'class-validator';
 
-import { RoomStatus } from '../schema/room.entity';
+import { RoomStatus } from '../domain/room-status';
 
 export class CreateRoomDto {
   @ApiProperty({ example: '5', pattern: '^[1-9][0-9]*$', type: String })
-  @Allow()
-  roomTypeId?: unknown;
+  @IsString()
+  @Matches(/^[1-9][0-9]*$/)
+  roomTypeId?: string;
 
   @ApiProperty({ example: '101', maxLength: 50, type: String })
-  @Allow()
-  roomNumber?: unknown;
+  @IsString()
+  roomNumber?: string;
 
   @ApiProperty({ example: 'Phòng 101', maxLength: 120, type: String })
-  @Allow()
-  name?: unknown;
+  @IsString()
+  name?: string;
 
   @ApiPropertyOptional({
     example: 'Phòng tầng một, gần khu vườn.',
     nullable: true,
     type: String,
   })
-  @Allow()
-  description?: unknown;
+  @IsOptional()
+  @IsString()
+  description?: string | null;
 
   @ApiPropertyOptional({
     enum: RoomStatus,
     example: RoomStatus.READY,
     type: String,
   })
-  @Allow()
-  status?: unknown;
+  @IsOptional()
+  @IsIn([...Object.values(RoomStatus), ''])
+  status?: RoomStatus | '' | null;
 }

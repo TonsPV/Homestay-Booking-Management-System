@@ -1,7 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 
-import { RoomCalendarStatus } from '../../booking/schema/room-calendar.entity';
-import { RoomStatus } from '../schema/room.entity';
+import { RoomCalendarStatus } from '../../booking/domain/room-calendar-status';
+import { RoomStatus } from '../domain/room-status';
 import { RoomTodayAvailabilityStatus } from '../room.types';
 import { RoomTypeAmenityDto } from '../../room-type/dto/room-type-response.dto';
 import { BedType } from '../../room-type/bed-configuration';

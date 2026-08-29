@@ -12,7 +12,7 @@ import {
   type PaymentListResult,
 } from './payment-query.service';
 import { PaymentRefundService } from './payment-refund.service';
-import type { PaymentMethod } from './schema/payment.entity';
+import type { PaymentMethod } from './domain/payment-state';
 import type {
   OnlinePaymentResponse,
   PaymentResponse,

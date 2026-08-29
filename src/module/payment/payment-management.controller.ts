@@ -38,8 +38,8 @@ import {
   PaymentManagementMetaDto,
 } from './dto/payment-response.dto';
 import { PaymentService, type PaymentResponse } from './payment.service';
-import { PaymentStatus } from './schema/payment.entity';
-import { PaymentMethod } from './schema/payment.entity';
+import { PaymentStatus } from './domain/payment-state';
+import { PaymentMethod } from './domain/payment-state';
 
 @Controller('v1/management')
 @UseGuards(AccessTokenGuard, RolesGuard)

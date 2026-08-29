@@ -5,6 +5,7 @@ import {
   createVnPaySignature,
   formatVnPayDate,
   parseVnPayDate,
+  toVnPayAmount,
   VnPayGatewayService,
 } from '../../../../src/module/payment/vnpay-gateway.service';
 
@@ -36,7 +37,7 @@ describe('VnPayGatewayService', () => {
   });
 
   it('builds a signed VNPay 2.1.0 payment URL in GMT+7', () => {
-    const paymentUrl = service.createPaymentUrl({
+    const paymentUrl = service.createPaymentRequest({
       amount: '900000.00',
       transactionReference: 'P123',
       orderInfo: 'Thanh toan booking BK123',
@@ -45,7 +46,7 @@ describe('VnPayGatewayService', () => {
       bankCode: 'VNBANK',
       createdAt: new Date('2026-07-23T10:00:00.000Z'),
       expiresAt: new Date('2026-07-23T10:15:00.000Z'),
-    });
+    }).redirectUrl;
     const url = new URL(paymentUrl);
     const signature = url.searchParams.get('vnp_SecureHash');
     const parameters = Object.fromEntries(url.searchParams.entries());
@@ -94,13 +95,13 @@ describe('VnPayGatewayService', () => {
     );
 
     expect(
-      service.verifyCallback({
+      service.verifyPaymentCallback({
         ...parameters,
         vnp_SecureHash: signature,
       }).isValid,
     ).toBe(true);
     expect(
-      service.verifyCallback({
+      service.verifyPaymentCallback({
         ...parameters,
         vnp_Amount: '1',
         vnp_SecureHash: signature,
@@ -109,7 +110,7 @@ describe('VnPayGatewayService', () => {
   });
 
   it('normalizes the local IPv6 loopback for VNPay', () => {
-    const paymentUrl = service.createPaymentUrl({
+    const paymentUrl = service.createPaymentRequest({
       amount: '900000.00',
       transactionReference: 'P124',
       orderInfo: 'Thanh toan booking BK124',
@@ -118,7 +119,7 @@ describe('VnPayGatewayService', () => {
       bankCode: undefined,
       createdAt: new Date('2026-07-23T10:00:00.000Z'),
       expiresAt: new Date('2026-07-23T10:15:00.000Z'),
-    });
+    }).redirectUrl;
 
     expect(new URL(paymentUrl).searchParams.get('vnp_IpAddr')).toBe(
       '127.0.0.1',
@@ -136,6 +137,21 @@ describe('VnPayGatewayService', () => {
     expect(parseVnPayDate('20260230000000')).toBeNull();
   });
 
+  it.each([
+    ['900000.00', '90000000'],
+    ['0.01', '1'],
+    ['123.45', '12345'],
+  ])(
+    'converts application amounts to VNPay minor units',
+    (amount, expected) => {
+      expect(toVnPayAmount(amount)).toBe(expected);
+    },
+  );
+
+  it('rejects an amount that is not an application decimal string', () => {
+    expect(() => toVnPayAmount('900000')).toThrow('Payment amount is invalid.');
+  });
+
   it('sends a full refund with the original transaction metadata', async () => {
     const response = createSignedRefundResponse({
       vnp_ResponseCode: '00',
@@ -150,7 +166,7 @@ describe('VnPayGatewayService', () => {
     const fetchSpy = mockRefundFetch(response);
 
     await expect(
-      service.refundFull({
+      service.requestRefund({
         amount: '900000.00',
         transactionReference: 'P123',
         transactionId: '123456789012345',
@@ -164,11 +180,11 @@ describe('VnPayGatewayService', () => {
     ).resolves.toMatchObject({
       isVerified: true,
       isSuccess: true,
-      responseCode: '00',
-      transactionStatus: '00',
-      transactionId: '987654321012345',
-      transactionType: '02',
-      amount: '90000000',
+      providerResponseCode: '00',
+      providerTransactionStatus: '00',
+      providerTransactionId: '987654321012345',
+      providerTransactionType: '02',
+      gatewayAmount: '90000000',
       responseId: 'REFUND-1',
     });
 
@@ -206,7 +222,7 @@ describe('VnPayGatewayService', () => {
     mockRefundFetch(response);
 
     await expect(
-      service.refundFull({
+      service.requestRefund({
         amount: '300000.00',
         transactionReference: 'P123',
         transactionId: '123456789012345',
@@ -220,10 +236,10 @@ describe('VnPayGatewayService', () => {
     ).resolves.toMatchObject({
       isVerified: true,
       isSuccess: true,
-      responseCode: '00',
-      transactionStatus: '05',
-      transactionType: '02',
-      amount: '30000000',
+      providerResponseCode: '00',
+      providerTransactionStatus: '05',
+      providerTransactionType: '02',
+      gatewayAmount: '30000000',
     });
   });
 
@@ -236,7 +252,7 @@ describe('VnPayGatewayService', () => {
     mockRefundFetch(response);
 
     await expect(
-      service.refundFull({
+      service.requestRefund({
         amount: '300000.00',
         transactionReference: 'P123',
         transactionId: '123456789012345',
@@ -249,9 +265,9 @@ describe('VnPayGatewayService', () => {
       }),
     ).resolves.toMatchObject({
       isVerified: false,
-      responseCode: '00',
-      transactionStatus: '05',
-      amount: '40000000',
+      providerResponseCode: '00',
+      providerTransactionStatus: '05',
+      gatewayAmount: '40000000',
     });
   });
 
@@ -264,7 +280,7 @@ describe('VnPayGatewayService', () => {
       mockRefundFetch(createSignedRefundResponse(overrides));
 
       await expect(
-        service.refundFull({
+        service.requestRefund({
           amount: '300000.00',
           transactionReference: 'P123',
           transactionId: '123456789012345',
@@ -296,7 +312,7 @@ describe('VnPayGatewayService', () => {
     } as never);
 
     await expect(
-      service.queryTransaction({
+      service.lookupTransaction({
         amount: '900000.00',
         transactionReference: 'P123',
         transactionId: '123456789012345',
@@ -308,9 +324,9 @@ describe('VnPayGatewayService', () => {
       }),
     ).resolves.toMatchObject({
       isVerified: true,
-      responseCode: '00',
-      transactionType: '02',
-      amount: '90000000',
+      providerResponseCode: '00',
+      providerTransactionType: '02',
+      gatewayAmount: '90000000',
     });
 
     expect(querySpy).toHaveBeenCalledWith({
@@ -340,7 +356,7 @@ describe('VnPayGatewayService', () => {
     } as never);
 
     await expect(
-      service.queryTransaction({
+      service.lookupTransaction({
         amount: '900000.00',
         transactionReference: 'P123',
         transactionId: '123456789012345',
@@ -361,7 +377,7 @@ describe('VnPayGatewayService', () => {
         .spyOn(VNPay.prototype, 'queryDr')
         .mockReturnValue(new Promise(() => undefined) as never);
 
-      const query = service.queryTransaction({
+      const query = service.lookupTransaction({
         amount: '900000.00',
         transactionReference: 'P123',
         transactionId: '123456789012345',
@@ -405,7 +421,7 @@ describe('VnPayGatewayService', () => {
       } as never);
 
       await expect(
-        service.queryTransaction({
+        service.lookupTransaction({
           amount: '900000.00',
           transactionReference: 'P123',
           transactionId: '123456789012345',
@@ -423,7 +439,7 @@ describe('VnPayGatewayService', () => {
     const fetchSpy = jest.spyOn(global, 'fetch');
 
     await expect(
-      service.refundFull({
+      service.requestRefund({
         amount: '900000.00',
         transactionReference: 'P123',
         transactionId: 'not-a-number',

@@ -1,6 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 
-import { RoomCalendarStatus } from '../../booking/schema/room-calendar.entity';
+import { RoomCalendarStatus } from '../../booking/domain/room-calendar-status';
 
 class RoomCalendarBookingDto {
   @ApiProperty({ example: '28' })

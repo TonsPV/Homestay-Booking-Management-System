@@ -7,51 +7,46 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, type Repository } from 'typeorm';
 
-import { getMysqlDuplicateKey } from '../../common/database';
-import { requireTrimmedString } from '../../common/validation';
-import { AuditLogService } from '../audit/audit-log.service';
 import {
-  AuditAction,
-  AuditActorType,
-  AuditEntityType,
-} from '../audit/schema/audit-log.entity';
+  type TransactionContext,
+  TransactionRunner,
+} from '../../common/application/transaction';
 import {
-  Booking,
-  BookingPaymentStatus,
-  BookingStatus,
-} from '../booking/schema/booking.entity';
+  isValidIdempotencyKey,
+  requireTrimmedString,
+} from '../../common/validation';
+import { TransactionalAuditLog } from '../audit/ports/transactional-audit-log';
+import { BookingStatus } from '../booking/domain/booking-state';
+import { BookingPaymentLifecycleService } from '../booking/booking-payment-lifecycle.service';
 import { CreateVnpayPaymentDto } from './dto/create-vnpay-payment.dto';
+import { assertBookingCanAcceptPayment } from './payment-booking.application';
 import {
-  assertBookingCanAcceptPayment,
-  failExpiredOnlinePaymentsForBooking,
-  getLockedPaymentBooking,
-} from './payment-booking-policy';
+  PaymentAcceptanceStore,
+  PaymentIdempotencyConflictError,
+} from './ports/payment-acceptance.store';
 import { PaymentQueryService } from './payment-query.service';
 import type {
   OnlinePaymentResponse,
   VnPayIpnResponse,
   VnPayReturnResponse,
 } from './payment.types';
+import { Payment } from './schema/payment.entity';
 import {
-  Payment,
   PaymentMethod,
   PaymentReviewReason,
   PaymentStatus,
-} from './schema/payment.entity';
+} from './domain/payment-state';
 import {
-  formatVnPayDate,
-  parseVnPayDate,
+  toVnPayAmount,
   VnPayGatewayService,
   type VnPayBankCode,
+  type VnPayLocale,
 } from './vnpay-gateway.service';
 
 type VnPayCallbackValidation =
   | {
       kind: 'VALID';
-      parameters: Record<string, string>;
       gatewayReference: string;
       vnpAmount: string;
       responseCode: string;
@@ -85,13 +80,13 @@ export class PaymentCollectionService {
   private readonly paymentTimeoutMilliseconds: number;
 
   constructor(
-    private readonly dataSource: DataSource,
-    @InjectRepository(Payment)
-    private readonly paymentsRepository: Repository<Payment>,
+    private readonly transactions: TransactionRunner,
+    private readonly payments: PaymentAcceptanceStore,
+    private readonly lifecycle: BookingPaymentLifecycleService,
     private readonly paymentQueryService: PaymentQueryService,
-    private readonly auditLogService: AuditLogService,
+    private readonly auditLog: TransactionalAuditLog,
     configService: ConfigService,
-    private readonly vnPayGatewayService: VnPayGatewayService,
+    private readonly vnPay: VnPayGatewayService,
   ) {
     this.paymentTimeoutMilliseconds =
       configService.getOrThrow<number>('BOOKING_PAYMENT_TIMEOUT_MINUTES') *
@@ -114,17 +109,17 @@ export class PaymentCollectionService {
     let paymentId: string;
 
     try {
-      paymentId = await this.dataSource.transaction(async (manager) => {
-        const booking = await getLockedPaymentBooking(manager, bookingId);
+      paymentId = await this.transactions.run(async (transaction) => {
+        const booking = await this.getLockedBooking(transaction, bookingId);
 
         if (booking.customerId !== activeCustomerId) {
           throw new NotFoundException('Khong tim thay booking.');
         }
 
-        const paymentsRepository = manager.getRepository(Payment);
-        const existingPayment = await paymentsRepository.findOneBy({
-          idempotencyKey: key,
-        });
+        const existingPayment = await this.payments.findByIdempotencyKey(
+          transaction,
+          key,
+        );
 
         if (existingPayment !== null) {
           this.assertOnlineIdempotentReplay(existingPayment, bookingId);
@@ -133,16 +128,14 @@ export class PaymentCollectionService {
 
         const now = new Date();
 
-        await failExpiredOnlinePaymentsForBooking(manager, booking.id, now);
+        await this.payments.expirePendingOnlineAttempts(
+          transaction,
+          booking.id,
+          now,
+        );
 
         if (
-          await paymentsRepository.exists({
-            where: {
-              bookingId: booking.id,
-              method: PaymentMethod.VNPAY,
-              status: PaymentStatus.PENDING,
-            },
-          })
+          await this.payments.hasPendingOnlineAttempt(transaction, booking.id)
         ) {
           throw new ConflictException(
             'Booking dang co giao dich VNPay cho xu ly.',
@@ -158,29 +151,25 @@ export class PaymentCollectionService {
                 booking.createdAt.getTime() + this.paymentTimeoutMilliseconds,
               ))
             : new Date(now.getTime() + this.paymentTimeoutMilliseconds);
-        const payment = await paymentsRepository.save(
-          paymentsRepository.create({
-            bookingId: booking.id,
-            amount: booking.totalAmount,
-            currency: 'VND',
-            method: PaymentMethod.VNPAY,
-            status: PaymentStatus.PENDING,
-            gatewayName: 'VNPAY',
-            gatewayReference: null,
-            gatewayTransactionId: null,
-            gatewayPaymentUrl: null,
-            gatewayResponseCode: null,
-            gatewayTransactionStatus: null,
-            idempotencyKey: key,
-            createdByUserId: null,
-            refundedByUserId: null,
-            paidAt: null,
-            refundedAt: null,
-            expiresAt,
-          }),
-        );
+        const payment = await this.payments.createPayment(transaction, {
+          bookingId: booking.id,
+          amount: booking.totalAmount,
+          currency: 'VND',
+          method: PaymentMethod.VNPAY,
+          status: PaymentStatus.PENDING,
+          gatewayName: 'VNPAY',
+          gatewayReference: null,
+          gatewayTransactionId: null,
+          gatewayPaymentUrl: null,
+          gatewayResponseCode: null,
+          gatewayTransactionStatus: null,
+          idempotencyKey: key,
+          createdByUserId: null,
+          paidAt: null,
+          expiresAt,
+        });
         const gatewayReference = `P${payment.id}`;
-        const paymentUrl = this.vnPayGatewayService.createPaymentUrl({
+        const createdPayment = this.vnPay.createPaymentRequest({
           amount: payment.amount,
           transactionReference: gatewayReference,
           orderInfo: `Thanh toan booking ${booking.bookingCode}`,
@@ -192,9 +181,9 @@ export class PaymentCollectionService {
         });
 
         payment.gatewayReference = gatewayReference;
-        payment.gatewayPaymentUrl = paymentUrl;
-        payment.gatewayTransactionDate = formatVnPayDate(now);
-        await paymentsRepository.save(payment);
+        payment.gatewayPaymentUrl = createdPayment.redirectUrl;
+        payment.gatewayTransactionDate = createdPayment.transactionDate;
+        await this.payments.savePaymentState(transaction, payment);
 
         return payment.id;
       });
@@ -206,7 +195,11 @@ export class PaymentCollectionService {
       );
     }
 
-    const payment = await this.paymentQueryService.getPaymentEntity(paymentId);
+    const payment = await this.payments.findPaymentSnapshot(paymentId);
+
+    if (payment === null) {
+      throw new NotFoundException('Khong tim thay payment.');
+    }
 
     if (payment.gatewayPaymentUrl === null || payment.expiresAt === null) {
       throw new ConflictException('Giao dich VNPay khong hop le.');
@@ -274,9 +267,9 @@ export class PaymentCollectionService {
     // VNPay Return is a browser redirect and is not an authoritative payment
     // notification.  It may only read the current correlated payment state;
     // all payment/booking mutations are reserved for the IPN path above.
-    const payment = await this.paymentsRepository.findOneBy({
-      gatewayReference: callback.gatewayReference,
-    });
+    const payment = await this.payments.findByGatewayReferenceSnapshot(
+      callback.gatewayReference,
+    );
 
     if (
       payment !== null &&
@@ -303,22 +296,12 @@ export class PaymentCollectionService {
   }
 
   async expirePendingOnlinePayments(now = new Date()): Promise<number> {
-    return this.dataSource.transaction(async (manager) => {
-      const paymentsRepository = manager.getRepository(Payment);
-      const payments = await paymentsRepository
-        .createQueryBuilder('payment')
-        .setLock('pessimistic_write')
-        .where('payment.method = :method', {
-          method: PaymentMethod.VNPAY,
-        })
-        .andWhere('payment.status = :status', {
-          status: PaymentStatus.PENDING,
-        })
-        .andWhere('payment.expiresAt IS NOT NULL')
-        .andWhere('payment.expiresAt <= :now', { now })
-        .orderBy('payment.id', 'ASC')
-        .take(100)
-        .getMany();
+    return this.transactions.run(async (transaction) => {
+      const payments = await this.payments.lockExpiredOnlinePayments(
+        transaction,
+        now,
+        100,
+      );
 
       for (const payment of payments) {
         payment.status = PaymentStatus.FAILED;
@@ -326,7 +309,7 @@ export class PaymentCollectionService {
       }
 
       if (payments.length > 0) {
-        await paymentsRepository.save(payments);
+        await this.payments.savePaymentState(transaction, payments);
       }
 
       return payments.length;
@@ -339,34 +322,29 @@ export class PaymentCollectionService {
     requestId?: string,
   ): VnPayCallbackValidation {
     try {
-      const verified = this.vnPayGatewayService.verifyCallback(query);
+      const verification = this.vnPay.verifyPaymentCallback(query);
 
-      if (
-        !verified.isValid ||
-        verified.parameters.vnp_TmnCode !==
-          this.vnPayGatewayService.getTmnCode()
-      ) {
+      if (!verification.isValid) {
         return { kind: 'INVALID_SIGNATURE' };
       }
 
-      const parameters = verified.parameters;
-      const gatewayReference = parameters.vnp_TxnRef;
-      const vnpAmount = parameters.vnp_Amount;
-      const responseCode = parameters.vnp_ResponseCode;
-      const transactionStatus = parameters.vnp_TransactionStatus;
-      const transactionId = parameters.vnp_TransactionNo;
+      const gatewayReference = verification.gatewayReference;
+      const vnpAmount = verification.gatewayAmount;
+      const responseCode = verification.providerResponseCode;
+      const transactionStatus = verification.providerTransactionStatus;
+      const transactionId = verification.providerTransactionId;
 
       if (
-        gatewayReference === undefined ||
-        vnpAmount === undefined ||
-        responseCode === undefined ||
-        transactionStatus === undefined ||
-        transactionId === undefined
+        gatewayReference === null ||
+        vnpAmount === null ||
+        responseCode === null ||
+        transactionStatus === null ||
+        transactionId === null
       ) {
         return { kind: 'INVALID_INPUT' };
       }
 
-      const paidAt = parseVnPayDate(parameters.vnp_PayDate);
+      const paidAt = verification.paidAt;
 
       if (
         responseCode === '00' &&
@@ -378,7 +356,6 @@ export class PaymentCollectionService {
 
       return {
         kind: 'VALID',
-        parameters,
         gatewayReference,
         vnpAmount,
         responseCode,
@@ -403,9 +380,9 @@ export class PaymentCollectionService {
     let reviewReason: PaymentReviewReason | null = null;
 
     try {
-      paymentSnapshot = await this.paymentsRepository.findOneBy({
-        gatewayReference: callback.gatewayReference,
-      });
+      paymentSnapshot = await this.payments.findByGatewayReferenceSnapshot(
+        callback.gatewayReference,
+      );
 
       if (paymentSnapshot === null) {
         return {
@@ -425,19 +402,15 @@ export class PaymentCollectionService {
         };
       }
 
-      const outcome = await this.dataSource.transaction(async (manager) => {
-        const booking = await getLockedPaymentBooking(
-          manager,
+      const outcome = await this.transactions.run(async (transaction) => {
+        const booking = await this.getLockedBooking(
+          transaction,
           activePaymentSnapshot.bookingId,
         );
-        const payment = await manager
-          .getRepository(Payment)
-          .createQueryBuilder('payment')
-          .setLock('pessimistic_write')
-          .where('payment.id = :paymentId', {
-            paymentId: activePaymentSnapshot.id,
-          })
-          .getOne();
+        const payment = await this.payments.lockPayment(
+          transaction,
+          activePaymentSnapshot.id,
+        );
 
         if (payment === null) {
           return 'NOT_FOUND' as const;
@@ -449,7 +422,6 @@ export class PaymentCollectionService {
 
         const successful =
           callback.responseCode === '00' && callback.transactionStatus === '00';
-        const bookingFromStatus = booking.status;
         const lateSuccess =
           successful &&
           payment.status === PaymentStatus.FAILED &&
@@ -464,122 +436,34 @@ export class PaymentCollectionService {
         payment.gatewayTransactionStatus = callback.transactionStatus;
 
         const canonicalPayment = successful
-          ? await manager
-              .getRepository(Payment)
-              .createQueryBuilder('canonicalPayment')
-              .setLock('pessimistic_write')
-              .where('canonicalPayment.bookingId = :bookingId', {
-                bookingId: booking.id,
-              })
-              .andWhere('canonicalPayment.id <> :paymentId', {
-                paymentId: payment.id,
-              })
-              .andWhere('canonicalPayment.status IN (:...statuses)', {
-                statuses: [
-                  PaymentStatus.SUCCESS,
-                  PaymentStatus.REFUND_PENDING,
-                  PaymentStatus.REFUNDED,
-                ],
-              })
-              .orderBy('canonicalPayment.id', 'ASC')
-              .getOne()
+          ? await this.payments.lockCanonicalPayment(
+              transaction,
+              booking.id,
+              payment.id,
+            )
           : null;
 
-        const acceptedPaymentId = booking.acceptedPaymentId ?? null;
-        const canonicalPaymentId =
-          acceptedPaymentId ?? canonicalPayment?.id ?? null;
-
-        if (
-          successful &&
-          (booking.status === BookingStatus.CANCELLED ||
-            (canonicalPaymentId !== null && canonicalPaymentId !== payment.id))
-        ) {
-          reviewReason =
-            booking.status === BookingStatus.CANCELLED
-              ? PaymentReviewReason.BOOKING_CANCELLED
-              : PaymentReviewReason.ANOTHER_SUCCESSFUL_PAYMENT;
-          payment.status = PaymentStatus.REQUIRES_REVIEW;
-          payment.reviewReason = reviewReason;
-          payment.reviewCanonicalPaymentId =
-            reviewReason === PaymentReviewReason.ANOTHER_SUCCESSFUL_PAYMENT
-              ? canonicalPaymentId
-              : null;
-          payment.gatewayTransactionId = callback.transactionId;
-          payment.paidAt = callback.paidAt;
-          await manager.getRepository(Payment).save(payment);
-          await this.auditLogService.record(manager, {
-            actorType: AuditActorType.SYSTEM,
-            actorId: null,
-            action: AuditAction.PAYMENT_CONFIRMED,
-            entityType: AuditEntityType.PAYMENT,
-            entityId: payment.id,
-            requestId,
-            metadata: {
-              bookingId: booking.id,
-              source: 'IPN',
-              paymentStatus: payment.status,
-              reviewReason: reviewReason ?? 'UNKNOWN',
-            },
-          });
-
-          return 'REQUIRES_REVIEW' as const;
-        }
-
-        if (successful) {
-          payment.status = PaymentStatus.SUCCESS;
-          payment.reviewReason = null;
-          payment.reviewCanonicalPaymentId = null;
-          payment.gatewayTransactionId = callback.transactionId;
-          payment.paidAt = callback.paidAt;
-          booking.acceptedPaymentId = payment.id;
-
-          booking.paymentStatus = BookingPaymentStatus.PAID;
-          booking.paymentExpiresAt = null;
-
-          if (booking.status === BookingStatus.PENDING_PAYMENT) {
-            booking.status = BookingStatus.CONFIRMED;
-          }
-        } else {
+        if (!successful) {
           payment.status = PaymentStatus.FAILED;
           payment.reviewReason = null;
           payment.reviewCanonicalPaymentId = null;
+          await this.payments.savePaymentState(transaction, payment);
+          return 'PROCESSED' as const;
         }
 
-        await manager.getRepository(Payment).save(payment);
-        await manager.getRepository(Booking).save(booking);
-
-        if (successful) {
-          await this.auditLogService.record(manager, {
-            actorType: AuditActorType.SYSTEM,
-            actorId: null,
-            action: AuditAction.PAYMENT_CONFIRMED,
-            entityType: AuditEntityType.PAYMENT,
-            entityId: payment.id,
+        const applied = await this.lifecycle.applyGatewayPaymentOutcome(
+          transaction,
+          {
+            booking,
+            payment,
+            canonicalPaymentId: canonicalPayment?.id ?? null,
+            transactionId: callback.transactionId,
+            paidAt: callback.paidAt,
             requestId,
-            metadata: {
-              bookingId: booking.id,
-              source: 'IPN',
-              paymentStatus: payment.status,
-            },
-          });
-          if (bookingFromStatus !== booking.status) {
-            await this.auditLogService.record(manager, {
-              actorType: AuditActorType.SYSTEM,
-              actorId: null,
-              action: AuditAction.BOOKING_STATUS_CHANGED,
-              entityType: AuditEntityType.BOOKING,
-              entityId: booking.id,
-              requestId,
-              metadata: {
-                fromStatus: bookingFromStatus,
-                toStatus: booking.status,
-                paymentId: payment.id,
-              },
-            });
-          }
-        }
-
-        return 'PROCESSED' as const;
+          },
+        );
+        reviewReason = applied.reviewReason;
+        return applied.outcome;
       });
 
       if (outcome === 'REQUIRES_REVIEW') {
@@ -627,18 +511,11 @@ export class PaymentCollectionService {
     key: string,
     bookingId: string,
   ): Promise<string> {
-    const duplicateKey = getMysqlDuplicateKey(error);
-
-    if (
-      duplicateKey === undefined ||
-      !duplicateKey.includes('payments_idempotency')
-    ) {
+    if (!(error instanceof PaymentIdempotencyConflictError)) {
       throw error;
     }
 
-    const payment = await this.paymentsRepository.findOneBy({
-      idempotencyKey: key,
-    });
+    const payment = await this.payments.findByIdempotencyKeySnapshot(key);
 
     if (payment === null) {
       throw new ConflictException('Khong the tao giao dich trung lap.');
@@ -646,6 +523,19 @@ export class PaymentCollectionService {
 
     this.assertOnlineIdempotentReplay(payment, bookingId);
     return payment.id;
+  }
+
+  private async getLockedBooking(
+    context: TransactionContext,
+    bookingId: string,
+  ) {
+    const booking = await this.payments.lockBooking(context, bookingId);
+
+    if (booking === null) {
+      throw new NotFoundException('Khong tim thay booking.');
+    }
+
+    return booking;
   }
 
   private optionalVnPayBankCode(value: unknown): VnPayBankCode | undefined {
@@ -660,7 +550,7 @@ export class PaymentCollectionService {
     return value;
   }
 
-  private optionalVnPayLocale(value: unknown): 'vn' | 'en' {
+  private optionalVnPayLocale(value: unknown): VnPayLocale {
     if (value === undefined || value === null || value === '') {
       return 'vn';
     }
@@ -679,7 +569,7 @@ export class PaymentCollectionService {
       100,
     );
 
-    if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{7,99}$/.test(key)) {
+    if (!isValidIdempotencyKey(key)) {
       throw new BadRequestException('Idempotency-Key khong hop le.');
     }
 
@@ -699,16 +589,6 @@ export class PaymentCollectionService {
       throw new BadRequestException(message);
     }
   }
-}
-
-function toVnPayAmount(amount: string): string {
-  const match = /^([0-9]+)[.]([0-9]{2})$/.exec(amount);
-
-  if (match === null) {
-    throw new Error('Payment amount is invalid.');
-  }
-
-  return (BigInt(match[1]) * 100n + BigInt(match[2])).toString();
 }
 
 function getErrorStack(error: unknown): string | undefined {

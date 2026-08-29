@@ -35,7 +35,7 @@ import {
   AuditLogService,
   type AuditActorContext,
 } from '../audit/audit-log.service';
-import { AuditAction, AuditEntityType } from '../audit/schema/audit-log.entity';
+import { AuditAction, AuditEntityType } from '../audit/domain/audit-log';
 import { CreateUserDto } from './dto/create-user.dto';
 import { ListUsersQueryDto } from './dto/list-users-query.dto';
 import { UpdateUserDto } from './dto/update-user.dto';

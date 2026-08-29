@@ -10,7 +10,7 @@ import {
   AuditAction,
   AuditActorType,
   AuditEntityType,
-} from '../../../../src/module/audit/schema/audit-log.entity';
+} from '../../../../src/module/audit/domain/audit-log';
 import type { PasswordHasherService } from '../../../../src/module/auth/password-hasher.service';
 import { User } from '../../../../src/module/user/schema/user.entity';
 import { UserAdminService } from '../../../../src/module/user/user-admin.service';

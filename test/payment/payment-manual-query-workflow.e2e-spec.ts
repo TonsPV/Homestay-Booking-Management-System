@@ -11,12 +11,13 @@ import { AccessTokenService } from '../../src/module/auth/access-token.service';
 import { PasswordHasherService } from '../../src/module/auth/password-hasher.service';
 import { Booking } from '../../src/module/booking/schema/booking.entity';
 import { Customer } from '../../src/module/customer/schema/customer.entity';
+import { Payment } from '../../src/module/payment/schema/payment.entity';
 import {
-  Payment,
   PaymentMethod,
   PaymentStatus,
-} from '../../src/module/payment/schema/payment.entity';
-import { Room, RoomStatus } from '../../src/module/room/schema/room.entity';
+} from '../../src/module/payment/domain/payment-state';
+import { Room } from '../../src/module/room/schema/room.entity';
+import { RoomStatus } from '../../src/module/room/domain/room-status';
 import { RoomType } from '../../src/module/room-type/schema/room-type.entity';
 import { User } from '../../src/module/user/schema/user.entity';
 import { E2eHarness } from '../e2e-harness';
@@ -280,20 +281,8 @@ describe('Payment query/manual workflow (e2e)', () => {
         gatewayTransactionStatus: null,
         gatewayTransactionDate: null,
         idempotencyKey: 'pending-vnpay-' + suffix,
-        refundIdempotencyKey: null,
-        refundRequestId: null,
-        refundPreviousStatus: null,
-        refundGatewayTransactionId: null,
-        refundResponseCode: null,
-        refundTransactionStatus: null,
-        refundMessage: null,
-        refundReason: null,
         createdByUserId: null,
-        refundedByUserId: null,
         paidAt: null,
-        refundedAt: null,
-        refundRequestedAt: null,
-        refundLastQueriedAt: null,
         expiresAt: new Date(Date.now() + 60_000),
       }),
     );

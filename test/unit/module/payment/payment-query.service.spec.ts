@@ -1,19 +1,19 @@
 import { NotFoundException, UnauthorizedException } from '@nestjs/common';
-import type { FindOperator, Repository } from 'typeorm';
+import type { Repository } from 'typeorm';
 
 import { Booking } from '../../../../src/module/booking/schema/booking.entity';
 import { PaymentQueryService } from '../../../../src/module/payment/payment-query.service';
+import { Payment } from '../../../../src/module/payment/schema/payment.entity';
+import { PaymentRefund } from '../../../../src/module/payment/schema/payment-refund.entity';
 import {
-  Payment,
   PaymentMethod,
   PaymentStatus,
-} from '../../../../src/module/payment/schema/payment.entity';
+} from '../../../../src/module/payment/domain/payment-state';
 
 describe('PaymentQueryService', () => {
   let paymentQuery: ReturnType<typeof createPaymentQuery>;
   let paymentsRepository: {
     createQueryBuilder: jest.Mock;
-    countBy: jest.Mock;
   };
   let bookingsRepository: {
     findOneBy: jest.Mock;
@@ -25,7 +25,6 @@ describe('PaymentQueryService', () => {
     paymentQuery = createPaymentQuery();
     paymentsRepository = {
       createQueryBuilder: jest.fn(() => paymentQuery),
-      countBy: jest.fn(),
     };
     bookingsRepository = {
       findOneBy: jest.fn(),
@@ -42,7 +41,7 @@ describe('PaymentQueryService', () => {
       gatewayName: 'VNPAY',
       gatewayReference: 'P500',
       gatewayTransactionId: 'internal-transaction',
-      refundRequestId: 'internal-refund-request',
+      refund: refundFixture({ requestId: 'internal-refund-request' }),
       createdByUserId: '20',
       createdByUser: {
         id: '20',
@@ -84,7 +83,10 @@ describe('PaymentQueryService', () => {
       },
     });
 
-    expect(paymentQuery.leftJoinAndSelect).not.toHaveBeenCalled();
+    expect(paymentQuery.leftJoinAndSelect).toHaveBeenCalledWith(
+      'payment.refund',
+      'refund',
+    );
     expect(paymentQuery.andWhere).toHaveBeenCalledWith(
       'payment.bookingId = :bookingId',
       { bookingId: '100' },
@@ -128,7 +130,7 @@ describe('PaymentQueryService', () => {
   });
 
   it('adds the stale refund count to the all-management list metadata', async () => {
-    paymentsRepository.countBy.mockResolvedValue(2);
+    paymentQuery.getCount.mockResolvedValue(2);
     paymentQuery.getManyAndCount.mockResolvedValue([[paymentFixture()], 1]);
 
     await expect(
@@ -158,7 +160,7 @@ describe('PaymentQueryService', () => {
       'payment.method IN (:...allowedMethods)',
       { allowedMethods: [PaymentMethod.CASH, PaymentMethod.BANK_TRANSFER] },
     );
-    expect(paymentsRepository.countBy).not.toHaveBeenCalled();
+    expect(paymentQuery.getCount).not.toHaveBeenCalled();
   });
 
   it('returns no rows when staff requests VNPay explicitly', async () => {
@@ -176,7 +178,7 @@ describe('PaymentQueryService', () => {
     paymentQuery.getOne.mockResolvedValueOnce(
       paymentFixture({
         gatewayTransactionId: 'gateway-transaction-500',
-        refundRequestId: 'refund-request-500',
+        refund: refundFixture({ requestId: 'refund-request-500' }),
         createdByUserId: '20',
         createdByUser: {
           id: '20',
@@ -202,6 +204,10 @@ describe('PaymentQueryService', () => {
       'payment.createdByUser',
       'createdByUser',
     );
+    expect(paymentQuery.leftJoinAndSelect).toHaveBeenCalledWith(
+      'payment.refund',
+      'refund',
+    );
 
     paymentQuery.getOne.mockResolvedValueOnce(null);
     await expect(service.getManagementPayment('999')).rejects.toBeInstanceOf(
@@ -210,23 +216,21 @@ describe('PaymentQueryService', () => {
   });
 
   it('counts refunds pending for more than seven days', async () => {
-    paymentsRepository.countBy.mockResolvedValue(3);
+    paymentQuery.getCount.mockResolvedValue(3);
     const now = new Date('2030-01-08T00:00:00.000Z');
 
     await expect(service.countStaleRefunds(now)).resolves.toBe(3);
-    const countCalls = paymentsRepository.countBy.mock
-      .calls as unknown as Array<
-      [
-        {
-          status: PaymentStatus;
-          refundRequestedAt: FindOperator<Date>;
-        },
-      ]
-    >;
-
-    expect(countCalls[0]?.[0].status).toBe(PaymentStatus.REFUND_PENDING);
-    expect(countCalls[0]?.[0].refundRequestedAt.value).toEqual(
-      new Date('2030-01-01T00:00:00.000Z'),
+    expect(paymentQuery.innerJoin).toHaveBeenCalledWith(
+      'payment.refund',
+      'refund',
+    );
+    expect(paymentQuery.where).toHaveBeenCalledWith(
+      'payment.status = :status',
+      { status: PaymentStatus.REFUND_PENDING },
+    );
+    expect(paymentQuery.andWhere).toHaveBeenCalledWith(
+      'refund.requestedAt < :cutoff',
+      { cutoff: new Date('2030-01-01T00:00:00.000Z') },
     );
   });
 });
@@ -234,6 +238,7 @@ describe('PaymentQueryService', () => {
 function createPaymentQuery() {
   return {
     leftJoinAndSelect: jest.fn().mockReturnThis(),
+    innerJoin: jest.fn().mockReturnThis(),
     where: jest.fn().mockReturnThis(),
     andWhere: jest.fn().mockReturnThis(),
     orderBy: jest.fn().mockReturnThis(),
@@ -242,6 +247,7 @@ function createPaymentQuery() {
     take: jest.fn().mockReturnThis(),
     getOne: jest.fn(),
     getManyAndCount: jest.fn().mockResolvedValue([[], 0]),
+    getCount: jest.fn(),
   };
 }
 
@@ -263,25 +269,37 @@ function paymentFixture(overrides: Partial<Payment> = {}): Payment {
     gatewayTransactionStatus: null,
     gatewayTransactionDate: null,
     idempotencyKey: 'manual-key-0001',
-    refundIdempotencyKey: null,
-    refundRequestId: null,
-    refundPreviousStatus: null,
-    refundGatewayTransactionId: null,
-    refundResponseCode: null,
-    refundTransactionStatus: null,
-    refundMessage: null,
-    refundReason: null,
+    refund: null,
     createdByUserId: '20',
     createdByUser: null,
-    refundedByUserId: null,
-    refundedByUser: null,
     paidAt: new Date('2030-01-01T00:00:00.000Z'),
-    refundedAt: null,
-    refundRequestedAt: null,
-    refundLastQueriedAt: null,
     expiresAt: null,
     createdAt: new Date('2030-01-01T00:00:00.000Z'),
     updatedAt: new Date('2030-01-01T00:00:00.000Z'),
     ...overrides,
   } as Payment;
+}
+
+function refundFixture(overrides: Partial<PaymentRefund> = {}): PaymentRefund {
+  return {
+    id: '900',
+    paymentId: '500',
+    payment: null,
+    idempotencyKey: null,
+    requestId: null,
+    previousPaymentStatus: null,
+    gatewayTransactionId: null,
+    responseCode: null,
+    transactionStatus: null,
+    message: null,
+    reason: null,
+    refundedByUserId: null,
+    refundedByUser: null,
+    requestedAt: null,
+    refundedAt: null,
+    lastQueriedAt: null,
+    createdAt: new Date('2030-01-01T00:00:00.000Z'),
+    updatedAt: new Date('2030-01-01T00:00:00.000Z'),
+    ...overrides,
+  } as PaymentRefund;
 }

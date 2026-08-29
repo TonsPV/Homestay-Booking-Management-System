@@ -9,17 +9,16 @@ import { configureApp } from '../../src/bootstrap/configure-app';
 import migrationDataSource from '../../src/database/data-source';
 import { AccessTokenService } from '../../src/module/auth/access-token.service';
 import { PasswordHasherService } from '../../src/module/auth/password-hasher.service';
+import { Booking } from '../../src/module/booking/schema/booking.entity';
 import {
-  Booking,
   BookingPaymentStatus,
   BookingStatus,
-} from '../../src/module/booking/schema/booking.entity';
-import {
-  RoomCalendar,
-  RoomCalendarStatus,
-} from '../../src/module/booking/schema/room-calendar.entity';
+} from '../../src/module/booking/domain/booking-state';
+import { RoomCalendar } from '../../src/module/booking/schema/room-calendar.entity';
+import { RoomCalendarStatus } from '../../src/module/booking/domain/room-calendar-status';
 import { Customer } from '../../src/module/customer/schema/customer.entity';
-import { Room, RoomStatus } from '../../src/module/room/schema/room.entity';
+import { Room } from '../../src/module/room/schema/room.entity';
+import { RoomStatus } from '../../src/module/room/domain/room-status';
 import { RoomType } from '../../src/module/room-type/schema/room-type.entity';
 import { User } from '../../src/module/user/schema/user.entity';
 import { E2eHarness } from '../e2e-harness';

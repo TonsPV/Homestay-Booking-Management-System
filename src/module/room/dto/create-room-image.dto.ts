@@ -4,9 +4,9 @@ import { Allow } from 'class-validator';
 export class CreateRoomImageDto {
   @ApiPropertyOptional({ example: 0, minimum: 0, type: Number })
   @Allow()
-  sortOrder?: unknown;
+  sortOrder?: number | string | null;
 
   @ApiPropertyOptional({ example: true, type: Boolean })
   @Allow()
-  isCover?: unknown;
+  isCover?: boolean | string | null;
 }

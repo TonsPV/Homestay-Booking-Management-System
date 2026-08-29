@@ -2,7 +2,7 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Allow } from 'class-validator';
 
 import { PaginationQueryDto } from '../../../common/pagination/pagination-query.dto';
-import { BookingStatus } from '../schema/booking.entity';
+import { BookingStatus } from '../domain/booking-state';
 
 export class ListBookingsQueryDto extends PaginationQueryDto {
   @ApiPropertyOptional({

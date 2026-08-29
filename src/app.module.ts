@@ -53,8 +53,11 @@ import { UserModule } from './module/user/user.module';
 
         autoLoadEntities: true,
 
-        // Không để TypeORM tự ý sửa cấu trúc database.
+        // Không dùng synchronize; schema được quản lý bằng migration.
         synchronize: false,
+        migrations: [__dirname + '/database/migrations/*{.js,.ts}'],
+        migrationsTableName: 'typeorm_migrations',
+        migrationsRun: true,
       }),
     }),
     AuthModule,

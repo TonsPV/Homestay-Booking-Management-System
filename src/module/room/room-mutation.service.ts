@@ -19,16 +19,20 @@ import {
   AuditLogService,
   type AuditActorContext,
 } from '../audit/audit-log.service';
-import { AuditAction, AuditEntityType } from '../audit/schema/audit-log.entity';
-import { Booking, BookingStatus } from '../booking/schema/booking.entity';
+import { AuditAction, AuditEntityType } from '../audit/domain/audit-log';
+import { Booking } from '../booking/schema/booking.entity';
+import { BookingStatus } from '../booking/domain/booking-state';
 import { RoomType } from '../room-type/schema/room-type.entity';
 import type { CreateRoomDto } from './dto/create-room.dto';
 import type { UpdateRoomStatusDto } from './dto/update-room-status.dto';
 import type { UpdateRoomDto } from './dto/update-room.dto';
 import { RoomImageStorageService } from './room-image-storage.service';
 import { RoomQueryService } from './room-query.service';
-import { RoomStatusTransitionPolicy } from './room-status-transition.policy';
-import { Room, RoomStatus } from './schema/room.entity';
+import { RoomStatusTransitionPolicy } from './domain/room-status-transition.policy';
+import type { RoomStatusTransitionContext } from './domain/room-status-transition.policy';
+import { throwMappedRoomDomainError } from './room-domain-error.mapper';
+import { Room } from './schema/room.entity';
+import { RoomStatus } from './domain/room-status';
 import type { RoomResponse } from './room.types';
 
 @Injectable()
@@ -67,7 +71,7 @@ export class RoomMutationService {
       ) ?? null;
     const status = this.optionalStatus(body.status) ?? RoomStatus.READY;
 
-    this.roomStatusTransitionPolicy.assertAllowed({
+    this.assertStatusTransitionAllowed({
       currentStatus: RoomStatus.READY,
       nextStatus: status,
       role: 'ADMIN',
@@ -239,7 +243,7 @@ export class RoomMutationService {
         const hasCheckedInBooking = await this.lockStayBookings(manager, id);
         const room = await this.getLockedRoomForStatus(manager, id);
 
-        this.roomStatusTransitionPolicy.assertAllowed({
+        this.assertStatusTransitionAllowed({
           currentStatus: room.status,
           nextStatus: status,
           role,
@@ -281,6 +285,16 @@ export class RoomMutationService {
     );
 
     return this.roomQueryService.getAdminRoom(roomId);
+  }
+
+  private assertStatusTransitionAllowed(
+    context: RoomStatusTransitionContext,
+  ): void {
+    try {
+      this.roomStatusTransitionPolicy.assertAllowed(context);
+    } catch (error) {
+      throwMappedRoomDomainError(error);
+    }
   }
 
   private async lockStayBookings(

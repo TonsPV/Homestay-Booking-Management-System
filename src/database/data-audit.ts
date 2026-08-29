@@ -127,8 +127,13 @@ export const DATA_AUDIT_CHECKS: readonly DataAuditCheck[] = [
               AND (
                 p.status = 'SUCCESS'
                 OR (
-                  p.status = 'REFUND_PENDING'
-                  AND p.refund_previous_status = 'SUCCESS'
+                p.status = 'REFUND_PENDING'
+                   AND EXISTS (
+                     SELECT 1
+                     FROM payment_refunds pr
+                     WHERE pr.payment_id = p.id
+                       AND pr.previous_payment_status = 'SUCCESS'
+                   )
                 )
               )
           )
@@ -151,12 +156,29 @@ export const DATA_AUDIT_CHECKS: readonly DataAuditCheck[] = [
               AND (
                 p.status IN ('SUCCESS', 'REFUNDED')
                 OR (
-                  p.status = 'REFUND_PENDING'
-                  AND p.refund_previous_status = 'SUCCESS'
+                p.status = 'REFUND_PENDING'
+                   AND EXISTS (
+                     SELECT 1
+                     FROM payment_refunds pr
+                     WHERE pr.payment_id = p.id
+                       AND pr.previous_payment_status = 'SUCCESS'
+                   )
                 )
               )
           )
         )
+    `,
+  },
+  {
+    name: 'payment-refund-lineage',
+    description:
+      'Every pending or completed refund payment has one extracted refund operation.',
+    sql: `
+      SELECT COUNT(*) AS violationCount
+      FROM payments p
+      LEFT JOIN payment_refunds pr ON pr.payment_id = p.id
+      WHERE p.status IN ('REFUND_PENDING', 'REFUNDED')
+        AND pr.id IS NULL
     `,
   },
   {
@@ -239,10 +261,11 @@ export const DATA_AUDIT_CHECKS: readonly DataAuditCheck[] = [
     description: 'Refunds pending for more than seven days are highlighted.',
     sql: `
       SELECT COUNT(*) AS violationCount
-      FROM payments
-      WHERE status = 'REFUND_PENDING'
-        AND refund_requested_at IS NOT NULL
-        AND refund_requested_at < DATE_SUB(UTC_TIMESTAMP(6), INTERVAL 7 DAY)
+      FROM payments p
+      INNER JOIN payment_refunds pr ON pr.payment_id = p.id
+      WHERE p.status = 'REFUND_PENDING'
+        AND pr.requested_at IS NOT NULL
+        AND pr.requested_at < DATE_SUB(UTC_TIMESTAMP(6), INTERVAL 7 DAY)
     `,
   },
 ];

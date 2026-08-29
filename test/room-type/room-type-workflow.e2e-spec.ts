@@ -13,7 +13,8 @@ import { PasswordHasherService } from '../../src/module/auth/password-hasher.ser
 import { AmenityService } from '../../src/module/amenity/amenity.service';
 import { Amenity } from '../../src/module/amenity/schema/amenity.entity';
 import { RoomMutationService } from '../../src/module/room/room-mutation.service';
-import { RoomStatus, Room } from '../../src/module/room/schema/room.entity';
+import { Room } from '../../src/module/room/schema/room.entity';
+import { RoomStatus } from '../../src/module/room/domain/room-status';
 import { BedType } from '../../src/module/room-type/bed-configuration';
 import { RoomTypeService } from '../../src/module/room-type/room-type.service';
 import { RoomType } from '../../src/module/room-type/schema/room-type.entity';

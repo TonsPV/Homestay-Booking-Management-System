@@ -1,7 +1,10 @@
-import { ConflictException, ForbiddenException } from '@nestjs/common';
-
-import { RoomStatusTransitionPolicy } from '../../../../src/module/room/room-status-transition.policy';
-import { RoomStatus } from '../../../../src/module/room/schema/room.entity';
+import { RoomStatusTransitionPolicy } from '../../../../src/module/room/domain/room-status-transition.policy';
+import { RoomStatus } from '../../../../src/module/room/domain/room-status';
+import {
+  CheckedInRoomMustRemainOccupiedError,
+  RoomHiddenStatusPermissionError,
+  RoomOccupancyRequiresCheckedInBookingError,
+} from '../../../../src/module/room/domain/room.errors';
 
 describe('RoomStatusTransitionPolicy', () => {
   const policy = new RoomStatusTransitionPolicy();
@@ -32,7 +35,7 @@ describe('RoomStatusTransitionPolicy', () => {
         role: 'ADMIN',
         hasCheckedInBooking: true,
       }),
-    ).toThrow(ConflictException);
+    ).toThrow(CheckedInRoomMustRemainOccupiedError);
   });
 
   it.each(Object.values(RoomStatus))(
@@ -45,7 +48,7 @@ describe('RoomStatusTransitionPolicy', () => {
           role: 'ADMIN',
           hasCheckedInBooking: false,
         }),
-      ).toThrow(ConflictException);
+      ).toThrow(RoomOccupancyRequiresCheckedInBookingError);
     },
   );
 
@@ -113,7 +116,7 @@ describe('RoomStatusTransitionPolicy', () => {
           role: 'STAFF',
           hasCheckedInBooking: false,
         }),
-      ).toThrow(ForbiddenException);
+      ).toThrow(RoomHiddenStatusPermissionError);
     },
   );
 });

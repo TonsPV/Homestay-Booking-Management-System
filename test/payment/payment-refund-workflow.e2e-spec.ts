@@ -7,34 +7,34 @@ import type { App } from 'supertest/types';
 import { AppModule } from '../../src/app.module';
 import { configureApp } from '../../src/bootstrap/configure-app';
 import migrationDataSource from '../../src/database/data-source';
+import { AuditLog } from '../../src/module/audit/schema/audit-log.entity';
 import {
   AuditAction,
   AuditActorType,
   AuditEntityType,
-  AuditLog,
-} from '../../src/module/audit/schema/audit-log.entity';
+} from '../../src/module/audit/domain/audit-log';
+import { Booking } from '../../src/module/booking/schema/booking.entity';
 import {
-  Booking,
   BookingPaymentStatus,
   BookingStatus,
-} from '../../src/module/booking/schema/booking.entity';
-import {
-  RoomCalendar,
-  RoomCalendarStatus,
-} from '../../src/module/booking/schema/room-calendar.entity';
+} from '../../src/module/booking/domain/booking-state';
+import { RoomCalendar } from '../../src/module/booking/schema/room-calendar.entity';
+import { RoomCalendarStatus } from '../../src/module/booking/domain/room-calendar-status';
 import { Customer } from '../../src/module/customer/schema/customer.entity';
 import { AccessTokenService } from '../../src/module/auth/access-token.service';
+import { Payment } from '../../src/module/payment/schema/payment.entity';
+import { PaymentRefund } from '../../src/module/payment/schema/payment-refund.entity';
 import {
-  Payment,
   PaymentMethod,
   PaymentReviewReason,
   PaymentStatus,
-} from '../../src/module/payment/schema/payment.entity';
+} from '../../src/module/payment/domain/payment-state';
 import {
   VnPayGatewayService,
   type VnPayGatewayOperationResult,
 } from '../../src/module/payment/vnpay-gateway.service';
-import { Room, RoomStatus } from '../../src/module/room/schema/room.entity';
+import { Room } from '../../src/module/room/schema/room.entity';
+import { RoomStatus } from '../../src/module/room/domain/room-status';
 import { RoomType } from '../../src/module/room-type/schema/room-type.entity';
 import { User } from '../../src/module/user/schema/user.entity';
 import { E2eHarness } from '../e2e-harness';
@@ -76,6 +76,7 @@ describe('Payment refund/reconciliation workflow (e2e)', () => {
   let rooms: Repository<Room>;
   let bookings: Repository<Booking>;
   let payments: Repository<Payment>;
+  let paymentRefunds: Repository<PaymentRefund>;
   let calendars: Repository<RoomCalendar>;
   let accessTokenService: AccessTokenService;
   let adminToken: string;
@@ -107,6 +108,7 @@ describe('Payment refund/reconciliation workflow (e2e)', () => {
     rooms = dataSource.getRepository(Room);
     bookings = dataSource.getRepository(Booking);
     payments = dataSource.getRepository(Payment);
+    paymentRefunds = dataSource.getRepository(PaymentRefund);
     calendars = dataSource.getRepository(RoomCalendar);
     accessTokenService = app.get(AccessTokenService);
 
@@ -185,6 +187,8 @@ describe('Payment refund/reconciliation workflow (e2e)', () => {
 
       if (ownedBookingIds.length > 0)
         await bookings.update(ownedBookingIds, { acceptedPaymentId: null });
+      if (ownedPaymentIds.length > 0)
+        await paymentRefunds.delete({ paymentId: In(ownedPaymentIds) });
       if (ownedPaymentIds.length > 0) await payments.delete(ownedPaymentIds);
       if (ownedBookingIds.length > 0) {
         await calendars.delete({ bookingId: In(ownedBookingIds) });
@@ -342,8 +346,10 @@ describe('Payment refund/reconciliation workflow (e2e)', () => {
         .expect(409);
       expect(await payments.findOneByOrFail({ id: payment.id })).toMatchObject({
         status: PaymentStatus.SUCCESS,
-        refundResponseCode: '91',
       });
+      expect(
+        await paymentRefunds.findOneByOrFail({ paymentId: payment.id }),
+      ).toMatchObject({ responseCode: '91' });
       await request(app.getHttpServer())
         .post(`/api/v1/management/payments/${payment.id}/refund`)
         .set('Authorization', `Bearer ${adminToken}`)
@@ -359,15 +365,14 @@ describe('Payment refund/reconciliation workflow (e2e)', () => {
   it('restores the exact previous status when reconciliation receives an explicit reject', async () => {
     const { payment } = await createPaidPayment(PaymentMethod.VNPAY);
     const refundKey = `reconcile-reject-${suffix}`;
+    await createRefundRecord(payment.id, {
+      idempotencyKey: refundKey,
+      requestId: `R-${suffix}`.slice(0, 32),
+      previousPaymentStatus: PaymentStatus.SUCCESS,
+      reason: 'Reconciliation reject fixture.',
+    });
     await payments.update(payment.id, {
       status: PaymentStatus.REFUND_PENDING,
-      refundIdempotencyKey: refundKey,
-      refundRequestId: `R-${suffix}`.slice(0, 32),
-      refundPreviousStatus: PaymentStatus.SUCCESS,
-      refundReason: 'Reconciliation reject fixture.',
-      refundResponseCode: null,
-      refundTransactionStatus: null,
-      refundGatewayTransactionId: null,
     });
 
     const gateway = app.get(VnPayGatewayService);
@@ -394,9 +399,10 @@ describe('Payment refund/reconciliation workflow (e2e)', () => {
       expect(body.data.status).toBe(PaymentStatus.SUCCESS);
       expect(await payments.findOneByOrFail({ id: payment.id })).toMatchObject({
         status: PaymentStatus.SUCCESS,
-        refundResponseCode: '91',
-        refundTransactionStatus: '91',
       });
+      expect(
+        await paymentRefunds.findOneByOrFail({ paymentId: payment.id }),
+      ).toMatchObject({ responseCode: '91', transactionStatus: '91' });
       expect(querySpy).toHaveBeenCalledTimes(1);
     } finally {
       querySpy.mockRestore();
@@ -471,7 +477,10 @@ describe('Payment refund/reconciliation workflow (e2e)', () => {
         reviewReason: PaymentReviewReason.ANOTHER_SUCCESSFUL_PAYMENT,
         reviewCanonicalPaymentId: canonicalPayment.id,
       });
-      expect(duplicatePayment.refundRequestId).toEqual(expect.any(String));
+      const duplicateRefund = await paymentRefunds.findOneByOrFail({
+        paymentId: duplicatePayment.id,
+      });
+      expect(duplicateRefund.requestId).toEqual(expect.any(String));
       await expectBookingAndCalendarUnchanged(fixture, calendarBefore);
 
       const refundAudits = await auditLogs.find({
@@ -501,7 +510,7 @@ describe('Payment refund/reconciliation workflow (e2e)', () => {
             canonicalPaymentId: canonicalPayment.id,
             duplicatePaymentId: duplicatePayment.id,
             reason: PaymentReviewReason.ANOTHER_SUCCESSFUL_PAYMENT,
-            refundRequestId: duplicatePayment.refundRequestId,
+            refundRequestId: duplicateRefund.requestId,
           },
         });
         expect(audit.metadata).not.toHaveProperty('gatewayReference');
@@ -562,8 +571,14 @@ describe('Payment refund/reconciliation workflow (e2e)', () => {
         await payments.findOneByOrFail({ id: fixture.duplicatePayment.id }),
       ).toMatchObject({
         status: PaymentStatus.REFUND_PENDING,
-        refundIdempotencyKey: idempotencyKey,
-        refundPreviousStatus: PaymentStatus.REQUIRES_REVIEW,
+      });
+      expect(
+        await paymentRefunds.findOneByOrFail({
+          paymentId: fixture.duplicatePayment.id,
+        }),
+      ).toMatchObject({
+        idempotencyKey,
+        previousPaymentStatus: PaymentStatus.REQUIRES_REVIEW,
       });
 
       const secondResponse = await resolveDuplicateCharge(
@@ -679,8 +694,6 @@ describe('Payment refund/reconciliation workflow (e2e)', () => {
         }),
       ).toMatchObject({
         status: PaymentStatus.REQUIRES_REVIEW,
-        refundIdempotencyKey: null,
-        refundRequestId: null,
       });
       await expectBookingAndCalendarUnchanged(wrongReason, wrongReasonCalendar);
       await expectBookingAndCalendarUnchanged(
@@ -700,32 +713,36 @@ describe('Payment refund/reconciliation workflow (e2e)', () => {
     const pending = await createDuplicateCharge();
     const pendingCalendar = await takeCalendarSnapshot(pending.booking.id);
     const pendingKey = `duplicate-pending-${suffix}`;
+    await createRefundRecord(pending.duplicatePayment.id, {
+      idempotencyKey: pendingKey,
+      requestId: createFixtureRefundRequestId('P'),
+      previousPaymentStatus: PaymentStatus.REQUIRES_REVIEW,
+      reason: 'Refund duplicate VNPay charge.',
+      refundedByUserId: userIds[0],
+      requestedAt: new Date(),
+    });
     await payments.update(pending.duplicatePayment.id, {
       status: PaymentStatus.REFUND_PENDING,
-      refundIdempotencyKey: pendingKey,
-      refundRequestId: createFixtureRefundRequestId('P'),
-      refundPreviousStatus: PaymentStatus.REQUIRES_REVIEW,
-      refundReason: 'Refund duplicate VNPay charge.',
-      refundedByUserId: userIds[0],
-      refundRequestedAt: new Date(),
     });
 
     const refunded = await createDuplicateCharge();
     const refundedCalendar = await takeCalendarSnapshot(refunded.booking.id);
     const refundedKey = `duplicate-refunded-${suffix}`;
+    await createRefundRecord(refunded.duplicatePayment.id, {
+      idempotencyKey: refundedKey,
+      requestId: createFixtureRefundRequestId('D'),
+      previousPaymentStatus: PaymentStatus.REQUIRES_REVIEW,
+      gatewayTransactionId: `already-refunded-${suffix}`,
+      responseCode: '00',
+      transactionStatus: '00',
+      message: 'Duplicate charge already refunded.',
+      reason: 'Refund duplicate VNPay charge.',
+      refundedByUserId: userIds[0],
+      requestedAt: new Date(),
+      refundedAt: new Date(),
+    });
     await payments.update(refunded.duplicatePayment.id, {
       status: PaymentStatus.REFUNDED,
-      refundIdempotencyKey: refundedKey,
-      refundRequestId: createFixtureRefundRequestId('D'),
-      refundPreviousStatus: PaymentStatus.REQUIRES_REVIEW,
-      refundGatewayTransactionId: `already-refunded-${suffix}`,
-      refundResponseCode: '00',
-      refundTransactionStatus: '00',
-      refundMessage: 'Duplicate charge already refunded.',
-      refundReason: 'Refund duplicate VNPay charge.',
-      refundedByUserId: userIds[0],
-      refundRequestedAt: new Date(),
-      refundedAt: new Date(),
     });
 
     const gateway = app.get(VnPayGatewayService);
@@ -796,7 +813,13 @@ describe('Payment refund/reconciliation workflow (e2e)', () => {
         await payments.findOneByOrFail({ id: fixture.duplicatePayment.id }),
       ).toMatchObject({
         status: PaymentStatus.REFUND_PENDING,
-        refundPreviousStatus: PaymentStatus.REQUIRES_REVIEW,
+      });
+      expect(
+        await paymentRefunds.findOneByOrFail({
+          paymentId: fixture.duplicatePayment.id,
+        }),
+      ).toMatchObject({
+        previousPaymentStatus: PaymentStatus.REQUIRES_REVIEW,
       });
       expect(
         await auditLogs.countBy({
@@ -840,9 +863,15 @@ describe('Payment refund/reconciliation workflow (e2e)', () => {
         await payments.findOneByOrFail({ id: fixture.duplicatePayment.id }),
       ).toMatchObject({
         status: PaymentStatus.REFUND_PENDING,
-        refundGatewayTransactionId: null,
-        refundResponseCode: null,
-        refundTransactionStatus: null,
+      });
+      expect(
+        await paymentRefunds.findOneByOrFail({
+          paymentId: fixture.duplicatePayment.id,
+        }),
+      ).toMatchObject({
+        gatewayTransactionId: null,
+        responseCode: null,
+        transactionStatus: null,
       });
       expect(
         await auditLogs.countBy({
@@ -914,20 +943,8 @@ describe('Payment refund/reconciliation workflow (e2e)', () => {
         gatewayTransactionStatus: '00',
         gatewayTransactionDate: '20380101070000',
         idempotencyKey: null,
-        refundIdempotencyKey: null,
-        refundRequestId: null,
-        refundPreviousStatus: null,
-        refundGatewayTransactionId: null,
-        refundResponseCode: null,
-        refundTransactionStatus: null,
-        refundMessage: null,
-        refundReason: null,
         createdByUserId: null,
-        refundedByUserId: null,
         paidAt: new Date(),
-        refundedAt: null,
-        refundRequestedAt: null,
-        refundLastQueriedAt: null,
         expiresAt: null,
       }),
     );
@@ -1068,25 +1085,37 @@ describe('Payment refund/reconciliation workflow (e2e)', () => {
         gatewayTransactionDate:
           method === PaymentMethod.VNPAY ? '20380101070000' : null,
         idempotencyKey: null,
-        refundIdempotencyKey: null,
-        refundRequestId: null,
-        refundPreviousStatus: null,
-        refundGatewayTransactionId: null,
-        refundResponseCode: null,
-        refundTransactionStatus: null,
-        refundMessage: null,
-        refundReason: null,
         createdByUserId: null,
-        refundedByUserId: null,
         paidAt: new Date(),
-        refundedAt: null,
-        refundRequestedAt: null,
-        refundLastQueriedAt: null,
         expiresAt: null,
       }),
     );
     paymentIds.push(payment.id);
     return { booking, payment };
+  }
+
+  async function createRefundRecord(
+    paymentId: string,
+    overrides: Partial<PaymentRefund> = {},
+  ): Promise<PaymentRefund> {
+    return paymentRefunds.save(
+      paymentRefunds.create({
+        paymentId,
+        idempotencyKey: null,
+        requestId: null,
+        previousPaymentStatus: null,
+        gatewayTransactionId: null,
+        responseCode: null,
+        transactionStatus: null,
+        message: null,
+        reason: null,
+        refundedByUserId: null,
+        requestedAt: null,
+        refundedAt: null,
+        lastQueriedAt: null,
+        ...overrides,
+      }),
+    );
   }
 
   function operationResult(

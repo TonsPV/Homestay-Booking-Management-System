@@ -7,19 +7,26 @@ import type {
   SelectQueryBuilder,
 } from 'typeorm';
 
+import { TypeOrmTransactionRunner } from '../../../../src/common/infrastructure/persistence/typeorm-transaction.runner';
+import type { TransactionContext } from '../../../../src/common/application/transaction';
 import { ErrorCode } from '../../../../src/common/error-codes';
 import type { RecordAuditLogInput } from '../../../../src/module/audit/audit-log.service';
 import {
   AuditAction,
   AuditActorType,
   AuditEntityType,
-} from '../../../../src/module/audit/schema/audit-log.entity';
+} from '../../../../src/module/audit/domain/audit-log';
+import { Booking } from '../../../../src/module/booking/schema/booking.entity';
 import {
-  Booking,
   BookingPaymentStatus,
   BookingStatus,
-} from '../../../../src/module/booking/schema/booking.entity';
+} from '../../../../src/module/booking/domain/booking-state';
 import { RoomCalendar } from '../../../../src/module/booking/schema/room-calendar.entity';
+import { TypeOrmRoomCalendarStore } from '../../../../src/module/booking/infrastructure/persistence/typeorm-room-calendar.store';
+import {
+  TypeOrmBookingLifecycleStore,
+  TypeOrmBookingPaymentStateStore,
+} from '../../../../src/module/booking/infrastructure/persistence/typeorm-booking-lifecycle.store';
 import {
   PaymentService,
   type PaymentResponse,
@@ -28,83 +35,159 @@ import { PaymentCollectionService } from '../../../../src/module/payment/payment
 import { PaymentQueryService } from '../../../../src/module/payment/payment-query.service';
 import { PaymentManualService } from '../../../../src/module/payment/payment-manual.service';
 import { PaymentRefundService } from '../../../../src/module/payment/payment-refund.service';
+import { BookingPaymentLifecycleService } from '../../../../src/module/booking/booking-payment-lifecycle.service';
+import { BookingTransitionPolicy } from '../../../../src/module/booking/domain/booking-transition.policy';
+import { Payment } from '../../../../src/module/payment/schema/payment.entity';
+import { PaymentRefund } from '../../../../src/module/payment/schema/payment-refund.entity';
 import {
-  Payment,
   PaymentMethod,
   PaymentReviewReason,
   PaymentStatus,
-} from '../../../../src/module/payment/schema/payment.entity';
+} from '../../../../src/module/payment/domain/payment-state';
 import type { VnPayGatewayService } from '../../../../src/module/payment/vnpay-gateway.service';
+import { TypeOrmPaymentAcceptanceStore } from '../../../../src/module/payment/infrastructure/persistence/typeorm-payment-acceptance.store';
+import { TypeOrmPaymentRefundStore } from '../../../../src/module/payment/infrastructure/persistence/typeorm-payment-refund.store';
 
 describe('PaymentService characterization', () => {
-  let dataSource: { transaction: jest.Mock };
+  let dataSource: { transaction: jest.Mock; getRepository: jest.Mock };
   let paymentsRepository: {
     findOneBy: jest.Mock;
+    findOne: jest.Mock;
     createQueryBuilder: jest.Mock;
     update: jest.Mock;
+  };
+  let refundsRepository: {
+    findOneBy: jest.Mock;
+    create: jest.Mock;
+    save: jest.Mock;
   };
   let bookingsRepository: {
     findOneBy: jest.Mock;
     exists: jest.Mock;
   };
   let gateway: {
-    createPaymentUrl: jest.Mock;
-    verifyCallback: jest.Mock;
-    getTmnCode: jest.Mock;
-    refundFull: jest.Mock;
-    queryTransaction: jest.Mock;
+    createPaymentRequest: jest.Mock;
+    verifyPaymentCallback: jest.Mock;
+    isEnabled: jest.Mock;
+    lookupTransaction: jest.Mock;
+    requestRefund: jest.Mock;
   };
   let auditLogService: { record: jest.Mock };
   let paymentRefundService: PaymentRefundService;
   let service: PaymentService;
   let warnSpy: jest.SpyInstance;
+  let recordedContexts: TransactionContext[];
 
   beforeEach(() => {
     jest.useFakeTimers().setSystemTime(new Date('2030-01-01T00:00:00.000Z'));
-    dataSource = { transaction: jest.fn() };
+    currentRefundFixture = null;
+    recordedContexts = [];
     paymentsRepository = {
       findOneBy: jest.fn(),
+      findOne: jest.fn(
+        (options: { where: Record<string, unknown> }) =>
+          paymentsRepository.findOneBy(
+            options.where,
+          ) as Promise<Payment | null>,
+      ),
       createQueryBuilder: jest.fn(),
       update: jest.fn(),
+    };
+    refundsRepository = {
+      findOneBy: jest.fn((criteria: Record<string, unknown>) => {
+        const key = criteria.idempotencyKey;
+        return Promise.resolve(
+          typeof key === 'string' &&
+            currentRefundFixture?.idempotencyKey === key
+            ? currentRefundFixture
+            : null,
+        );
+      }),
+      create: jest.fn((value: Partial<PaymentRefund>) =>
+        Object.assign(refundFixture(), value),
+      ),
+      save: jest.fn((value: PaymentRefund) => {
+        currentRefundFixture = value;
+        return Promise.resolve(value);
+      }),
     };
     bookingsRepository = {
       findOneBy: jest.fn(),
       exists: jest.fn(),
     };
+    dataSource = {
+      transaction: jest.fn(),
+      getRepository: jest.fn((entity: unknown) =>
+        entity === Payment
+          ? paymentsRepository
+          : entity === PaymentRefund
+            ? refundsRepository
+            : bookingsRepository,
+      ),
+    };
     gateway = {
-      createPaymentUrl: jest.fn(),
-      verifyCallback: jest.fn(),
-      getTmnCode: jest.fn(() => 'TEST_TMN'),
-      refundFull: jest.fn(),
-      queryTransaction: jest.fn(),
+      createPaymentRequest: jest.fn(),
+      verifyPaymentCallback: jest.fn(),
+      isEnabled: jest.fn(() => true),
+      lookupTransaction: jest.fn(),
+      requestRefund: jest.fn(),
     };
-    auditLogService = {
-      record: jest.fn().mockResolvedValue(undefined),
-    };
+    const auditRecord = jest.fn().mockResolvedValue(undefined);
     const config = { getOrThrow: jest.fn(() => 15) };
 
     const paymentQueryService = new PaymentQueryService(
       paymentsRepository as unknown as Repository<Payment>,
       bookingsRepository as unknown as Repository<Booking>,
     );
-    const paymentCollectionService = new PaymentCollectionService(
+    const transactionRunner = new TypeOrmTransactionRunner(
       dataSource as unknown as DataSource,
-      paymentsRepository as unknown as Repository<Payment>,
+    );
+    const acceptanceStore = new TypeOrmPaymentAcceptanceStore(
+      dataSource as unknown as DataSource,
+      transactionRunner,
+    );
+    const refundStore = new TypeOrmPaymentRefundStore(
+      dataSource as unknown as DataSource,
+      transactionRunner,
+    );
+    const roomCalendarStore = new TypeOrmRoomCalendarStore(transactionRunner);
+    auditLogService = {
+      record: jest.fn(async (context: TransactionContext, input) => {
+        recordedContexts.push(context);
+        await auditRecord(transactionRunner.managerFor(context), input);
+      }),
+    };
+    const lifecycleCoordinator = new BookingPaymentLifecycleService(
+      transactionRunner,
+      config as unknown as ConfigService,
+      new BookingTransitionPolicy(),
+      new TypeOrmBookingLifecycleStore(transactionRunner),
+      new TypeOrmBookingPaymentStateStore(transactionRunner),
+      roomCalendarStore,
+      auditLogService,
+      acceptanceStore,
+      refundStore,
+    );
+    const paymentCollectionService = new PaymentCollectionService(
+      transactionRunner,
+      acceptanceStore,
+      lifecycleCoordinator,
       paymentQueryService,
       auditLogService,
       config as unknown as ConfigService,
       gateway as unknown as VnPayGatewayService,
     );
     const paymentManualService = new PaymentManualService(
-      dataSource as unknown as DataSource,
-      paymentsRepository as unknown as Repository<Payment>,
+      transactionRunner,
+      acceptanceStore,
+      lifecycleCoordinator,
       paymentQueryService,
-      auditLogService,
       config as unknown as ConfigService,
     );
     paymentRefundService = new PaymentRefundService(
-      dataSource as unknown as DataSource,
-      paymentsRepository as unknown as Repository<Payment>,
+      transactionRunner,
+      refundStore,
+      lifecycleCoordinator,
       paymentQueryService,
       gateway as unknown as VnPayGatewayService,
       auditLogService,
@@ -166,31 +249,39 @@ describe('PaymentService characterization', () => {
       }),
     );
     expect(auditLogService.record).toHaveBeenCalledTimes(2);
-    expect(auditLogService.record).toHaveBeenNthCalledWith(1, manager, {
-      actorType: AuditActorType.USER,
-      actorId: '20',
-      action: AuditAction.PAYMENT_CONFIRMED,
-      entityType: AuditEntityType.PAYMENT,
-      entityId: '500',
-      requestId: 'request-manual-1',
-      metadata: {
-        bookingId: '100',
-        method: PaymentMethod.CASH,
+    expect(auditLogService.record).toHaveBeenNthCalledWith(
+      1,
+      recordedContexts[0],
+      {
+        actorType: AuditActorType.USER,
+        actorId: '20',
+        action: AuditAction.PAYMENT_CONFIRMED,
+        entityType: AuditEntityType.PAYMENT,
+        entityId: '500',
+        requestId: 'request-manual-1',
+        metadata: {
+          bookingId: '100',
+          method: PaymentMethod.CASH,
+        },
       },
-    });
-    expect(auditLogService.record).toHaveBeenNthCalledWith(2, manager, {
-      actorType: AuditActorType.USER,
-      actorId: '20',
-      action: AuditAction.BOOKING_STATUS_CHANGED,
-      entityType: AuditEntityType.BOOKING,
-      entityId: '100',
-      requestId: 'request-manual-1',
-      metadata: {
-        fromStatus: BookingStatus.PENDING_PAYMENT,
-        toStatus: BookingStatus.CONFIRMED,
-        paymentId: '500',
+    );
+    expect(auditLogService.record).toHaveBeenNthCalledWith(
+      2,
+      recordedContexts[0],
+      {
+        actorType: AuditActorType.USER,
+        actorId: '20',
+        action: AuditAction.BOOKING_STATUS_CHANGED,
+        entityType: AuditEntityType.BOOKING,
+        entityId: '100',
+        requestId: 'request-manual-1',
+        metadata: {
+          fromStatus: BookingStatus.PENDING_PAYMENT,
+          toStatus: BookingStatus.CONFIRMED,
+          paymentId: '500',
+        },
       },
-    });
+    );
   });
 
   it('returns the original manual payment for the same idempotent request', async () => {
@@ -252,7 +343,7 @@ describe('PaymentService characterization', () => {
     expect(booking.status).toBe(BookingStatus.CONFIRMED);
     expect(auditLogService.record).toHaveBeenCalledTimes(1);
     expect(auditLogService.record).toHaveBeenCalledWith(
-      manager,
+      recordedContexts[0],
       expect.objectContaining({
         action: AuditAction.PAYMENT_CONFIRMED,
         entityType: AuditEntityType.PAYMENT,
@@ -290,7 +381,11 @@ describe('PaymentService characterization', () => {
     });
     const manager = createMutationManager(booking, payment);
     dataSource.transaction.mockImplementation(runTransaction(manager));
-    gateway.createPaymentUrl.mockReturnValue('https://vnpay.test/pay/P500');
+    paymentsRepository.findOneBy.mockResolvedValue(payment);
+    gateway.createPaymentRequest.mockReturnValue({
+      redirectUrl: 'https://vnpay.test/pay/P500',
+      transactionDate: '20300101070000',
+    });
     paymentsRepository.createQueryBuilder.mockReturnValue(
       createPaymentQuery(payment),
     );
@@ -308,7 +403,7 @@ describe('PaymentService characterization', () => {
       },
     });
 
-    expect(gateway.createPaymentUrl).toHaveBeenCalledWith(
+    expect(gateway.createPaymentRequest).toHaveBeenCalledWith(
       expect.objectContaining({
         amount: booking.totalAmount,
         transactionReference: 'P500',
@@ -318,9 +413,8 @@ describe('PaymentService characterization', () => {
   });
 
   it('rejects an IPN with an invalid signature without touching the database', async () => {
-    gateway.verifyCallback.mockReturnValue({
+    gateway.verifyPaymentCallback.mockReturnValue({
       isValid: false,
-      parameters: {},
     });
 
     await expect(service.handleVnPayIpn({})).resolves.toEqual({
@@ -411,32 +505,40 @@ describe('PaymentService characterization', () => {
       paymentStatus: BookingPaymentStatus.PAID,
     });
     expect(auditLogService.record).toHaveBeenCalledTimes(2);
-    expect(auditLogService.record).toHaveBeenNthCalledWith(1, manager, {
-      actorType: AuditActorType.SYSTEM,
-      actorId: null,
-      action: AuditAction.PAYMENT_CONFIRMED,
-      entityType: AuditEntityType.PAYMENT,
-      entityId: '500',
-      requestId: 'request-ipn-success',
-      metadata: {
-        bookingId: '100',
-        source: 'IPN',
-        paymentStatus: PaymentStatus.SUCCESS,
+    expect(auditLogService.record).toHaveBeenNthCalledWith(
+      1,
+      recordedContexts[0],
+      {
+        actorType: AuditActorType.SYSTEM,
+        actorId: null,
+        action: AuditAction.PAYMENT_CONFIRMED,
+        entityType: AuditEntityType.PAYMENT,
+        entityId: '500',
+        requestId: 'request-ipn-success',
+        metadata: {
+          bookingId: '100',
+          source: 'IPN',
+          paymentStatus: PaymentStatus.SUCCESS,
+        },
       },
-    });
-    expect(auditLogService.record).toHaveBeenNthCalledWith(2, manager, {
-      actorType: AuditActorType.SYSTEM,
-      actorId: null,
-      action: AuditAction.BOOKING_STATUS_CHANGED,
-      entityType: AuditEntityType.BOOKING,
-      entityId: '100',
-      requestId: 'request-ipn-success',
-      metadata: {
-        fromStatus: BookingStatus.PENDING_PAYMENT,
-        toStatus: BookingStatus.CONFIRMED,
-        paymentId: '500',
+    );
+    expect(auditLogService.record).toHaveBeenNthCalledWith(
+      2,
+      recordedContexts[0],
+      {
+        actorType: AuditActorType.SYSTEM,
+        actorId: null,
+        action: AuditAction.BOOKING_STATUS_CHANGED,
+        entityType: AuditEntityType.BOOKING,
+        entityId: '100',
+        requestId: 'request-ipn-success',
+        metadata: {
+          fromStatus: BookingStatus.PENDING_PAYMENT,
+          toStatus: BookingStatus.CONFIRMED,
+          paymentId: '500',
+        },
       },
-    });
+    );
   });
 
   it('does not duplicate the confirmation audit for a successful IPN replay', async () => {
@@ -622,7 +724,10 @@ describe('PaymentService characterization', () => {
     const canonicalPayment = refundableVnPayPayment({
       id: '501',
       status: PaymentStatus.REFUND_PENDING,
-      refundPreviousStatus: PaymentStatus.SUCCESS,
+      refund: refundFixture({
+        paymentId: '501',
+        previousPaymentStatus: PaymentStatus.SUCCESS,
+      }),
     });
     const manager = createMutationManager(booking, payment, {
       canonicalPayment,
@@ -660,7 +765,7 @@ describe('PaymentService characterization', () => {
       }),
     ).rejects.toThrow('Payment hien khong the hoan tien.');
 
-    expect(gateway.refundFull).not.toHaveBeenCalled();
+    expect(gateway.requestRefund).not.toHaveBeenCalled();
     expect(manager.paymentSave).not.toHaveBeenCalled();
     expect(auditLogService.record).not.toHaveBeenCalled();
   });
@@ -685,7 +790,7 @@ describe('PaymentService characterization', () => {
       ),
     ).rejects.toThrow('Khong the hoan tien booking o trang thai hien tai.');
 
-    expect(gateway.refundFull).not.toHaveBeenCalled();
+    expect(gateway.requestRefund).not.toHaveBeenCalled();
     expect(manager.paymentSave).not.toHaveBeenCalled();
     expect(auditLogService.record).not.toHaveBeenCalled();
   });
@@ -701,7 +806,9 @@ describe('PaymentService characterization', () => {
       createdByUserId: '20',
     });
     const manager = createMutationManager(booking, payment);
-    paymentsRepository.findOneBy.mockResolvedValue(payment);
+    paymentsRepository.findOneBy
+      .mockResolvedValueOnce(payment)
+      .mockResolvedValueOnce(payment);
     paymentsRepository.createQueryBuilder.mockReturnValue(
       createPaymentQuery(payment),
     );
@@ -718,10 +825,10 @@ describe('PaymentService characterization', () => {
       'request-manual-refund',
     );
 
-    expect(payment).toMatchObject({
-      status: PaymentStatus.REFUNDED,
+    expect(payment.status).toBe(PaymentStatus.REFUNDED);
+    expect(payment.refund).toMatchObject({
       refundedByUserId: '20',
-      refundReason: 'Guest cancelled',
+      reason: 'Guest cancelled',
     });
     expect(booking).toMatchObject({
       status: BookingStatus.CANCELLED,
@@ -729,31 +836,39 @@ describe('PaymentService characterization', () => {
     });
     expect(manager.calendarDelete).toHaveBeenCalledWith({ bookingId: '100' });
     expect(auditLogService.record).toHaveBeenCalledTimes(2);
-    expect(auditLogService.record).toHaveBeenNthCalledWith(1, manager, {
-      actorType: AuditActorType.USER,
-      actorId: '20',
-      action: AuditAction.REFUND_COMPLETED,
-      entityType: AuditEntityType.PAYMENT,
-      entityId: '500',
-      requestId: 'request-manual-refund',
-      metadata: {
-        bookingId: '100',
-        method: PaymentMethod.CASH,
+    expect(auditLogService.record).toHaveBeenNthCalledWith(
+      1,
+      recordedContexts[0],
+      {
+        actorType: AuditActorType.USER,
+        actorId: '20',
+        action: AuditAction.REFUND_COMPLETED,
+        entityType: AuditEntityType.PAYMENT,
+        entityId: '500',
+        requestId: 'request-manual-refund',
+        metadata: {
+          bookingId: '100',
+          method: PaymentMethod.CASH,
+        },
       },
-    });
-    expect(auditLogService.record).toHaveBeenNthCalledWith(2, manager, {
-      actorType: AuditActorType.USER,
-      actorId: '20',
-      action: AuditAction.BOOKING_CANCELLED,
-      entityType: AuditEntityType.BOOKING,
-      entityId: '100',
-      requestId: 'request-manual-refund',
-      metadata: {
-        fromStatus: BookingStatus.CONFIRMED,
-        toStatus: BookingStatus.CANCELLED,
-        paymentId: '500',
+    );
+    expect(auditLogService.record).toHaveBeenNthCalledWith(
+      2,
+      recordedContexts[0],
+      {
+        actorType: AuditActorType.USER,
+        actorId: '20',
+        action: AuditAction.BOOKING_CANCELLED,
+        entityType: AuditEntityType.BOOKING,
+        entityId: '100',
+        requestId: 'request-manual-refund',
+        metadata: {
+          fromStatus: BookingStatus.CONFIRMED,
+          toStatus: BookingStatus.CANCELLED,
+          paymentId: '500',
+        },
       },
-    });
+    );
   });
 
   it('does not duplicate refund audits for an already refunded manual payment', async () => {
@@ -764,8 +879,10 @@ describe('PaymentService characterization', () => {
     const payment = paymentFixture({
       method: PaymentMethod.CASH,
       status: PaymentStatus.REFUNDED,
-      refundedByUserId: '20',
-      refundedAt: new Date('2030-01-01T00:00:00.000Z'),
+      refund: refundFixture({
+        refundedByUserId: '20',
+        refundedAt: new Date('2030-01-01T00:00:00.000Z'),
+      }),
     });
     const manager = createMutationManager(booking, payment);
     paymentsRepository.findOneBy.mockResolvedValue(payment);
@@ -810,7 +927,7 @@ describe('PaymentService characterization', () => {
       createPaymentQuery(payment),
     );
     dataSource.transaction.mockImplementation(runTransaction(manager));
-    gateway.refundFull.mockRejectedValue(new Error('provider timeout'));
+    gateway.requestRefund.mockRejectedValue(new Error('provider timeout'));
 
     await expect(
       service.refund(
@@ -828,15 +945,15 @@ describe('PaymentService characterization', () => {
       ErrorCode.PAYMENT_REFUND_OUTCOME_UNKNOWN,
     );
 
-    expect(payment).toMatchObject({
-      status: PaymentStatus.REFUND_PENDING,
-      refundIdempotencyKey: 'refund-key-0001',
-      refundPreviousStatus: PaymentStatus.SUCCESS,
+    expect(payment.status).toBe(PaymentStatus.REFUND_PENDING);
+    expect(payment.refund).toMatchObject({
+      idempotencyKey: 'refund-key-0001',
+      previousPaymentStatus: PaymentStatus.SUCCESS,
     });
     expect(booking.paymentStatus).toBe(BookingPaymentStatus.PAID);
     expect(auditLogService.record).toHaveBeenCalledTimes(1);
     expect(auditLogService.record).toHaveBeenCalledWith(
-      manager,
+      recordedContexts[0],
       expect.objectContaining({
         actorType: AuditActorType.USER,
         actorId: '20',
@@ -855,11 +972,13 @@ describe('PaymentService characterization', () => {
     });
     const payment = refundableVnPayPayment({
       status: PaymentStatus.REFUND_PENDING,
-      refundIdempotencyKey: 'refund-key-replay',
-      refundRequestId: 'R123',
-      refundPreviousStatus: PaymentStatus.SUCCESS,
-      refundReason: 'Guest cancelled',
-      refundedByUserId: '20',
+      refund: refundFixture({
+        idempotencyKey: 'refund-key-replay',
+        requestId: 'R123',
+        previousPaymentStatus: PaymentStatus.SUCCESS,
+        reason: 'Guest cancelled',
+        refundedByUserId: '20',
+      }),
     });
     const manager = createMutationManager(booking, payment);
     paymentsRepository.findOneBy.mockResolvedValue(payment);
@@ -867,7 +986,7 @@ describe('PaymentService characterization', () => {
       createPaymentQuery(payment),
     );
     dataSource.transaction.mockImplementation(runTransaction(manager));
-    gateway.queryTransaction.mockResolvedValue({
+    gateway.lookupTransaction.mockResolvedValue({
       ...successfulRefundResult(),
       isVerified: false,
       isSuccess: false,
@@ -885,8 +1004,8 @@ describe('PaymentService characterization', () => {
       ),
     ).rejects.toThrow('Phan hoi doi soat VNPay khong xac minh duoc chu ky.');
 
-    expect(gateway.refundFull).not.toHaveBeenCalled();
-    expect(gateway.queryTransaction).toHaveBeenCalledTimes(1);
+    expect(gateway.requestRefund).not.toHaveBeenCalled();
+    expect(gateway.lookupTransaction).toHaveBeenCalledTimes(1);
     expect(auditLogService.record).not.toHaveBeenCalled();
   });
 
@@ -902,7 +1021,7 @@ describe('PaymentService characterization', () => {
       createPaymentQuery(payment),
     );
     dataSource.transaction.mockImplementation(runTransaction(manager));
-    gateway.refundFull.mockResolvedValue(successfulRefundResult());
+    gateway.requestRefund.mockResolvedValue(successfulRefundResult());
 
     await expect(
       service.refund(
@@ -928,7 +1047,7 @@ describe('PaymentService characterization', () => {
     expect(auditLogService.record).toHaveBeenCalledTimes(3);
     expect(auditLogService.record).toHaveBeenNthCalledWith(
       1,
-      manager,
+      recordedContexts[0],
       expect.objectContaining({
         action: AuditAction.REFUND_REQUESTED,
         requestId: 'request-refund-success',
@@ -936,7 +1055,7 @@ describe('PaymentService characterization', () => {
     );
     expect(auditLogService.record).toHaveBeenNthCalledWith(
       2,
-      manager,
+      recordedContexts[0],
       expect.objectContaining({
         action: AuditAction.REFUND_COMPLETED,
         requestId: 'request-refund-success',
@@ -944,7 +1063,7 @@ describe('PaymentService characterization', () => {
     );
     expect(auditLogService.record).toHaveBeenNthCalledWith(
       3,
-      manager,
+      recordedContexts[0],
       expect.objectContaining({
         action: AuditAction.BOOKING_CANCELLED,
         entityType: AuditEntityType.BOOKING,
@@ -969,7 +1088,7 @@ describe('PaymentService characterization', () => {
       createPaymentQuery(payment),
     );
     dataSource.transaction.mockImplementation(runTransaction(manager));
-    gateway.refundFull.mockResolvedValue(successfulRefundResult());
+    gateway.requestRefund.mockResolvedValue(successfulRefundResult());
 
     await expect(
       service.refund(
@@ -986,12 +1105,12 @@ describe('PaymentService characterization', () => {
     expect(auditLogService.record).toHaveBeenCalledTimes(2);
     expect(auditLogService.record).toHaveBeenNthCalledWith(
       1,
-      manager,
+      recordedContexts[0],
       expect.objectContaining({ action: AuditAction.REFUND_REQUESTED }),
     );
     expect(auditLogService.record).toHaveBeenNthCalledWith(
       2,
-      manager,
+      recordedContexts[0],
       expect.objectContaining({ action: AuditAction.REFUND_COMPLETED }),
     );
   });
@@ -1008,11 +1127,11 @@ describe('PaymentService characterization', () => {
       createPaymentQuery(payment),
     );
     dataSource.transaction.mockImplementation(runTransaction(manager));
-    gateway.refundFull.mockResolvedValue({
+    gateway.requestRefund.mockResolvedValue({
       ...successfulRefundResult(),
       isSuccess: false,
-      responseCode: '24',
-      transactionStatus: '02',
+      providerResponseCode: '24',
+      providerTransactionStatus: '02',
       message: 'Refund rejected',
     });
 
@@ -1041,12 +1160,12 @@ describe('PaymentService characterization', () => {
       createPaymentQuery(payment),
     );
     dataSource.transaction.mockImplementation(runTransaction(manager));
-    gateway.refundFull.mockResolvedValue({
+    gateway.requestRefund.mockResolvedValue({
       ...successfulRefundResult(),
       isVerified: false,
       isSuccess: false,
-      responseCode: '99',
-      transactionStatus: '05',
+      providerResponseCode: '99',
+      providerTransactionStatus: '05',
       message: 'Unknown result',
     });
 
@@ -1060,10 +1179,10 @@ describe('PaymentService characterization', () => {
     );
 
     expect(payment.status).toBe(PaymentStatus.REFUND_PENDING);
-    expect(payment).toMatchObject({
-      refundGatewayTransactionId: null,
-      refundResponseCode: null,
-      refundTransactionStatus: null,
+    expect(payment.refund).toMatchObject({
+      gatewayTransactionId: null,
+      responseCode: null,
+      transactionStatus: null,
     });
     expect(booking.paymentStatus).toBe(BookingPaymentStatus.PAID);
   });
@@ -1080,9 +1199,9 @@ describe('PaymentService characterization', () => {
       createPaymentQuery(payment),
     );
     dataSource.transaction.mockImplementation(runTransaction(manager));
-    gateway.refundFull.mockResolvedValue({
+    gateway.requestRefund.mockResolvedValue({
       ...successfulRefundResult(),
-      transactionId: null,
+      providerTransactionId: null,
     });
 
     await expect(
@@ -1104,23 +1223,26 @@ describe('PaymentService characterization', () => {
     });
     const payment = refundableVnPayPayment({
       status: PaymentStatus.REFUND_PENDING,
-      refundIdempotencyKey: 'refund-key-unverified-query',
-      refundRequestId: 'R123',
-      refundPreviousStatus: PaymentStatus.SUCCESS,
-      refundReason: 'Guest cancelled',
-      refundedByUserId: '20',
+      refund: refundFixture({
+        idempotencyKey: 'refund-key-unverified-query',
+        requestId: 'R123',
+        previousPaymentStatus: PaymentStatus.SUCCESS,
+        reason: 'Guest cancelled',
+        refundedByUserId: '20',
+      }),
     });
     const manager = createMutationManager(booking, payment);
+    paymentsRepository.findOneBy.mockResolvedValue(payment);
     paymentsRepository.createQueryBuilder.mockReturnValue(
       createPaymentQuery(payment),
     );
     dataSource.transaction.mockImplementation(runTransaction(manager));
-    gateway.queryTransaction.mockResolvedValue({
+    gateway.lookupTransaction.mockResolvedValue({
       ...successfulRefundResult(),
       isVerified: false,
-      responseCode: '99',
-      transactionStatus: '05',
-      transactionId: '999999',
+      providerResponseCode: '99',
+      providerTransactionStatus: '05',
+      providerTransactionId: '999999',
       message: 'Unverified query result',
     });
 
@@ -1132,11 +1254,11 @@ describe('PaymentService characterization', () => {
         'request-reconcile-unverified',
       ),
     ).rejects.toThrow('Phan hoi doi soat VNPay khong xac minh duoc chu ky.');
-    expect(payment).toMatchObject({
-      status: PaymentStatus.REFUND_PENDING,
-      refundGatewayTransactionId: null,
-      refundResponseCode: null,
-      refundTransactionStatus: null,
+    expect(payment.status).toBe(PaymentStatus.REFUND_PENDING);
+    expect(payment.refund).toMatchObject({
+      gatewayTransactionId: null,
+      responseCode: null,
+      transactionStatus: null,
     });
     expect(auditLogService.record).not.toHaveBeenCalled();
   });
@@ -1148,18 +1270,21 @@ describe('PaymentService characterization', () => {
     });
     const payment = refundableVnPayPayment({
       status: PaymentStatus.REFUND_PENDING,
-      refundIdempotencyKey: 'refund-key-0005',
-      refundRequestId: 'R123',
-      refundPreviousStatus: PaymentStatus.SUCCESS,
-      refundReason: 'Guest cancelled',
-      refundedByUserId: '20',
+      refund: refundFixture({
+        idempotencyKey: 'refund-key-0005',
+        requestId: 'R123',
+        previousPaymentStatus: PaymentStatus.SUCCESS,
+        reason: 'Guest cancelled',
+        refundedByUserId: '20',
+      }),
     });
     const manager = createMutationManager(booking, payment);
+    paymentsRepository.findOneBy.mockResolvedValue(payment);
     paymentsRepository.createQueryBuilder.mockReturnValue(
       createPaymentQuery(payment),
     );
     dataSource.transaction.mockImplementation(runTransaction(manager));
-    gateway.queryTransaction.mockResolvedValue(successfulRefundResult());
+    gateway.lookupTransaction.mockResolvedValue(successfulRefundResult());
 
     await expect(
       service.reconcileVnPayRefund(
@@ -1173,13 +1298,13 @@ describe('PaymentService characterization', () => {
       status: PaymentStatus.REFUNDED,
     });
 
-    expect(gateway.refundFull).not.toHaveBeenCalled();
-    expect(gateway.queryTransaction).toHaveBeenCalledTimes(1);
+    expect(gateway.requestRefund).not.toHaveBeenCalled();
+    expect(gateway.lookupTransaction).toHaveBeenCalledTimes(1);
     expect(booking.paymentStatus).toBe(BookingPaymentStatus.REFUNDED);
     expect(auditLogService.record).toHaveBeenCalledTimes(2);
     expect(auditLogService.record).toHaveBeenNthCalledWith(
       1,
-      manager,
+      recordedContexts[0],
       expect.objectContaining({
         actorType: AuditActorType.USER,
         actorId: '20',
@@ -1191,7 +1316,7 @@ describe('PaymentService characterization', () => {
     );
     expect(auditLogService.record).toHaveBeenNthCalledWith(
       2,
-      manager,
+      recordedContexts[0],
       expect.objectContaining({
         actorType: AuditActorType.USER,
         actorId: '20',
@@ -1246,7 +1371,7 @@ describe('PaymentService characterization', () => {
       createPaymentQuery(duplicate),
     );
     dataSource.transaction.mockImplementation(runTransaction(manager));
-    gateway.refundFull.mockResolvedValue(successfulRefundResult());
+    gateway.requestRefund.mockResolvedValue(successfulRefundResult());
 
     await expect(
       service.resolveDuplicateCharge(
@@ -1271,9 +1396,9 @@ describe('PaymentService characterization', () => {
     });
     expect(manager.bookingSave).not.toHaveBeenCalled();
     expect(manager.calendarDelete).not.toHaveBeenCalled();
-    expect(gateway.refundFull).toHaveBeenCalledTimes(1);
+    expect(gateway.requestRefund).toHaveBeenCalledTimes(1);
     expect(auditLogService.record).toHaveBeenCalledTimes(2);
-    expect(duplicate.refundRequestId).toEqual(expect.any(String));
+    expect(duplicate.refund?.requestId).toEqual(expect.any(String));
     const auditInputs = getRecordedAuditInputs(auditLogService.record);
 
     for (const action of [
@@ -1296,11 +1421,11 @@ describe('PaymentService characterization', () => {
         canonicalPaymentId: canonical.id,
         duplicatePaymentId: duplicate.id,
         reason: PaymentReviewReason.ANOTHER_SUCCESSFUL_PAYMENT,
-        refundRequestId: duplicate.refundRequestId,
+        refundRequestId: duplicate.refund?.requestId,
       });
     }
     expect(auditLogService.record).not.toHaveBeenCalledWith(
-      manager,
+      recordedContexts[0],
       expect.objectContaining({ action: AuditAction.BOOKING_CANCELLED }),
     );
   });
@@ -1323,7 +1448,7 @@ describe('PaymentService characterization', () => {
         '127.0.0.1',
       ),
     ).rejects.toThrow();
-    expect(gateway.refundFull).not.toHaveBeenCalled();
+    expect(gateway.requestRefund).not.toHaveBeenCalled();
     expect(manager.paymentSave).not.toHaveBeenCalled();
     expect(auditLogService.record).not.toHaveBeenCalled();
   });
@@ -1349,7 +1474,7 @@ describe('PaymentService characterization', () => {
         '127.0.0.1',
       ),
     ).rejects.toThrow();
-    expect(gateway.refundFull).not.toHaveBeenCalled();
+    expect(gateway.requestRefund).not.toHaveBeenCalled();
     expect(manager.paymentSave).not.toHaveBeenCalled();
   });
 
@@ -1373,7 +1498,7 @@ describe('PaymentService characterization', () => {
         '127.0.0.1',
       ),
     ).rejects.toThrow();
-    expect(gateway.refundFull).not.toHaveBeenCalled();
+    expect(gateway.requestRefund).not.toHaveBeenCalled();
     expect(manager.paymentSave).not.toHaveBeenCalled();
     expect(auditLogService.record).not.toHaveBeenCalled();
   });
@@ -1404,7 +1529,7 @@ describe('PaymentService characterization', () => {
 
     expect(duplicate.status).toBe(PaymentStatus.REQUIRES_REVIEW);
     expect(manager.paymentSave).not.toHaveBeenCalled();
-    expect(gateway.refundFull).not.toHaveBeenCalled();
+    expect(gateway.requestRefund).not.toHaveBeenCalled();
     expect(auditLogService.record).not.toHaveBeenCalled();
   });
 
@@ -1415,10 +1540,12 @@ describe('PaymentService characterization', () => {
     });
     const duplicate = duplicateVnPayPayment({
       status: PaymentStatus.REFUND_PENDING,
-      refundIdempotencyKey: 'duplicate-refund-key-pending',
-      refundRequestId: 'R-duplicate-pending',
-      refundPreviousStatus: PaymentStatus.REQUIRES_REVIEW,
-      refundedByUserId: '20',
+      refund: refundFixture({
+        idempotencyKey: 'duplicate-refund-key-pending',
+        requestId: 'R-duplicate-pending',
+        previousPaymentStatus: PaymentStatus.REQUIRES_REVIEW,
+        refundedByUserId: '20',
+      }),
     });
     const canonical = refundableVnPayPayment({ id: '501' });
     const manager = createMutationManager(booking, duplicate, {
@@ -1429,7 +1556,7 @@ describe('PaymentService characterization', () => {
       createPaymentQuery(duplicate),
     );
     dataSource.transaction.mockImplementation(runTransaction(manager));
-    gateway.queryTransaction.mockResolvedValue(successfulRefundResult());
+    gateway.lookupTransaction.mockResolvedValue(successfulRefundResult());
 
     await expect(
       service.resolveDuplicateCharge(
@@ -1441,8 +1568,8 @@ describe('PaymentService characterization', () => {
       ),
     ).resolves.toMatchObject({ status: PaymentStatus.REFUNDED });
 
-    expect(gateway.refundFull).not.toHaveBeenCalled();
-    expect(gateway.queryTransaction).toHaveBeenCalledTimes(1);
+    expect(gateway.requestRefund).not.toHaveBeenCalled();
+    expect(gateway.lookupTransaction).toHaveBeenCalledTimes(1);
     expect(canonical.status).toBe(PaymentStatus.SUCCESS);
     expect(booking).toMatchObject({
       status: BookingStatus.CONFIRMED,
@@ -1485,17 +1612,17 @@ describe('PaymentService characterization', () => {
     >((resolve) => {
       resolveGatewayRefund = resolve;
     });
-    gateway.refundFull.mockImplementation(() => {
+    gateway.requestRefund.mockImplementation(() => {
       signalGatewayStarted();
       return pendingGatewayRefund;
     });
-    gateway.queryTransaction.mockResolvedValue({
+    gateway.lookupTransaction.mockResolvedValue({
       ...successfulRefundResult(),
       isVerified: false,
       isSuccess: false,
-      responseCode: '99',
-      transactionStatus: '05',
-      transactionId: null,
+      providerResponseCode: '99',
+      providerTransactionStatus: '05',
+      providerTransactionId: null,
     });
 
     const first = service.resolveDuplicateCharge(
@@ -1523,8 +1650,8 @@ describe('PaymentService characterization', () => {
     });
 
     const auditInputs = getRecordedAuditInputs(auditLogService.record);
-    expect(gateway.refundFull).toHaveBeenCalledTimes(1);
-    expect(gateway.queryTransaction).toHaveBeenCalledTimes(1);
+    expect(gateway.requestRefund).toHaveBeenCalledTimes(1);
+    expect(gateway.lookupTransaction).toHaveBeenCalledTimes(1);
     expect(
       auditInputs.filter(
         (input) => input.action === AuditAction.REFUND_REQUESTED,
@@ -1551,11 +1678,13 @@ describe('PaymentService characterization', () => {
     });
     const duplicate = duplicateVnPayPayment({
       status: PaymentStatus.REFUNDED,
-      refundIdempotencyKey: 'duplicate-refund-key-refunded',
-      refundRequestId: 'R-duplicate-refunded',
-      refundPreviousStatus: PaymentStatus.REQUIRES_REVIEW,
-      refundedByUserId: '20',
-      refundedAt: new Date(),
+      refund: refundFixture({
+        idempotencyKey: 'duplicate-refund-key-refunded',
+        requestId: 'R-duplicate-refunded',
+        previousPaymentStatus: PaymentStatus.REQUIRES_REVIEW,
+        refundedByUserId: '20',
+        refundedAt: new Date(),
+      }),
     });
     const canonical = refundableVnPayPayment({ id: '501' });
     const manager = createMutationManager(booking, duplicate, {
@@ -1576,8 +1705,8 @@ describe('PaymentService characterization', () => {
       ),
     ).resolves.toMatchObject({ status: PaymentStatus.REFUNDED });
 
-    expect(gateway.refundFull).not.toHaveBeenCalled();
-    expect(gateway.queryTransaction).not.toHaveBeenCalled();
+    expect(gateway.requestRefund).not.toHaveBeenCalled();
+    expect(gateway.lookupTransaction).not.toHaveBeenCalled();
     expect(manager.paymentSave).not.toHaveBeenCalled();
     expect(manager.bookingSave).not.toHaveBeenCalled();
     expect(manager.calendarDelete).not.toHaveBeenCalled();
@@ -1599,13 +1728,13 @@ describe('PaymentService characterization', () => {
       createPaymentQuery(duplicate),
     );
     dataSource.transaction.mockImplementation(runTransaction(manager));
-    gateway.refundFull.mockResolvedValue({
+    gateway.requestRefund.mockResolvedValue({
       ...successfulRefundResult(),
       isVerified: false,
       isSuccess: false,
-      responseCode: '99',
-      transactionStatus: '05',
-      transactionId: null,
+      providerResponseCode: '99',
+      providerTransactionStatus: '05',
+      providerTransactionId: null,
       message: 'Unverified duplicate refund result',
     });
 
@@ -1631,7 +1760,7 @@ describe('PaymentService characterization', () => {
     expect(manager.bookingSave).not.toHaveBeenCalled();
     expect(manager.calendarDelete).not.toHaveBeenCalled();
     expect(auditLogService.record).toHaveBeenCalledTimes(1);
-    expect(duplicate.refundRequestId).toEqual(expect.any(String));
+    expect(duplicate.refund?.requestId).toEqual(expect.any(String));
     const [auditInput] = getRecordedAuditInputs(auditLogService.record);
     expect(auditInput).toMatchObject({ action: AuditAction.REFUND_REQUESTED });
     expect(auditInput?.metadata).toMatchObject({
@@ -1639,7 +1768,7 @@ describe('PaymentService characterization', () => {
       canonicalPaymentId: canonical.id,
       duplicatePaymentId: duplicate.id,
       reason: PaymentReviewReason.ANOTHER_SUCCESSFUL_PAYMENT,
-      refundRequestId: duplicate.refundRequestId,
+      refundRequestId: duplicate.refund?.requestId,
     });
   });
 
@@ -1724,10 +1853,10 @@ function createMutationManager(
       }
       if (entity === Payment) {
         return {
+          findOne: jest.fn((options: { where: Record<string, unknown> }) =>
+            Promise.resolve(options.where.id === payment.id ? payment : null),
+          ),
           findOneBy: jest.fn((criteria: Record<string, unknown>) => {
-            if ('refundIdempotencyKey' in criteria) {
-              return Promise.resolve(null);
-            }
             if ('id' in criteria) {
               return Promise.resolve(payment);
             }
@@ -1747,6 +1876,25 @@ function createMutationManager(
             }
             return paymentQuery;
           },
+        };
+      }
+      if (entity === PaymentRefund) {
+        return {
+          findOneBy: jest.fn((criteria: Record<string, unknown>) => {
+            const key = criteria.idempotencyKey;
+            return Promise.resolve(
+              typeof key === 'string' && payment.refund?.idempotencyKey === key
+                ? payment.refund
+                : null,
+            );
+          }),
+          create: jest.fn((value: Partial<PaymentRefund>) =>
+            Object.assign(refundFixture(), value),
+          ),
+          save: jest.fn((value: PaymentRefund) => {
+            payment.refund = value;
+            return Promise.resolve(value);
+          }),
         };
       }
       if (entity === RoomCalendar) {
@@ -1770,6 +1918,7 @@ function getRecordedAuditInputs(record: jest.Mock): RecordAuditLogInput[] {
 
 function createLockedQuery<T>(result: T) {
   return {
+    leftJoinAndSelect: jest.fn().mockReturnThis(),
     setLock: jest.fn().mockReturnThis(),
     where: jest.fn().mockReturnThis(),
     andWhere: jest.fn().mockReturnThis(),
@@ -1808,21 +1957,22 @@ function createMutationQuery() {
 }
 
 function mockValidCallback(
-  gateway: { verifyCallback: jest.Mock },
+  gateway: { verifyPaymentCallback: jest.Mock },
   overrides: Record<string, string> = {},
 ): void {
-  gateway.verifyCallback.mockReturnValue({
+  const payDate = overrides.vnp_PayDate ?? '20300101070000';
+  const paidAt =
+    payDate === '20300101070000' ? new Date('2030-01-01T00:00:00.000Z') : null;
+
+  gateway.verifyPaymentCallback.mockReturnValue({
     isValid: true,
-    parameters: {
-      vnp_TmnCode: 'TEST_TMN',
-      vnp_TxnRef: 'P500',
-      vnp_Amount: '200000000',
-      vnp_ResponseCode: '00',
-      vnp_TransactionStatus: '00',
-      vnp_TransactionNo: '123456',
-      vnp_PayDate: '20300101070000',
-      ...overrides,
-    },
+    merchantCode: 'TEST_TMN',
+    gatewayReference: overrides.vnp_TxnRef ?? 'P500',
+    gatewayAmount: overrides.vnp_Amount ?? '200000000',
+    providerResponseCode: overrides.vnp_ResponseCode ?? '00',
+    providerTransactionStatus: overrides.vnp_TransactionStatus ?? '00',
+    providerTransactionId: overrides.vnp_TransactionNo ?? '123456',
+    paidAt,
   });
 }
 
@@ -1871,22 +2021,10 @@ function paymentFixture(overrides: Partial<Payment> = {}): Payment {
     gatewayTransactionStatus: null,
     gatewayTransactionDate: null,
     idempotencyKey: null,
-    refundIdempotencyKey: null,
-    refundRequestId: null,
-    refundPreviousStatus: null,
-    refundGatewayTransactionId: null,
-    refundResponseCode: null,
-    refundTransactionStatus: null,
-    refundMessage: null,
-    refundReason: null,
+    refund: null,
     createdByUserId: null,
     createdByUser: null,
-    refundedByUserId: null,
-    refundedByUser: null,
     paidAt: null,
-    refundedAt: null,
-    refundRequestedAt: null,
-    refundLastQueriedAt: null,
     expiresAt: null,
     createdAt: new Date('2030-01-01T00:00:00.000Z'),
     updatedAt: new Date('2030-01-01T00:00:00.000Z'),
@@ -1920,12 +2058,38 @@ function successfulRefundResult() {
   return {
     isVerified: true,
     isSuccess: true,
-    responseCode: '00',
-    transactionStatus: '00',
-    transactionId: '654321',
-    transactionType: '02',
-    amount: '2000000',
+    providerResponseCode: '00',
+    providerTransactionStatus: '00',
+    providerTransactionId: '654321',
+    providerTransactionType: '02',
+    gatewayAmount: '2000000',
     responseId: 'RESP-1',
     message: 'Refund success',
   };
+}
+
+let currentRefundFixture: PaymentRefund | null = null;
+
+function refundFixture(overrides: Partial<PaymentRefund> = {}): PaymentRefund {
+  return {
+    id: '900',
+    paymentId: '500',
+    payment: null,
+    idempotencyKey: null,
+    requestId: null,
+    previousPaymentStatus: null,
+    gatewayTransactionId: null,
+    responseCode: null,
+    transactionStatus: null,
+    message: null,
+    reason: null,
+    refundedByUserId: null,
+    refundedByUser: null,
+    requestedAt: null,
+    refundedAt: null,
+    lastQueriedAt: null,
+    createdAt: new Date('2030-01-01T00:00:00.000Z'),
+    updatedAt: new Date('2030-01-01T00:00:00.000Z'),
+    ...overrides,
+  } as PaymentRefund;
 }

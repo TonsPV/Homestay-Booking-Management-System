@@ -10,10 +10,8 @@ import migrationDataSource from '../../src/database/data-source';
 import { AccessTokenService } from '../../src/module/auth/access-token.service';
 import { PasswordHasherService } from '../../src/module/auth/password-hasher.service';
 import { Amenity } from '../../src/module/amenity/schema/amenity.entity';
-import {
-  RoomCalendar,
-  RoomCalendarStatus,
-} from '../../src/module/booking/schema/room-calendar.entity';
+import { RoomCalendar } from '../../src/module/booking/schema/room-calendar.entity';
+import { RoomCalendarStatus } from '../../src/module/booking/domain/room-calendar-status';
 import { Room } from '../../src/module/room/schema/room.entity';
 import { BedType } from '../../src/module/room-type/bed-configuration';
 import { RoomType } from '../../src/module/room-type/schema/room-type.entity';

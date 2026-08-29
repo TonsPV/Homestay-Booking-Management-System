@@ -26,6 +26,9 @@ import { HardenPositivePriceConstraints1784791000000 } from '../../../src/databa
 import { AddBookingRequestIntent1784793000000 } from '../../../src/database/migrations/1784793000000-AddBookingRequestIntent';
 import { HardenPaymentLineage1784792000000 } from '../../../src/database/migrations/1784792000000-HardenPaymentLineage';
 import { RetireCustomerPhoneClaim1784794000000 } from '../../../src/database/migrations/1784794000000-RetireCustomerPhoneClaim';
+import { CreatePaymentRefundsAndBackfill1784795000000 } from '../../../src/database/migrations/1784795000000-CreatePaymentRefundsAndBackfill';
+import { HardenAcceptedPaymentOwnership1784796000000 } from '../../../src/database/migrations/1784796000000-HardenAcceptedPaymentOwnership';
+import { RemoveLegacyPaymentRefundColumns1784797000000 } from '../../../src/database/migrations/1784797000000-RemoveLegacyPaymentRefundColumns';
 
 const MIGRATION_CLASSES = [
   InitialSchemaBaseline1784770000000,
@@ -53,6 +56,9 @@ const MIGRATION_CLASSES = [
   HardenPaymentLineage1784792000000,
   AddBookingRequestIntent1784793000000,
   RetireCustomerPhoneClaim1784794000000,
+  CreatePaymentRefundsAndBackfill1784795000000,
+  HardenAcceptedPaymentOwnership1784796000000,
+  RemoveLegacyPaymentRefundColumns1784797000000,
 ] as const;
 
 describe('database migration contract', () => {
@@ -304,5 +310,70 @@ describe('database migration contract', () => {
     expect(
       query.mock.calls.some(([sql]: [string]) => /ALTER TABLE/i.test(sql)),
     ).toBe(false);
+  });
+
+  it('creates and verifies the extracted payment refund table before legacy removal', async () => {
+    const migration = new CreatePaymentRefundsAndBackfill1784795000000();
+    const query = jest.fn().mockResolvedValue([]);
+
+    await migration.up({ query } as unknown as QueryRunner);
+
+    const sql = query.mock.calls
+      .map(([statement]) => String(statement))
+      .join('\n');
+    expect(sql).toContain('CREATE TABLE payment_refunds');
+    expect(sql).toContain('UNIQUE KEY uq_payment_refunds_payment');
+    expect(sql).toContain('INSERT INTO payment_refunds');
+    expect(sql).toContain('<=>');
+    expect(sql).not.toMatch(/DROP\s+COLUMN/i);
+  });
+
+  it('fails closed when an accepted payment belongs to another booking', async () => {
+    const migration = new CreatePaymentRefundsAndBackfill1784795000000();
+    const query = jest.fn((sql: string) => {
+      if (/payment\.booking_id <> booking\.id/i.test(sql)) {
+        return Promise.resolve([{ bookingId: '2', paymentId: '9' }]);
+      }
+
+      return Promise.resolve([]);
+    });
+
+    await expect(
+      migration.up({ query } as unknown as QueryRunner),
+    ).rejects.toThrow('accepted payment belongs to another booking');
+    expect(
+      query.mock.calls.some(([sql]: [string]) => /CREATE TABLE/i.test(sql)),
+    ).toBe(false);
+  });
+
+  it('builds the accepted-payment same-booking composite foreign key', async () => {
+    const migration = new HardenAcceptedPaymentOwnership1784796000000();
+    const query = jest.fn().mockResolvedValue([]);
+
+    await migration.up({ query } as unknown as QueryRunner);
+
+    const sql = query.mock.calls
+      .map(([statement]) => String(statement))
+      .join('\n');
+    expect(sql).toContain('UNIQUE KEY uq_payments_id_booking (id, booking_id)');
+    expect(sql).toContain('FOREIGN KEY (accepted_payment_id, id)');
+    expect(sql).toContain('REFERENCES payments (id, booking_id)');
+    expect(sql).toContain('ON DELETE RESTRICT ON UPDATE RESTRICT');
+    expect(sql).toContain('DROP FOREIGN KEY fk_bookings_accepted_payment');
+  });
+
+  it('drops legacy refund columns only after an exact extraction check', async () => {
+    const migration = new RemoveLegacyPaymentRefundColumns1784797000000();
+    const query = jest.fn().mockResolvedValue([]);
+
+    await migration.up({ query } as unknown as QueryRunner);
+
+    const sql = query.mock.calls
+      .map(([statement]) => String(statement))
+      .join('\n');
+    expect(sql).toContain('DROP COLUMN refund_idempotency_key');
+    expect(sql).toContain('DROP COLUMN refund_last_queried_at');
+    expect(sql).toContain('payment_refunds');
+    expect(sql).toContain('<=>');
   });
 });

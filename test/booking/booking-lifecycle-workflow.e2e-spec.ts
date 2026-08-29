@@ -9,26 +9,26 @@ import { configureApp } from '../../src/bootstrap/configure-app';
 import migrationDataSource from '../../src/database/data-source';
 import { AccessTokenService } from '../../src/module/auth/access-token.service';
 import { PasswordHasherService } from '../../src/module/auth/password-hasher.service';
+import { Booking } from '../../src/module/booking/schema/booking.entity';
 import {
-  Booking,
   BookingPaymentStatus,
   BookingStatus,
-} from '../../src/module/booking/schema/booking.entity';
+} from '../../src/module/booking/domain/booking-state';
 import { BookingService } from '../../src/module/booking/booking.service';
 import { ErrorCode } from '../../src/common/error-codes';
-import {
-  RoomCalendar,
-  RoomCalendarStatus,
-} from '../../src/module/booking/schema/room-calendar.entity';
+import { RoomCalendar } from '../../src/module/booking/schema/room-calendar.entity';
+import { RoomCalendarStatus } from '../../src/module/booking/domain/room-calendar-status';
 import { Customer } from '../../src/module/customer/schema/customer.entity';
 import { PaymentRefundService } from '../../src/module/payment/payment-refund.service';
+import { Payment } from '../../src/module/payment/schema/payment.entity';
+import { PaymentRefund } from '../../src/module/payment/schema/payment-refund.entity';
 import {
-  Payment,
   PaymentMethod,
   PaymentStatus,
-} from '../../src/module/payment/schema/payment.entity';
+} from '../../src/module/payment/domain/payment-state';
 import { VnPayGatewayService } from '../../src/module/payment/vnpay-gateway.service';
-import { Room, RoomStatus } from '../../src/module/room/schema/room.entity';
+import { Room } from '../../src/module/room/schema/room.entity';
+import { RoomStatus } from '../../src/module/room/domain/room-status';
 import { RoomType } from '../../src/module/room-type/schema/room-type.entity';
 import { User } from '../../src/module/user/schema/user.entity';
 import { E2eHarness } from '../e2e-harness';
@@ -71,6 +71,7 @@ describe('Booking lifecycle/expiration workflow (e2e)', () => {
   let bookings: Repository<Booking>;
   let calendars: Repository<RoomCalendar>;
   let payments: Repository<Payment>;
+  let paymentRefunds: Repository<PaymentRefund>;
   let customers: Repository<Customer>;
   let users: Repository<User>;
   let hasher: PasswordHasherService;
@@ -105,6 +106,7 @@ describe('Booking lifecycle/expiration workflow (e2e)', () => {
     bookings = dataSource.getRepository(Booking);
     calendars = dataSource.getRepository(RoomCalendar);
     payments = dataSource.getRepository(Payment);
+    paymentRefunds = dataSource.getRepository(PaymentRefund);
     customers = dataSource.getRepository(Customer);
     users = dataSource.getRepository(User);
     hasher = app.get(PasswordHasherService);
@@ -139,6 +141,10 @@ describe('Booking lifecycle/expiration workflow (e2e)', () => {
       if (bookingIds.length > 0) {
         await dataSource.query(
           `UPDATE bookings SET accepted_payment_id = NULL WHERE id IN (${placeholders(bookingIds)})`,
+          bookingIds,
+        );
+        await dataSource.query(
+          `DELETE FROM payment_refunds WHERE payment_id IN (SELECT id FROM payments WHERE booking_id IN (${placeholders(bookingIds)}))`,
           bookingIds,
         );
         await dataSource.query(
@@ -668,20 +674,8 @@ describe('Booking lifecycle/expiration workflow (e2e)', () => {
         gatewayTransactionStatus: '00',
         gatewayTransactionDate: null,
         idempotencyKey: 'idempotency-' + reference,
-        refundIdempotencyKey: null,
-        refundRequestId: null,
-        refundPreviousStatus: null,
-        refundGatewayTransactionId: null,
-        refundResponseCode: null,
-        refundTransactionStatus: null,
-        refundMessage: null,
-        refundReason: null,
         createdByUserId: null,
-        refundedByUserId: null,
         paidAt: new Date(),
-        refundedAt: null,
-        refundRequestedAt: null,
-        refundLastQueriedAt: null,
         expiresAt: null,
       }),
     );
@@ -728,16 +722,23 @@ describe('Booking lifecycle/expiration workflow (e2e)', () => {
       where: { bookingId },
       order: { id: 'ASC' },
     });
+    const refundEntries = await paymentRefunds.find({
+      where: entries.map((entry) => ({ paymentId: entry.id })),
+    });
+    const refundByPaymentId = new Map(
+      refundEntries.map((refund) => [refund.paymentId, refund]),
+    );
 
     return entries.map((entry) => ({
       id: entry.id,
       status: entry.status,
       amount: entry.amount,
-      refundRequestId: entry.refundRequestId,
-      refundIdempotencyKey: entry.refundIdempotencyKey,
-      refundReason: entry.refundReason,
-      refundRequestedAt: entry.refundRequestedAt,
-      refundedAt: entry.refundedAt,
+      refundRequestId: refundByPaymentId.get(entry.id)?.requestId ?? null,
+      refundIdempotencyKey:
+        refundByPaymentId.get(entry.id)?.idempotencyKey ?? null,
+      refundReason: refundByPaymentId.get(entry.id)?.reason ?? null,
+      refundRequestedAt: refundByPaymentId.get(entry.id)?.requestedAt ?? null,
+      refundedAt: refundByPaymentId.get(entry.id)?.refundedAt ?? null,
     }));
   }
 

@@ -1,22 +1,49 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
-import { AuditModule } from '../audit/audit.module';
+import { PersistenceTransactionModule } from '../../common/infrastructure/persistence/persistence-transaction.module';
+import { TypeOrmTransactionalAuditLog } from '../audit/infrastructure/persistence/typeorm-transactional-audit-log';
+import { TransactionalAuditLog } from '../audit/ports/transactional-audit-log';
 import { AuthModule } from '../auth/auth.module';
 import { CustomerModule } from '../customer/customer.module';
 import { Customer } from '../customer/schema/customer.entity';
+import { TypeOrmPaymentAcceptanceStore } from '../payment/infrastructure/persistence/typeorm-payment-acceptance.store';
+import { TypeOrmPaymentRefundStore } from '../payment/infrastructure/persistence/typeorm-payment-refund.store';
 import { Payment } from '../payment/schema/payment.entity';
 import { Room } from '../room/schema/room.entity';
 import { User } from '../user/schema/user.entity';
 import { BookingCreationService } from './booking-creation.service';
 import { BookingExpirationService } from './booking-expiration.service';
 import { BookingLifecycleService } from './booking-lifecycle.service';
-import { BookingTransitionPolicy } from './booking-transition.policy';
 import { BookingManagementController } from './booking-management.controller';
+import { BookingPaymentLifecycleService } from './booking-payment-lifecycle.service';
 import { BookingQueryService } from './booking-query.service';
+import { BOOKING_STAY_POLICY_PROVIDER } from './booking-stay.provider';
 import { BookingController } from './booking.controller';
 import { BookingService } from './booking.service';
-import { BookingStayPolicy } from './booking-stay.policy';
+import { BookingTransitionPolicy } from './domain/booking-transition.policy';
+import {
+  TypeOrmBookingCreationStore,
+  TypeOrmBookingCustomerStore,
+  TypeOrmBookingRoomStore,
+} from './infrastructure/persistence/typeorm-booking-creation.store';
+import {
+  TypeOrmBookingLifecycleStore,
+  TypeOrmBookingPaymentStateStore,
+} from './infrastructure/persistence/typeorm-booking-lifecycle.store';
+import { TypeOrmRoomCalendarStore } from './infrastructure/persistence/typeorm-room-calendar.store';
+import {
+  BookingCreationStore,
+  BookingCustomerStore,
+  BookingRoomStore,
+} from './ports/booking-creation.store';
+import {
+  BookingLifecycleStore,
+  BookingPaymentStateStore,
+} from './ports/booking-lifecycle.store';
+import { PaymentAcceptanceStore } from '../payment/ports/payment-acceptance.store';
+import { PaymentRefundStore } from '../payment/ports/payment-refund.store';
+import { RoomCalendarStore } from './ports/room-calendar.store';
 import { Booking } from './schema/booking.entity';
 import { RoomCalendar } from './schema/room-calendar.entity';
 
@@ -31,7 +58,7 @@ import { RoomCalendar } from './schema/room-calendar.entity';
       User,
     ]),
     AuthModule,
-    AuditModule,
+    PersistenceTransactionModule,
     CustomerModule,
   ],
   controllers: [BookingController, BookingManagementController],
@@ -39,10 +66,42 @@ import { RoomCalendar } from './schema/room-calendar.entity';
     BookingService,
     BookingCreationService,
     BookingLifecycleService,
+    BookingPaymentLifecycleService,
     BookingTransitionPolicy,
-    BookingStayPolicy,
+    BOOKING_STAY_POLICY_PROVIDER,
     BookingQueryService,
     BookingExpirationService,
+    TypeOrmBookingCreationStore,
+    { provide: BookingCreationStore, useExisting: TypeOrmBookingCreationStore },
+    TypeOrmBookingCustomerStore,
+    { provide: BookingCustomerStore, useExisting: TypeOrmBookingCustomerStore },
+    TypeOrmBookingRoomStore,
+    { provide: BookingRoomStore, useExisting: TypeOrmBookingRoomStore },
+    TypeOrmBookingLifecycleStore,
+    {
+      provide: BookingLifecycleStore,
+      useExisting: TypeOrmBookingLifecycleStore,
+    },
+    TypeOrmBookingPaymentStateStore,
+    {
+      provide: BookingPaymentStateStore,
+      useExisting: TypeOrmBookingPaymentStateStore,
+    },
+    TypeOrmRoomCalendarStore,
+    { provide: RoomCalendarStore, useExisting: TypeOrmRoomCalendarStore },
+    TypeOrmPaymentAcceptanceStore,
+    {
+      provide: PaymentAcceptanceStore,
+      useExisting: TypeOrmPaymentAcceptanceStore,
+    },
+    TypeOrmPaymentRefundStore,
+    { provide: PaymentRefundStore, useExisting: TypeOrmPaymentRefundStore },
+    TypeOrmTransactionalAuditLog,
+    {
+      provide: TransactionalAuditLog,
+      useExisting: TypeOrmTransactionalAuditLog,
+    },
   ],
+  exports: [BookingPaymentLifecycleService],
 })
 export class BookingModule {}

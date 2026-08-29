@@ -1,11 +1,10 @@
+import type { UserRole } from '../../../common/domain/account.enums';
 import {
-  ConflictException,
-  ForbiddenException,
-  Injectable,
-} from '@nestjs/common';
-
-import type { UserRole } from '../../common/domain/account.enums';
-import { RoomStatus } from './schema/room.entity';
+  CheckedInRoomMustRemainOccupiedError,
+  RoomHiddenStatusPermissionError,
+  RoomOccupancyRequiresCheckedInBookingError,
+} from './room.errors';
+import { RoomStatus } from './room-status';
 
 export interface RoomStatusTransitionContext {
   currentStatus: RoomStatus;
@@ -14,7 +13,6 @@ export interface RoomStatusTransitionContext {
   hasCheckedInBooking: boolean;
 }
 
-@Injectable()
 export class RoomStatusTransitionPolicy {
   assertAllowed(context: RoomStatusTransitionContext): void {
     this.assertActorMayChangeHiddenStatus(context);
@@ -33,9 +31,7 @@ export class RoomStatusTransitionPolicy {
       context.currentStatus === RoomStatus.HIDDEN ||
       context.nextStatus === RoomStatus.HIDDEN
     ) {
-      throw new ForbiddenException(
-        'Chi admin duoc thay doi trang thai HIDDEN.',
-      );
+      throw new RoomHiddenStatusPermissionError();
     }
   }
 
@@ -46,18 +42,14 @@ export class RoomStatusTransitionPolicy {
       context.hasCheckedInBooking &&
       context.nextStatus !== RoomStatus.OCCUPIED
     ) {
-      throw new ConflictException(
-        'Phong co booking dang CHECKED_IN va phai giu trang thai OCCUPIED.',
-      );
+      throw new CheckedInRoomMustRemainOccupiedError();
     }
 
     if (
       !context.hasCheckedInBooking &&
       context.nextStatus === RoomStatus.OCCUPIED
     ) {
-      throw new ConflictException(
-        'Chi duoc chuyen phong sang OCCUPIED khi co booking dang CHECKED_IN.',
-      );
+      throw new RoomOccupancyRequiresCheckedInBookingError();
     }
   }
 }

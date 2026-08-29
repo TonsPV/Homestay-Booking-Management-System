@@ -4,8 +4,8 @@ import { CustomerCredentialCapabilitiesDto } from '../../customer/dto/customer-c
 import {
   BOOKING_TRANSITION_REASON_CODES,
   type BookingTransitionReasonCode,
-} from '../booking-transition.policy';
-import { BookingPaymentStatus, BookingStatus } from '../schema/booking.entity';
+} from '../booking-domain-error.mapper';
+import { BookingPaymentStatus, BookingStatus } from '../domain/booking-state';
 
 export class BookingCustomerDto {
   @ApiProperty({ example: '1' })

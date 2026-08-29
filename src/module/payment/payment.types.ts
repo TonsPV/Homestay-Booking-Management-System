@@ -2,7 +2,7 @@ import {
   PaymentMethod,
   PaymentReviewReason,
   PaymentStatus,
-} from './schema/payment.entity';
+} from './domain/payment-state';
 
 export interface PaymentResponse {
   id: string;

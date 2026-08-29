@@ -1,16 +1,24 @@
-import type { ConfigService } from '@nestjs/config';
-
-import { ErrorCode } from '../../../../src/common/error-codes';
-import { BookingStayPolicy } from '../../../../src/module/booking/booking-stay.policy';
+import { BookingStayPolicy } from '../../../../src/module/booking/domain/booking-stay.policy';
+import {
+  BookingCheckInInPastError,
+  BookingCheckInTooFarError,
+  BookingStayTooLongError,
+  InvalidBookingDateRangeError,
+  InvalidBookingStayDateError,
+} from '../../../../src/module/booking/domain/booking.errors';
 
 describe('BookingStayPolicy', () => {
   let policy: BookingStayPolicy;
+  const rejectedRanges: ReadonlyArray<readonly [string, string, string]> = [
+    ['2029-12-31', '2030-01-02', BookingCheckInInPastError.name],
+    ['2030-01-02', '2030-01-01', InvalidBookingDateRangeError.name],
+    ['2030-01-02', '2030-04-03', BookingStayTooLongError.name],
+    ['2031-01-02', '2031-01-03', BookingCheckInTooFarError.name],
+  ];
 
   beforeEach(() => {
     jest.useFakeTimers().setSystemTime(new Date('2030-01-01T00:00:00.000Z'));
-    policy = new BookingStayPolicy({
-      getOrThrow: jest.fn().mockReturnValue(365),
-    } as unknown as ConfigService);
+    policy = new BookingStayPolicy(365);
   });
 
   afterEach(() => jest.useRealTimers());
@@ -27,24 +35,29 @@ describe('BookingStayPolicy', () => {
     ]);
   });
 
-  it.each([
-    ['2029-12-31', '2030-01-02', ErrorCode.BOOKING_CHECKIN_IN_PAST],
-    ['2030-01-02', '2030-01-01', ErrorCode.BOOKING_DATE_RANGE_INVALID],
-    ['2030-01-02', '2030-04-03', ErrorCode.BOOKING_STAY_TOO_LONG],
-    ['2031-01-02', '2031-01-03', ErrorCode.BOOKING_CHECKIN_TOO_FAR],
-  ])(
-    'rejects a range that create and search must both reject',
-    (from, to, code) => {
+  it.each(rejectedRanges)(
+    'rejects a range with a semantic domain error',
+    (from, to, expectedErrorName) => {
       expect.assertions(1);
 
       try {
-        policy.requireStayRange(from, to, {
-          checkIn: 'checkIn',
-          checkOut: 'checkOut',
-        });
+        policy.requireStayRange(from, to);
       } catch (error) {
-        expect(error).toHaveProperty('response.errorCode', code);
+        expect(error).toHaveProperty('name', expectedErrorName);
       }
     },
   );
+
+  it('reports which date value is invalid without knowing HTTP field names', () => {
+    expect.assertions(1);
+
+    try {
+      policy.requireStayRange('2030-02-30', '2030-03-02');
+    } catch (error) {
+      expect(error).toMatchObject({
+        name: InvalidBookingStayDateError.name,
+        field: 'checkIn',
+      });
+    }
+  });
 });

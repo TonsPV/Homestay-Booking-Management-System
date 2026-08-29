@@ -2,7 +2,7 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import type { Repository } from 'typeorm';
 
 import { ErrorCode } from '../../../../src/common/error-codes';
-import { AuditActorType } from '../../../../src/module/audit/schema/audit-log.entity';
+import { AuditActorType } from '../../../../src/module/audit/domain/audit-log';
 import { CustomerAdminService } from '../../../../src/module/customer/customer-admin.service';
 import { Customer } from '../../../../src/module/customer/schema/customer.entity';
 

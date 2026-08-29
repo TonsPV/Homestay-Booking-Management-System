@@ -1,7 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Allow } from 'class-validator';
+import { IsEnum, IsOptional, IsString } from 'class-validator';
 
-import { BookingStatus } from '../schema/booking.entity';
+import { BookingStatus } from '../domain/booking-state';
 
 export class UpdateBookingStatusDto {
   @ApiProperty({
@@ -9,8 +9,8 @@ export class UpdateBookingStatusDto {
     example: BookingStatus.CONFIRMED,
     type: String,
   })
-  @Allow()
-  status!: unknown;
+  @IsEnum(BookingStatus)
+  status!: BookingStatus;
 
   @ApiPropertyOptional({
     description:
@@ -19,6 +19,7 @@ export class UpdateBookingStatusDto {
     maxLength: 500,
     type: String,
   })
-  @Allow()
-  cancellationReason?: unknown;
+  @IsOptional()
+  @IsString()
+  cancellationReason?: string | null;
 }

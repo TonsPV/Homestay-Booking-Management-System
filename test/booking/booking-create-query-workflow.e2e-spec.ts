@@ -13,10 +13,11 @@ import { PasswordHasherService } from '../../src/module/auth/password-hasher.ser
 import {
   BookingPaymentStatus,
   BookingStatus,
-} from '../../src/module/booking/schema/booking.entity';
+} from '../../src/module/booking/domain/booking-state';
 import { RoomCalendar } from '../../src/module/booking/schema/room-calendar.entity';
 import { Customer } from '../../src/module/customer/schema/customer.entity';
-import { Room, RoomStatus } from '../../src/module/room/schema/room.entity';
+import { Room } from '../../src/module/room/schema/room.entity';
+import { RoomStatus } from '../../src/module/room/domain/room-status';
 import { RoomType } from '../../src/module/room-type/schema/room-type.entity';
 import { User } from '../../src/module/user/schema/user.entity';
 import { E2eHarness } from '../e2e-harness';

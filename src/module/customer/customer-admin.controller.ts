@@ -23,7 +23,7 @@ import {
 } from '../../openapi/api-response.decorators';
 import { AccessTokenGuard } from '../auth/access-token.guard';
 import type { AccessTokenPayload } from '../auth/auth.types';
-import { AuditActorType } from '../audit/schema/audit-log.entity';
+import { AuditActorType } from '../audit/domain/audit-log';
 import { CurrentAuth } from '../auth/decorators/current-auth.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { RolesGuard } from '../auth/guards/roles.guard';

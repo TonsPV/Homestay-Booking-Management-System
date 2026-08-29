@@ -39,6 +39,7 @@ describe('data audit', () => {
       'positive-price',
       'payment-lineage',
       'booking-payment-status',
+      'payment-refund-lineage',
       'room-occupancy',
       'room-image-cover',
       'room-type-amenity-orphan',

@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { Allow } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsString, Matches } from 'class-validator';
 
 export class SetRoomTypeAmenitiesDto {
   @ApiProperty({
@@ -11,6 +11,9 @@ export class SetRoomTypeAmenitiesDto {
     },
     type: [String],
   })
-  @Allow()
-  amenityIds?: unknown;
+  @IsArray()
+  @ArrayMaxSize(50)
+  @IsString({ each: true })
+  @Matches(/^[1-9][0-9]*$/, { each: true })
+  amenityIds?: string[];
 }

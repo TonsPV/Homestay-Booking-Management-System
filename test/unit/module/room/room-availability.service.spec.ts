@@ -3,52 +3,44 @@ import {
   ConflictException,
   NotFoundException,
 } from '@nestjs/common';
-import { type DataSource, type EntityManager, QueryFailedError } from 'typeorm';
 
-import {
-  RoomCalendar,
-  RoomCalendarStatus,
-} from '../../../../src/module/booking/schema/room-calendar.entity';
+import type { TransactionContext } from '../../../../src/common/application/transaction';
+import { RoomCalendarStatus } from '../../../../src/module/booking/domain/room-calendar-status';
+import { RoomCalendar } from '../../../../src/module/booking/schema/room-calendar.entity';
+import { RoomCalendarBlockConflictError } from '../../../../src/module/room/ports/room-calendar-management.store';
 import { RoomAvailabilityService } from '../../../../src/module/room/room-availability.service';
 import { Room } from '../../../../src/module/room/schema/room.entity';
 
 describe('RoomAvailabilityService', () => {
-  let roomResult: Room | null;
-  let insert: jest.Mock;
-  let deleteExecute: jest.Mock;
-  let calendarQuery: ReturnType<typeof createCalendarQuery>;
-  let dataSource: {
-    manager: EntityManager;
-    getRepository: jest.Mock;
-    transaction: jest.Mock;
+  const transaction = {} as TransactionContext;
+  let transactions: { run: jest.Mock };
+  let roomCalendar: {
+    roomExists: jest.Mock;
+    lockRoom: jest.Mock;
+    listRange: jest.Mock;
+    blockDates: jest.Mock;
+    unblockDates: jest.Mock;
   };
   let service: RoomAvailabilityService;
 
   beforeEach(() => {
-    roomResult = { id: '1' } as Room;
-    insert = jest.fn().mockResolvedValue({ identifiers: [] });
-    deleteExecute = jest.fn().mockResolvedValue({ affected: 2 });
-    calendarQuery = createCalendarQuery();
-    const manager = createManager(
-      () => roomResult,
-      insert,
-      deleteExecute,
-      calendarQuery,
-    );
-    dataSource = {
-      manager,
-      getRepository: jest.fn(() => ({
-        createQueryBuilder: () => calendarQuery,
-      })),
-      transaction: jest.fn((work: (entityManager: EntityManager) => unknown) =>
-        Promise.resolve(work(manager)),
+    transactions = {
+      run: jest.fn((work: (context: TransactionContext) => Promise<unknown>) =>
+        work(transaction),
       ),
     };
-    service = new RoomAvailabilityService(dataSource as unknown as DataSource);
+    roomCalendar = {
+      roomExists: jest.fn().mockResolvedValue(true),
+      lockRoom: jest.fn().mockResolvedValue(true),
+      listRange: jest.fn().mockResolvedValue([]),
+      blockDates: jest.fn().mockResolvedValue([]),
+      unblockDates: jest.fn().mockResolvedValue(2),
+    };
+    service = new RoomAvailabilityService(transactions, roomCalendar);
   });
 
   it('lists reserved and blocked nights in an exclusive end range', async () => {
-    calendarQuery.getMany.mockResolvedValue([
+    roomCalendar.listRange.mockResolvedValue([
       calendarFixture({
         bookingId: '9',
         status: RoomCalendarStatus.RESERVED,
@@ -75,10 +67,14 @@ describe('RoomAvailabilityService', () => {
         booking: null,
       }),
     ]);
+    expect(roomCalendar.listRange).toHaveBeenCalledWith('1', {
+      from: '2030-01-01',
+      to: '2030-01-03',
+    });
   });
 
-  it('creates one BLOCKED row per night under a Room lock', async () => {
-    calendarQuery.getMany.mockResolvedValue([
+  it('blocks one calendar entry per night in the same transaction', async () => {
+    roomCalendar.blockDates.mockResolvedValue([
       calendarFixture(),
       calendarFixture({ id: '2', stayDate: '2030-01-02' }),
     ]);
@@ -89,24 +85,19 @@ describe('RoomAvailabilityService', () => {
       reason: ' Maintenance ',
     });
 
-    expect(insert).toHaveBeenCalledWith([
-      expect.objectContaining({
-        roomId: '1',
-        stayDate: '2030-01-01',
-        status: RoomCalendarStatus.BLOCKED,
-        reason: 'Maintenance',
-      }),
-      expect.objectContaining({ stayDate: '2030-01-02' }),
-    ]);
+    expect(roomCalendar.lockRoom).toHaveBeenCalledWith(transaction, '1');
+    expect(roomCalendar.blockDates).toHaveBeenCalledWith(
+      transaction,
+      '1',
+      ['2030-01-01', '2030-01-02'],
+      'Maintenance',
+      { from: '2030-01-01', to: '2030-01-03' },
+    );
   });
 
-  it('maps a room-date unique collision to Conflict', async () => {
-    insert.mockRejectedValue(
-      new QueryFailedError('INSERT', [], {
-        code: 'ER_DUP_ENTRY',
-        message:
-          "Duplicate entry '1-2030-01-01' for key 'room_calendar_room_date'",
-      }),
+  it('maps a semantic room-date collision to Conflict', async () => {
+    roomCalendar.blockDates.mockRejectedValue(
+      new RoomCalendarBlockConflictError(),
     );
 
     await expect(
@@ -118,7 +109,7 @@ describe('RoomAvailabilityService', () => {
     ).rejects.toBeInstanceOf(ConflictException);
   });
 
-  it('unblocks only BLOCKED nights and preserves RESERVED rows', async () => {
+  it('unblocks only the requested blocked date range', async () => {
     await expect(
       service.unblock('1', {
         from: '2030-01-01',
@@ -126,8 +117,9 @@ describe('RoomAvailabilityService', () => {
       }),
     ).resolves.toEqual({ removedCount: 2 });
 
-    expect(calendarQuery.andWhere).toHaveBeenCalledWith('status = :status', {
-      status: RoomCalendarStatus.BLOCKED,
+    expect(roomCalendar.unblockDates).toHaveBeenCalledWith(transaction, '1', {
+      from: '2030-01-01',
+      to: '2030-01-03',
     });
   });
 
@@ -142,7 +134,7 @@ describe('RoomAvailabilityService', () => {
   });
 
   it('rejects a missing room before calendar mutation', async () => {
-    roomResult = null;
+    roomCalendar.lockRoom.mockResolvedValue(false);
 
     await expect(
       service.block('1', {
@@ -151,64 +143,9 @@ describe('RoomAvailabilityService', () => {
         reason: 'Maintenance',
       }),
     ).rejects.toBeInstanceOf(NotFoundException);
-    expect(insert).not.toHaveBeenCalled();
+    expect(roomCalendar.blockDates).not.toHaveBeenCalled();
   });
 });
-
-function createManager(
-  getRoom: () => Room | null,
-  insert: jest.Mock,
-  deleteExecute: jest.Mock,
-  calendarQuery: ReturnType<typeof createCalendarQuery>,
-): EntityManager {
-  const roomQuery = {
-    where: jest.fn().mockReturnThis(),
-    andWhere: jest.fn().mockReturnThis(),
-    setLock: jest.fn().mockReturnThis(),
-    getOne: jest.fn(() => Promise.resolve(getRoom())),
-  };
-  const calendarRepository = {
-    create: jest.fn((value: RoomCalendar) => value),
-    insert,
-    createQueryBuilder: jest.fn(() => calendarQuery),
-  };
-
-  calendarQuery.execute.mockImplementation(deleteExecute);
-
-  return {
-    getRepository: jest.fn((entity: unknown) =>
-      entity === Room
-        ? { createQueryBuilder: () => roomQuery }
-        : calendarRepository,
-    ),
-  } as unknown as EntityManager;
-}
-
-function createCalendarQuery() {
-  const query = {
-    leftJoinAndSelect: jest.fn(),
-    where: jest.fn(),
-    andWhere: jest.fn(),
-    orderBy: jest.fn(),
-    delete: jest.fn(),
-    from: jest.fn(),
-    getMany: jest.fn().mockResolvedValue([]),
-    execute: jest.fn(),
-  };
-
-  for (const method of [
-    query.leftJoinAndSelect,
-    query.where,
-    query.andWhere,
-    query.orderBy,
-    query.delete,
-    query.from,
-  ]) {
-    method.mockReturnValue(query);
-  }
-
-  return query;
-}
 
 function calendarFixture(overrides: Partial<RoomCalendar> = {}): RoomCalendar {
   return {

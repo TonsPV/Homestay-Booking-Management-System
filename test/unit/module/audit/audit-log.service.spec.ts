@@ -1,12 +1,12 @@
 import type { EntityManager } from 'typeorm';
 
 import { AuditLogService } from '../../../../src/module/audit/audit-log.service';
+import { AuditLog } from '../../../../src/module/audit/schema/audit-log.entity';
 import {
   AuditAction,
   AuditActorType,
   AuditEntityType,
-  AuditLog,
-} from '../../../../src/module/audit/schema/audit-log.entity';
+} from '../../../../src/module/audit/domain/audit-log';
 
 describe('AuditLogService', () => {
   it('writes only the explicit immutable audit fields through the caller transaction', async () => {

@@ -7,12 +7,12 @@ import type { Repository } from 'typeorm';
 
 import { Payment } from '../../../../src/module/payment/schema/payment.entity';
 import { BookingQueryService } from '../../../../src/module/booking/booking-query.service';
-import { BookingTransitionPolicy } from '../../../../src/module/booking/booking-transition.policy';
+import { BookingTransitionPolicy } from '../../../../src/module/booking/domain/booking-transition.policy';
+import { Booking } from '../../../../src/module/booking/schema/booking.entity';
 import {
-  Booking,
   BookingPaymentStatus,
   BookingStatus,
-} from '../../../../src/module/booking/schema/booking.entity';
+} from '../../../../src/module/booking/domain/booking-state';
 import type { Customer } from '../../../../src/module/customer/schema/customer.entity';
 import type { Room } from '../../../../src/module/room/schema/room.entity';
 

@@ -1,17 +1,17 @@
-import { HttpStatus } from '@nestjs/common';
-
-import { ErrorCode } from '../../../../src/common/error-codes';
-import { AppHttpException } from '../../../../src/common/http/app-http-exception';
-import { RoomStatus } from '../../../../src/module/room/schema/room.entity';
+import { RoomStatus } from '../../../../src/module/room/domain/room-status';
 import {
   BookingTransitionPolicy,
+  type BookingTransitionState,
   MANAGEMENT_STATUS_TRANSITIONS,
-} from '../../../../src/module/booking/booking-transition.policy';
+} from '../../../../src/module/booking/domain/booking-transition.policy';
 import {
-  Booking,
   BookingPaymentStatus,
   BookingStatus,
-} from '../../../../src/module/booking/schema/booking.entity';
+} from '../../../../src/module/booking/domain/booking-state';
+import {
+  BookingTransitionDenialReason,
+  BookingTransitionNotAllowedError,
+} from '../../../../src/module/booking/domain/booking.errors';
 
 describe('BookingTransitionPolicy', () => {
   const policy = new BookingTransitionPolicy();
@@ -52,9 +52,9 @@ describe('BookingTransitionPolicy', () => {
       paymentStatus: BookingPaymentStatus.UNPAID,
       status: BookingStatus.PENDING_PAYMENT,
     });
-    expect(
-      policy.evaluate(unpaidOnline, BookingStatus.CONFIRMED).reasonCode,
-    ).toBe(ErrorCode.BOOKING_CONFIRMATION_REQUIRES_PAYMENT);
+    expect(policy.evaluate(unpaidOnline, BookingStatus.CONFIRMED).reason).toBe(
+      BookingTransitionDenialReason.CONFIRMATION_REQUIRES_PAYMENT,
+    );
 
     expect(
       policy.evaluate(
@@ -63,8 +63,8 @@ describe('BookingTransitionPolicy', () => {
           status: BookingStatus.PENDING_PAYMENT,
         }),
         BookingStatus.CANCELLED,
-      ).reasonCode,
-    ).toBe(ErrorCode.BOOKING_CANCELLATION_ALREADY_PAID);
+      ).reason,
+    ).toBe(BookingTransitionDenialReason.CANCELLATION_ALREADY_PAID);
 
     const unpaid = bookingFixture({
       paymentStatus: BookingPaymentStatus.UNPAID,
@@ -75,8 +75,8 @@ describe('BookingTransitionPolicy', () => {
         currentDate: '2030-02-01',
         roomExists: true,
         roomStatus: RoomStatus.READY,
-      }).reasonCode,
-    ).toBe(ErrorCode.BOOKING_CHECKIN_REQUIRES_PAYMENT);
+      }).reason,
+    ).toBe(BookingTransitionDenialReason.CHECKIN_REQUIRES_PAYMENT);
 
     const paid = bookingFixture({
       paymentStatus: BookingPaymentStatus.PAID,
@@ -87,29 +87,29 @@ describe('BookingTransitionPolicy', () => {
         currentDate: '2030-02-04',
         roomExists: true,
         roomStatus: RoomStatus.READY,
-      }).reasonCode,
-    ).toBe(ErrorCode.BOOKING_CHECKIN_OUTSIDE_STAY_WINDOW);
+      }).reason,
+    ).toBe(BookingTransitionDenialReason.CHECKIN_OUTSIDE_STAY_WINDOW);
     expect(
       policy.evaluate(paid, BookingStatus.CHECKED_IN, {
         currentDate: '2030-02-01',
         roomExists: false,
-      }).reasonCode,
-    ).toBe(ErrorCode.BOOKING_ROOM_MISSING_FOR_BOOKING);
+      }).reason,
+    ).toBe(BookingTransitionDenialReason.ROOM_MISSING_FOR_BOOKING);
     expect(
       policy.evaluate(paid, BookingStatus.CHECKED_IN, {
         currentDate: '2030-02-01',
         roomExists: true,
         roomStatus: RoomStatus.CLEANING,
-      }).reasonCode,
-    ).toBe(ErrorCode.BOOKING_ROOM_NOT_READY);
+      }).reason,
+    ).toBe(BookingTransitionDenialReason.ROOM_NOT_READY);
     expect(
       policy.evaluate(paid, BookingStatus.CHECKED_IN, {
         currentDate: '2030-02-01',
         refundPending: true,
         roomExists: true,
         roomStatus: RoomStatus.READY,
-      }).reasonCode,
-    ).toBe(ErrorCode.BOOKING_REFUND_PENDING);
+      }).reason,
+    ).toBe(BookingTransitionDenialReason.REFUND_PENDING);
   });
 
   it('asserts a denied capability with the same stable error code', () => {
@@ -120,10 +120,11 @@ describe('BookingTransitionPolicy', () => {
       policy.assertAllowed(booking, capability);
       throw new Error('Expected the transition to be denied.');
     } catch (error) {
-      expect(error).toBeInstanceOf(AppHttpException);
-      expect((error as AppHttpException).getStatus()).toBe(HttpStatus.CONFLICT);
-      expect((error as AppHttpException).getResponse()).toMatchObject({
-        errorCode: ErrorCode.BOOKING_TRANSITION_NOT_ALLOWED,
+      expect(error).toBeInstanceOf(BookingTransitionNotAllowedError);
+      expect(error).toMatchObject({
+        reason: BookingTransitionDenialReason.TRANSITION_NOT_ALLOWED,
+        currentStatus: BookingStatus.CHECKED_IN,
+        targetStatus: BookingStatus.CONFIRMED,
       });
     }
   });
@@ -139,47 +140,28 @@ describe('BookingTransitionPolicy', () => {
     });
 
     expect(() => policy.assertAllowed(booking, capability)).toThrow(
-      AppHttpException,
+      BookingTransitionNotAllowedError,
     );
 
     try {
       policy.assertAllowed(booking, capability);
     } catch (error) {
       expect(error).toMatchObject({
-        response: {
-          errorCode: ErrorCode.BOOKING_ROOM_MISSING_FOR_BOOKING,
-        },
-        status: HttpStatus.CONFLICT,
+        reason: BookingTransitionDenialReason.ROOM_MISSING_FOR_BOOKING,
       });
     }
   });
 });
 
-function bookingFixture(overrides: Partial<Booking> = {}): Booking {
+function bookingFixture(
+  overrides: Partial<BookingTransitionState> = {},
+): BookingTransitionState {
   return {
-    id: '100',
-    bookingCode: 'BK100',
-    customerId: '10',
-    customer: {} as Booking['customer'],
-    roomId: '1',
-    room: { status: RoomStatus.READY } as Booking['room'],
     createdByUserId: '20',
-    createdByUser: null,
     checkInDate: '2030-02-01',
     checkOutDate: '2030-02-03',
-    guestCount: 2,
-    contactName: 'Customer',
-    contactPhone: '+84901234567',
-    contactEmail: null,
-    totalAmount: '2000000.00',
     status: BookingStatus.PENDING_PAYMENT,
     paymentStatus: BookingPaymentStatus.PAID,
-    paymentExpiresAt: null,
-    customerNote: null,
-    cancelledAt: null,
-    cancellationReason: null,
-    createdAt: new Date('2030-01-01'),
-    updatedAt: new Date('2030-01-01'),
     ...overrides,
   };
 }

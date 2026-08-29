@@ -34,7 +34,7 @@ import type { AccessTokenPayload } from '../auth/auth.types';
 import { CurrentAuth } from '../auth/decorators/current-auth.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { RolesGuard } from '../auth/guards/roles.guard';
-import { AuditActorType } from '../audit/schema/audit-log.entity';
+import { AuditActorType } from '../audit/domain/audit-log';
 import { CreateRoomImageDto } from './dto/create-room-image.dto';
 import { CreateRoomDto } from './dto/create-room.dto';
 import { ListRoomsQueryDto } from './dto/list-rooms-query.dto';

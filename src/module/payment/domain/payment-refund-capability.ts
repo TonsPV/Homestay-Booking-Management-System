@@ -1,0 +1,4 @@
+export enum PaymentRefundCapability {
+  STANDARD_REFUND = 'STANDARD_REFUND',
+  DUPLICATE_CHARGE_REFUND = 'DUPLICATE_CHARGE_REFUND',
+}

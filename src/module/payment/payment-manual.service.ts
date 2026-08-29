@@ -2,45 +2,46 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, type Repository } from 'typeorm';
 
-import { getMysqlDuplicateKey } from '../../common/database';
-import { requireTrimmedString } from '../../common/validation';
-import { AuditLogService } from '../audit/audit-log.service';
 import {
-  AuditAction,
-  AuditActorType,
-  AuditEntityType,
-} from '../audit/schema/audit-log.entity';
+  type TransactionContext,
+  TransactionRunner,
+} from '../../common/application/transaction';
 import {
-  Booking,
-  BookingPaymentStatus,
-  BookingStatus,
-} from '../booking/schema/booking.entity';
+  isValidIdempotencyKey,
+  requireTrimmedString,
+} from '../../common/validation';
+import { BookingPaymentLifecycleService } from '../booking/booking-payment-lifecycle.service';
 import { CreateManualPaymentDto } from './dto/create-manual-payment.dto';
+import { assertBookingCanAcceptPayment } from './payment-booking.application';
 import {
-  assertBookingCanAcceptPayment,
-  failExpiredOnlinePaymentsForBooking,
-  getLockedPaymentBooking,
-} from './payment-booking-policy';
+  PaymentAcceptanceStore,
+  PaymentIdempotencyConflictError,
+} from './ports/payment-acceptance.store';
 import { PaymentQueryService } from './payment-query.service';
 import type { PaymentResponse } from './payment.types';
-import { Payment, PaymentMethod, PaymentStatus } from './schema/payment.entity';
+import { Payment } from './schema/payment.entity';
+import { PaymentMethod, PaymentStatus } from './domain/payment-state';
 
+/**
+ * Manual (cash / bank transfer) payment command entry point. Owns
+ * validation, idempotency and payment row creation; the cross-aggregate
+ * booking side effects of an accepted payment are delegated to
+ * BookingPaymentLifecycleService.
+ */
 @Injectable()
 export class PaymentManualService {
   private readonly paymentTimeoutMilliseconds: number;
 
   constructor(
-    private readonly dataSource: DataSource,
-    @InjectRepository(Payment)
-    private readonly paymentsRepository: Repository<Payment>,
+    private readonly transactions: TransactionRunner,
+    private readonly payments: PaymentAcceptanceStore,
+    private readonly lifecycle: BookingPaymentLifecycleService,
     private readonly paymentQueryService: PaymentQueryService,
-    private readonly auditLogService: AuditLogService,
     configService: ConfigService,
   ) {
     this.paymentTimeoutMilliseconds =
@@ -63,12 +64,12 @@ export class PaymentManualService {
     let paymentId: string;
 
     try {
-      paymentId = await this.dataSource.transaction(async (manager) => {
-        const booking = await getLockedPaymentBooking(manager, bookingId);
-        const paymentsRepository = manager.getRepository(Payment);
-        const existingPayment = await paymentsRepository.findOneBy({
-          idempotencyKey: key,
-        });
+      paymentId = await this.transactions.run(async (transaction) => {
+        const booking = await this.getLockedBooking(transaction, bookingId);
+        const existingPayment = await this.payments.findByIdempotencyKey(
+          transaction,
+          key,
+        );
 
         if (existingPayment !== null) {
           this.assertIdempotentReplay(
@@ -80,20 +81,14 @@ export class PaymentManualService {
           return existingPayment.id;
         }
 
-        await failExpiredOnlinePaymentsForBooking(
-          manager,
+        await this.payments.expirePendingOnlineAttempts(
+          transaction,
           booking.id,
           new Date(),
         );
 
         if (
-          await paymentsRepository.exists({
-            where: {
-              bookingId: booking.id,
-              method: PaymentMethod.VNPAY,
-              status: PaymentStatus.PENDING,
-            },
-          })
+          await this.payments.hasPendingOnlineAttempt(transaction, booking.id)
         ) {
           throw new ConflictException(
             'Booking dang co giao dich VNPay cho xu ly.',
@@ -104,64 +99,30 @@ export class PaymentManualService {
 
         const bookingFromStatus = booking.status;
         const now = new Date();
-        const payment = await paymentsRepository.save(
-          paymentsRepository.create({
-            bookingId: booking.id,
-            amount: booking.totalAmount,
-            currency: 'VND',
-            method,
-            status: PaymentStatus.SUCCESS,
-            gatewayName: null,
-            gatewayReference: null,
-            gatewayTransactionId: null,
-            gatewayPaymentUrl: null,
-            gatewayResponseCode: null,
-            gatewayTransactionStatus: null,
-            idempotencyKey: key,
-            createdByUserId,
-            refundedByUserId: null,
-            paidAt: now,
-            refundedAt: null,
-            expiresAt: null,
-          }),
-        );
-
-        booking.paymentStatus = BookingPaymentStatus.PAID;
-        booking.acceptedPaymentId = payment.id;
-        booking.paymentExpiresAt = null;
-
-        if (booking.status === BookingStatus.PENDING_PAYMENT) {
-          booking.status = BookingStatus.CONFIRMED;
-        }
-
-        await manager.getRepository(Booking).save(booking);
-        await this.auditLogService.record(manager, {
-          actorType: AuditActorType.USER,
-          actorId: createdByUserId,
-          action: AuditAction.PAYMENT_CONFIRMED,
-          entityType: AuditEntityType.PAYMENT,
-          entityId: payment.id,
-          requestId,
-          metadata: {
-            bookingId: booking.id,
-            method: payment.method,
-          },
+        const payment = await this.payments.createPayment(transaction, {
+          bookingId: booking.id,
+          amount: booking.totalAmount,
+          currency: 'VND',
+          method,
+          status: PaymentStatus.SUCCESS,
+          gatewayName: null,
+          gatewayReference: null,
+          gatewayTransactionId: null,
+          gatewayPaymentUrl: null,
+          gatewayResponseCode: null,
+          gatewayTransactionStatus: null,
+          idempotencyKey: key,
+          createdByUserId,
+          paidAt: now,
+          expiresAt: null,
         });
-        if (bookingFromStatus !== booking.status) {
-          await this.auditLogService.record(manager, {
-            actorType: AuditActorType.USER,
-            actorId: createdByUserId,
-            action: AuditAction.BOOKING_STATUS_CHANGED,
-            entityType: AuditEntityType.BOOKING,
-            entityId: booking.id,
-            requestId,
-            metadata: {
-              fromStatus: bookingFromStatus,
-              toStatus: booking.status,
-              paymentId: payment.id,
-            },
-          });
-        }
+
+        await this.lifecycle.applyAcceptedManualPayment(transaction, {
+          booking,
+          payment,
+          bookingFromStatus,
+          requestId,
+        });
 
         return payment.id;
       });
@@ -202,18 +163,11 @@ export class PaymentManualService {
     userId: string,
     method: PaymentMethod,
   ): Promise<string> {
-    const duplicateKey = getMysqlDuplicateKey(error);
-
-    if (
-      duplicateKey === undefined ||
-      !duplicateKey.includes('payments_idempotency')
-    ) {
+    if (!(error instanceof PaymentIdempotencyConflictError)) {
       throw error;
     }
 
-    const payment = await this.paymentsRepository.findOneBy({
-      idempotencyKey: key,
-    });
+    const payment = await this.payments.findByIdempotencyKeySnapshot(key);
 
     if (payment === null) {
       throw new ConflictException('Khong the ghi nhan payment trung lap.');
@@ -221,6 +175,19 @@ export class PaymentManualService {
 
     this.assertIdempotentReplay(payment, bookingId, userId, method);
     return payment.id;
+  }
+
+  private async getLockedBooking(
+    context: TransactionContext,
+    bookingId: string,
+  ) {
+    const booking = await this.payments.lockBooking(context, bookingId);
+
+    if (booking === null) {
+      throw new NotFoundException('Khong tim thay booking.');
+    }
+
+    return booking;
   }
 
   private requireManualMethod(value: unknown): PaymentMethod {
@@ -258,7 +225,7 @@ export class PaymentManualService {
       100,
     );
 
-    if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{7,99}$/.test(key)) {
+    if (!isValidIdempotencyKey(key)) {
       throw new BadRequestException('Idempotency-Key khong hop le.');
     }
 

@@ -31,7 +31,7 @@ import { CurrentAuth } from '../auth/decorators/current-auth.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { AuthUserDto } from '../auth/dto/auth-response.dto';
-import { AuditActorType } from '../audit/schema/audit-log.entity';
+import { AuditActorType } from '../audit/domain/audit-log';
 import { CreateUserDto } from './dto/create-user.dto';
 import { ListUsersQueryDto } from './dto/list-users-query.dto';
 import { UpdateUserDto } from './dto/update-user.dto';

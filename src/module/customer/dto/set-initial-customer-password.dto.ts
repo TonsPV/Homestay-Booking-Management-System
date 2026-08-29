@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { Allow } from 'class-validator';
+import { IsString } from 'class-validator';
 
 export class SetInitialCustomerPasswordDto {
   @ApiProperty({
@@ -9,6 +9,6 @@ export class SetInitialCustomerPasswordDto {
     type: String,
     writeOnly: true,
   })
-  @Allow()
-  password?: unknown;
+  @IsString()
+  password?: string;
 }

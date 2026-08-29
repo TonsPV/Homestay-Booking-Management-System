@@ -1,13 +1,9 @@
-import { HttpStatus, Injectable } from '@nestjs/common';
-
-import { ErrorCode } from '../../common/error-codes';
-import { AppHttpException } from '../../common/http/app-http-exception';
+import { RoomStatus } from '../../room/domain/room-status';
 import {
-  Booking,
-  BookingPaymentStatus,
-  BookingStatus,
-} from './schema/booking.entity';
-import { RoomStatus } from '../room/schema/room.entity';
+  BookingTransitionDenialReason,
+  BookingTransitionNotAllowedError,
+} from './booking.errors';
+import { BookingPaymentStatus, BookingStatus } from './booking-state';
 
 const VIETNAM_UTC_OFFSET_MILLISECONDS = 7 * 60 * 60 * 1000;
 
@@ -27,24 +23,18 @@ export const MANAGEMENT_STATUS_TRANSITIONS: Readonly<
   [BookingStatus.CANCELLED]: [],
 };
 
-export const BOOKING_TRANSITION_REASON_CODES = [
-  ErrorCode.BOOKING_REFUND_PENDING,
-  ErrorCode.BOOKING_TRANSITION_NOT_ALLOWED,
-  ErrorCode.BOOKING_CONFIRMATION_REQUIRES_PAYMENT,
-  ErrorCode.BOOKING_CHECKIN_REQUIRES_PAYMENT,
-  ErrorCode.BOOKING_CHECKIN_OUTSIDE_STAY_WINDOW,
-  ErrorCode.BOOKING_ROOM_MISSING_FOR_BOOKING,
-  ErrorCode.BOOKING_ROOM_NOT_READY,
-  ErrorCode.BOOKING_CANCELLATION_ALREADY_PAID,
-] as const;
-
-export type BookingTransitionReasonCode =
-  (typeof BOOKING_TRANSITION_REASON_CODES)[number];
+export interface BookingTransitionState {
+  status: BookingStatus;
+  paymentStatus: BookingPaymentStatus;
+  createdByUserId: string | null;
+  checkInDate: string;
+  checkOutDate: string;
+}
 
 export interface BookingTransitionCapability {
   targetStatus: BookingStatus;
   allowed: boolean;
-  reasonCode: BookingTransitionReasonCode | null;
+  reason: BookingTransitionDenialReason | null;
 }
 
 export interface BookingTransitionContext {
@@ -54,10 +44,9 @@ export interface BookingTransitionContext {
   currentDate?: string;
 }
 
-@Injectable()
 export class BookingTransitionPolicy {
   getCapabilities(
-    booking: Booking,
+    booking: BookingTransitionState,
     context: BookingTransitionContext = {},
   ): BookingTransitionCapability[] {
     return Object.values(BookingStatus).map((targetStatus) =>
@@ -66,7 +55,7 @@ export class BookingTransitionPolicy {
   }
 
   evaluate(
-    booking: Booking,
+    booking: BookingTransitionState,
     targetStatus: BookingStatus,
     context: BookingTransitionContext = {},
   ): BookingTransitionCapability {
@@ -75,13 +64,16 @@ export class BookingTransitionPolicy {
     }
 
     if (context.refundPending === true) {
-      return this.denied(targetStatus, ErrorCode.BOOKING_REFUND_PENDING);
+      return this.denied(
+        targetStatus,
+        BookingTransitionDenialReason.REFUND_PENDING,
+      );
     }
 
     if (!MANAGEMENT_STATUS_TRANSITIONS[booking.status].includes(targetStatus)) {
       return this.denied(
         targetStatus,
-        ErrorCode.BOOKING_TRANSITION_NOT_ALLOWED,
+        BookingTransitionDenialReason.TRANSITION_NOT_ALLOWED,
       );
     }
 
@@ -92,7 +84,7 @@ export class BookingTransitionPolicy {
     ) {
       return this.denied(
         targetStatus,
-        ErrorCode.BOOKING_CONFIRMATION_REQUIRES_PAYMENT,
+        BookingTransitionDenialReason.CONFIRMATION_REQUIRES_PAYMENT,
       );
     }
 
@@ -102,7 +94,7 @@ export class BookingTransitionPolicy {
     ) {
       return this.denied(
         targetStatus,
-        ErrorCode.BOOKING_CHECKIN_REQUIRES_PAYMENT,
+        BookingTransitionDenialReason.CHECKIN_REQUIRES_PAYMENT,
       );
     }
 
@@ -112,7 +104,7 @@ export class BookingTransitionPolicy {
     ) {
       return this.denied(
         targetStatus,
-        ErrorCode.BOOKING_CHECKIN_OUTSIDE_STAY_WINDOW,
+        BookingTransitionDenialReason.CHECKIN_OUTSIDE_STAY_WINDOW,
       );
     }
 
@@ -123,7 +115,7 @@ export class BookingTransitionPolicy {
       if (context.roomExists === false) {
         return this.denied(
           targetStatus,
-          ErrorCode.BOOKING_ROOM_MISSING_FOR_BOOKING,
+          BookingTransitionDenialReason.ROOM_MISSING_FOR_BOOKING,
         );
       }
 
@@ -132,7 +124,10 @@ export class BookingTransitionPolicy {
         context.roomStatus !== undefined &&
         context.roomStatus !== RoomStatus.READY
       ) {
-        return this.denied(targetStatus, ErrorCode.BOOKING_ROOM_NOT_READY);
+        return this.denied(
+          targetStatus,
+          BookingTransitionDenialReason.ROOM_NOT_READY,
+        );
       }
     }
 
@@ -142,7 +137,7 @@ export class BookingTransitionPolicy {
     ) {
       return this.denied(
         targetStatus,
-        ErrorCode.BOOKING_CANCELLATION_ALREADY_PAID,
+        BookingTransitionDenialReason.CANCELLATION_ALREADY_PAID,
       );
     }
 
@@ -150,33 +145,34 @@ export class BookingTransitionPolicy {
   }
 
   assertAllowed(
-    booking: Booking,
+    booking: BookingTransitionState,
     capability: BookingTransitionCapability,
   ): void {
-    if (capability.allowed || capability.reasonCode === null) {
+    if (capability.allowed || capability.reason === null) {
       return;
     }
 
-    throw new AppHttpException(
-      HttpStatus.CONFLICT,
-      capability.reasonCode,
-      this.messageFor(capability.reasonCode, booking, capability.targetStatus),
+    throw new BookingTransitionNotAllowedError(
+      booking.status,
+      capability.targetStatus,
+      capability.reason,
+      this.messageFor(capability.reason, booking, capability.targetStatus),
     );
   }
 
   private allowed(targetStatus: BookingStatus): BookingTransitionCapability {
-    return { targetStatus, allowed: true, reasonCode: null };
+    return { targetStatus, allowed: true, reason: null };
   }
 
   private denied(
     targetStatus: BookingStatus,
-    reasonCode: BookingTransitionReasonCode,
+    reason: BookingTransitionDenialReason,
   ): BookingTransitionCapability {
-    return { targetStatus, allowed: false, reasonCode };
+    return { targetStatus, allowed: false, reason };
   }
 
   private isInsideStayWindow(
-    booking: Booking,
+    booking: BookingTransitionState,
     currentDate = this.getCurrentVietnamDate(),
   ): boolean {
     return (
@@ -191,26 +187,26 @@ export class BookingTransitionPolicy {
   }
 
   private messageFor(
-    reasonCode: BookingTransitionReasonCode,
-    booking: Booking,
+    reason: BookingTransitionDenialReason,
+    booking: BookingTransitionState,
     targetStatus: BookingStatus,
   ): string {
-    switch (reasonCode) {
-      case ErrorCode.BOOKING_REFUND_PENDING:
+    switch (reason) {
+      case BookingTransitionDenialReason.REFUND_PENDING:
         return 'Booking dang co yeu cau hoan tien VNPay cho doi soat.';
-      case ErrorCode.BOOKING_CONFIRMATION_REQUIRES_PAYMENT:
+      case BookingTransitionDenialReason.CONFIRMATION_REQUIRES_PAYMENT:
         return 'Booking online chi duoc xac nhan sau khi thanh toan.';
-      case ErrorCode.BOOKING_CHECKIN_REQUIRES_PAYMENT:
+      case BookingTransitionDenialReason.CHECKIN_REQUIRES_PAYMENT:
         return 'Booking phai duoc thanh toan truoc khi check-in.';
-      case ErrorCode.BOOKING_CHECKIN_OUTSIDE_STAY_WINDOW:
+      case BookingTransitionDenialReason.CHECKIN_OUTSIDE_STAY_WINDOW:
         return 'Chi co the check-in trong thoi gian luu tru cua booking.';
-      case ErrorCode.BOOKING_ROOM_MISSING_FOR_BOOKING:
+      case BookingTransitionDenialReason.ROOM_MISSING_FOR_BOOKING:
         return 'Phong cua booking khong con ton tai.';
-      case ErrorCode.BOOKING_ROOM_NOT_READY:
+      case BookingTransitionDenialReason.ROOM_NOT_READY:
         return 'Phong phai o trang thai READY truoc khi check-in.';
-      case ErrorCode.BOOKING_CANCELLATION_ALREADY_PAID:
+      case BookingTransitionDenialReason.CANCELLATION_ALREADY_PAID:
         return 'Booking da thanh toan. Can hoan tien truoc khi huy.';
-      case ErrorCode.BOOKING_TRANSITION_NOT_ALLOWED:
+      case BookingTransitionDenialReason.TRANSITION_NOT_ALLOWED:
       default:
         return `Khong the chuyen booking tu ${booking.status} sang ${targetStatus}.`;
     }
