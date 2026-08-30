@@ -25,7 +25,7 @@ import {
   ApiExternalServiceUnavailableError,
   ApiOkEnvelope,
 } from '../../openapi/api-response.decorators';
-import { AccessTokenGuard } from '../auth/access-token.guard';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import type { AccessTokenPayload } from '../auth/auth.types';
 import { CurrentAuth } from '../auth/decorators/current-auth.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -42,7 +42,7 @@ import { PaymentStatus } from './domain/payment-state';
 import { PaymentMethod } from './domain/payment-state';
 
 @Controller('v1/management')
-@UseGuards(AccessTokenGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('ADMIN', 'STAFF')
 @ApiBearerAuth()
 @ApiCommonAuthErrors()

@@ -21,7 +21,7 @@ import {
   ApiCommonMutationErrors,
   ApiOkEnvelope,
 } from '../../openapi/api-response.decorators';
-import { AccessTokenGuard } from '../auth/access-token.guard';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import type { AccessTokenPayload } from '../auth/auth.types';
 import { AuditActorType } from '../audit/domain/audit-log';
 import { CurrentAuth } from '../auth/decorators/current-auth.decorator';
@@ -33,7 +33,7 @@ import { AdminCustomerDto } from './dto/admin-customer-response.dto';
 import { ListCustomersQueryDto } from './dto/list-customers-query.dto';
 
 @Controller('v1/customers')
-@UseGuards(AccessTokenGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('ADMIN')
 @ApiBearerAuth()
 @ApiCommonAuthErrors()

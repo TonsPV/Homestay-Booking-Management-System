@@ -29,7 +29,7 @@ import {
   ApiOkEnvelope,
 } from '../../openapi/api-response.decorators';
 import { ROOM_IMAGE_MAX_FILE_SIZE } from '../../config/room-image-storage';
-import { AccessTokenGuard } from '../auth/access-token.guard';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import type { AccessTokenPayload } from '../auth/auth.types';
 import { CurrentAuth } from '../auth/decorators/current-auth.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -101,7 +101,7 @@ export class RoomController {
   }
 
   @Post()
-  @UseGuards(AccessTokenGuard, RolesGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @ApiBearerAuth()
   @Roles('ADMIN')
   @HttpCode(HttpStatus.CREATED)
@@ -117,7 +117,7 @@ export class RoomController {
   }
 
   @Patch(':id')
-  @UseGuards(AccessTokenGuard, RolesGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @ApiBearerAuth()
   @Roles('ADMIN')
   @ApiOkEnvelope(RoomDto)
@@ -133,7 +133,7 @@ export class RoomController {
   }
 
   @Delete(':id')
-  @UseGuards(AccessTokenGuard, RolesGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @ApiBearerAuth()
   @Roles('ADMIN')
   @HttpCode(HttpStatus.OK)
@@ -146,7 +146,7 @@ export class RoomController {
   }
 
   @Patch(':id/status')
-  @UseGuards(AccessTokenGuard, RolesGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @ApiBearerAuth()
   @Roles('ADMIN', 'STAFF')
   @ApiOkEnvelope(RoomDto)
@@ -192,7 +192,7 @@ export class RoomController {
       },
     },
   })
-  @UseGuards(AccessTokenGuard, RolesGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @ApiBearerAuth()
   @Roles('ADMIN')
   @UseInterceptors(

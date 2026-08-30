@@ -25,7 +25,7 @@ import {
   ApiCreatedEnvelope,
   ApiOkEnvelope,
 } from '../../openapi/api-response.decorators';
-import { AccessTokenGuard } from '../auth/access-token.guard';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import type { AccessTokenPayload } from '../auth/auth.types';
 import { Actors } from '../auth/decorators/actors.decorator';
 import { CurrentAuth } from '../auth/decorators/current-auth.decorator';
@@ -37,7 +37,7 @@ import { CreateBookingDto } from './dto/create-booking.dto';
 import { ListBookingsQueryDto } from './dto/list-bookings-query.dto';
 
 @Controller('v1/bookings')
-@UseGuards(AccessTokenGuard, ActorsGuard)
+@UseGuards(JwtAuthGuard, ActorsGuard)
 @Actors('customer')
 @ApiBearerAuth()
 @ApiCommonAuthErrors()

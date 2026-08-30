@@ -23,3 +23,13 @@ export interface AccessTokenSubject {
 export interface AuthenticatedRequest extends AppRequest<AccessTokenPayload> {
   auth: AccessTokenPayload;
 }
+
+/** Decoded JWT as returned by `jwt.verify(..., { complete: true })`. */
+export interface CompleteJwt {
+  header: {
+    alg: string;
+    typ?: string;
+  };
+  payload: Record<string, unknown>;
+  signature: string;
+}

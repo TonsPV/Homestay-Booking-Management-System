@@ -7,7 +7,7 @@ import {
   ApiCommonMutationErrors,
   ApiOkEnvelope,
 } from '../../openapi/api-response.decorators';
-import { AccessTokenGuard } from '../auth/access-token.guard';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import type { AccessTokenPayload } from '../auth/auth.types';
 import { Actors } from '../auth/decorators/actors.decorator';
 import { CurrentAuth } from '../auth/decorators/current-auth.decorator';
@@ -22,7 +22,7 @@ import { CustomerCredentialResultDto } from './dto/customer-credential-response.
 import { UpdateCustomerProfileDto } from './dto/update-customer-profile.dto';
 
 @Controller('v1/customers')
-@UseGuards(AccessTokenGuard, ActorsGuard)
+@UseGuards(JwtAuthGuard, ActorsGuard)
 @Actors('customer')
 @ApiTags('Customer Profile')
 @ApiBearerAuth()

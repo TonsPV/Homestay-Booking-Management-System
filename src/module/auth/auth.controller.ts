@@ -24,10 +24,10 @@ import {
   ApiRateLimitError,
   ApiRegistrationConflictError,
 } from '../../openapi/api-response.decorators';
-import { AccessTokenGuard } from './access-token.guard';
 import { AuthService } from './auth.service';
 import type { AccessTokenPayload } from './auth.types';
 import { CurrentAuth } from './decorators/current-auth.decorator';
+import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { LoginDto } from './dto/login.dto';
 import { RegisterCustomerDto } from './dto/register-customer.dto';
 import {
@@ -91,7 +91,7 @@ export class AuthController {
   }
 
   @Get('me')
-  @UseGuards(AccessTokenGuard)
+  @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOkEnvelopeUnion([AuthMeCustomerResponseDto, AuthMeUserResponseDto])
   @ApiCommonAuthErrors()

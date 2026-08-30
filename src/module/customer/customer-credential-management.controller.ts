@@ -7,7 +7,7 @@ import {
   ApiCommonMutationErrors,
   ApiOkEnvelope,
 } from '../../openapi/api-response.decorators';
-import { AccessTokenGuard } from '../auth/access-token.guard';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import {
@@ -18,7 +18,7 @@ import { CustomerCredentialResultDto } from './dto/customer-credential-response.
 import { SetInitialCustomerPasswordDto } from './dto/set-initial-customer-password.dto';
 
 @Controller('v1/management/customers')
-@UseGuards(AccessTokenGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('ADMIN', 'STAFF')
 @ApiTags('Management Customers')
 @ApiBearerAuth()

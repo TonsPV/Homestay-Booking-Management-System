@@ -70,6 +70,7 @@ report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 .claude/
 .cursor/
 .continue/
+.hermes/
 
 # Local agent instructions and generated prose/audit output
 AGENTS.md

@@ -19,7 +19,7 @@ import {
   ApiCreatedEnvelope,
   ApiOkEnvelope,
 } from '../../openapi/api-response.decorators';
-import { AccessTokenGuard } from '../auth/access-token.guard';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { BlockRoomDatesDto } from './dto/block-room-dates.dto';
@@ -43,7 +43,7 @@ import {
 } from './room.service';
 
 @Controller('v1/management/rooms')
-@UseGuards(AccessTokenGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('ADMIN', 'STAFF')
 @ApiTags('Management Rooms')
 @ApiBearerAuth()

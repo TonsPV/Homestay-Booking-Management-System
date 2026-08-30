@@ -14,7 +14,7 @@ import {
   ApiCommonAuthErrors,
   ApiOkEnvelope,
 } from '../../openapi/api-response.decorators';
-import { AccessTokenGuard } from '../auth/access-token.guard';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { RoomImageDto } from './dto/room-response.dto';
@@ -22,7 +22,7 @@ import { RoomImageService } from './room-image.service';
 import type { RoomImageResponse } from './room.service';
 
 @Controller('v1/room-images')
-@UseGuards(AccessTokenGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('ADMIN')
 @ApiBearerAuth()
 @ApiCommonAuthErrors()

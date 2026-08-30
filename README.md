@@ -90,6 +90,35 @@ details.
 Public and management routes are separated where visibility or actor permissions
 differ. The full contract is in [`openapi/openapi.json`](openapi/openapi.json).
 
+## Authentication Architecture
+
+Access tokens are HS256 JWTs signed through `@nestjs/jwt` (`AccessTokenService`
+facade). Token issuance, verification, and principal resolution are separated so
+each layer stays independently testable and a future WebSocket gateway can reuse
+the non-HTTP layers directly.
+
+| Component | Responsibility |
+|---|---|
+| `AuthService` | login/register orchestration; issues tokens via `AccessTokenService` |
+| `AccessTokenService` | issuance + `verify()` facade over `@nestjs/jwt`; JWT configuration (HS256, `JWT_ACCESS_TOKEN_SECRET`, duration grammar). Never touches the database. |
+| `AccessTokenClaimsValidator` | pure claim invariants: `sub`/`actor_type`/IDs/token_version/role shape, `iat <= now+60`, `exp > iat`, expiry. No DB, no HTTP. |
+| `AccessTokenPrincipalService` | application authentication state via authorization readers: account exists, `token_version` matches the DB, LOCKED → 403, user role refreshed from the DB (DB is the authorization source of truth; the JWT role is only a snapshot). |
+| `JwtStrategy` (passport-jwt) | HTTP adapter only: strict `Bearer <token>` extraction, library crypto verification, header `alg`/`typ` check, then claims validation → principal resolution. Returns the canonical `AuthenticatedPrincipal`. |
+| `JwtAuthGuard` | sets canonical `request.user` and derives the legacy `request.auth` view from it (deterministic adapter — the two can never drift). |
+| `ActorsGuard` / `RolesGuard` | authorization (route metadata), reading `request.auth`. |
+
+Token contract claims: `sub` (`customer:<id>` / `user:<id>`), `actor_type`,
+`customer_id`/`user_id`, `token_version` (non-negative integer; bumping it in the
+DB revokes outstanding tokens), `role` (user tokens only; not authoritative),
+`iat`, `exp`. Locked accounts are rejected with 403 while their token version is
+still valid.
+
+A future WebSocket gateway should authenticate with
+`AccessTokenService.verify()` → `AccessTokenClaimsValidator` →
+`AccessTokenPrincipalService.resolve()` and attach the principal to
+`socket.data.auth`; `JwtStrategy`/`JwtAuthGuard`/`request.user` remain HTTP-only
+Passport concepts.
+
 ## Core Business Flows
 
 - **Booking:** validate dates, capacity, customer/contact data, and room
