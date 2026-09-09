@@ -55,6 +55,7 @@ export function normalizeBookingCreationInput(
   body: CreateBookingDto,
   stayPolicy: BookingStayPolicy,
 ): BookingCreationInput {
+  const roomId = requireId(body.roomId, 'Room');
   const stayRange = normalizeBookingStayRange(
     stayPolicy,
     body.checkInDate,
@@ -62,7 +63,7 @@ export function normalizeBookingCreationInput(
   );
 
   return {
-    roomId: requireId(body.roomId, 'Room'),
+    roomId,
     checkInDate: stayRange.checkInDate,
     checkOutDate: stayRange.checkOutDate,
     nights: stayRange.nights,

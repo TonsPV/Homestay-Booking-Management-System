@@ -1,3 +1,5 @@
+import { BadRequestException } from '@nestjs/common';
+
 import {
   BookingPaymentStatus,
   BookingRequestIntentActorType,
@@ -16,6 +18,22 @@ import type { Room } from '../../../../src/module/room/schema/room.entity';
 
 describe('booking creation mapper', () => {
   const stayPolicy = new BookingStayPolicy(365);
+
+  it('prioritizes the room ID error when stay dates and guest count are also invalid', () => {
+    const normalize = () =>
+      normalizeBookingCreationInput(
+        {
+          roomId: '0',
+          checkInDate: 'invalid-date',
+          checkOutDate: 'invalid-date',
+          guestCount: 0,
+        },
+        stayPolicy,
+      );
+
+    expect(normalize).toThrow(BadRequestException);
+    expect(normalize).toThrow('Room id khong hop le.');
+  });
 
   it('normalizes a create DTO without changing semantic values', () => {
     expect(
