@@ -5,6 +5,7 @@ import { Booking } from '../../../../src/module/booking/schema/booking.entity';
 import { PaymentQueryService } from '../../../../src/module/payment/payment-query.service';
 import { Payment } from '../../../../src/module/payment/schema/payment.entity';
 import { PaymentRefund } from '../../../../src/module/payment/schema/payment-refund.entity';
+import type { User } from '../../../../src/module/user/schema/user.entity';
 import {
   PaymentMethod,
   PaymentStatus,
@@ -43,10 +44,7 @@ describe('PaymentQueryService', () => {
       gatewayTransactionId: 'internal-transaction',
       refund: refundFixture({ requestId: 'internal-refund-request' }),
       createdByUserId: '20',
-      createdByUser: {
-        id: '20',
-        fullName: 'Internal Operator',
-      },
+      createdByUser: userFixture(),
     });
     bookingRepo.findOneBy.mockResolvedValue({
       id: '100',
@@ -180,10 +178,7 @@ describe('PaymentQueryService', () => {
         gatewayTransactionId: 'gateway-transaction-500',
         refund: refundFixture({ requestId: 'refund-request-500' }),
         createdByUserId: '20',
-        createdByUser: {
-          id: '20',
-          fullName: 'Internal Operator',
-        },
+        createdByUser: userFixture(),
       }),
     );
 
@@ -248,6 +243,22 @@ function createPaymentQuery() {
     getOne: jest.fn(),
     getManyAndCount: jest.fn().mockResolvedValue([[], 0]),
     getCount: jest.fn(),
+  };
+}
+
+function userFixture(): User {
+  return {
+    id: '20',
+    fullName: 'Internal Operator',
+    email: 'operator@example.com',
+    phone: null,
+    passwordHash: 'password-hash',
+    tokenVersion: 0,
+    role: 'STAFF',
+    status: 'ACTIVE',
+    createdAt: new Date('2030-01-01T00:00:00.000Z'),
+    updatedAt: new Date('2030-01-01T00:00:00.000Z'),
+    deletedAt: null,
   };
 }
 

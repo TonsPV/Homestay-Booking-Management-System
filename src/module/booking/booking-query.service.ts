@@ -1,9 +1,4 @@
-import {
-  BadRequestException,
-  Injectable,
-  NotFoundException,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import type { Repository, SelectQueryBuilder } from 'typeorm';
 
@@ -11,7 +6,14 @@ import {
   createPaginationMeta,
   type PaginationMeta,
 } from '../../common/pagination/pagination.types';
-import { optionalSearch, parsePagination } from '../../common/validation';
+import {
+  optionalEnumValue,
+  optionalId,
+  optionalSearch,
+  parsePagination,
+  requireActorId,
+  requireId,
+} from '../../common/validation';
 import { CustomerCredentialLookupService } from '../customer/customer-credential-lookup.service';
 import { Payment } from '../payment/schema/payment.entity';
 import { PaymentStatus } from '../payment/domain/payment-state';
@@ -46,11 +48,15 @@ export class BookingQueryService {
     customerId: string | undefined,
     query: ListBookingsQueryDto,
   ): Promise<BookingListResult> {
-    const activeCustomerId = this.requireActorId(customerId);
+    const activeCustomerId = requireActorId(customerId);
     const { page, limit, skip } = parsePagination(
       query as Record<string, unknown>,
     );
-    const status = this.optionalStatus(query.status);
+    const status = optionalEnumValue(
+      query.status,
+      BookingStatus,
+      'Trang thai booking khong hop le.',
+    );
     const bookingsQuery = this.createQuery()
       .where('booking.customerId = :customerId', {
         customerId: activeCustomerId,
@@ -73,13 +79,14 @@ export class BookingQueryService {
     const { page, limit, skip } = parsePagination(
       query as Record<string, unknown>,
     );
-    const status = this.optionalStatus(query.status);
-    const search = optionalSearch(query.search);
-    const customerId = this.optionalId(
-      query.customerId,
-      'Customer id khong hop le.',
+    const status = optionalEnumValue(
+      query.status,
+      BookingStatus,
+      'Trang thai booking khong hop le.',
     );
-    const roomId = this.optionalId(query.roomId, 'Room id khong hop le.');
+    const search = optionalSearch(query.search);
+    const customerId = optionalId(query.customerId, 'Customer');
+    const roomId = optionalId(query.roomId, 'Room');
     const bookingsQuery = this.createQuery()
       .orderBy('booking.createdAt', 'DESC')
       .addOrderBy('booking.id', 'DESC')
@@ -121,8 +128,8 @@ export class BookingQueryService {
     customerId: string | undefined,
     id: string,
   ): Promise<BookingResponse> {
-    const activeCustomerId = this.requireActorId(customerId);
-    this.validateId(id, 'Booking id khong hop le.');
+    const activeCustomerId = requireActorId(customerId);
+    requireId(id, 'Booking');
 
     const booking = await this.createQuery()
       .where('booking.id = :id', { id })
@@ -139,7 +146,7 @@ export class BookingQueryService {
   }
 
   async getManagement(id: string): Promise<ManagementBookingResponse> {
-    this.validateId(id, 'Booking id khong hop le.');
+    requireId(id, 'Booking');
 
     const booking = await this.createQuery()
       .where('booking.id = :id', { id })
@@ -239,54 +246,5 @@ export class BookingQueryService {
       createdAt: booking.createdAt,
       updatedAt: booking.updatedAt,
     };
-  }
-
-  private optionalStatus(value: unknown): BookingStatus | undefined {
-    if (value === undefined || value === null || value === '') {
-      return undefined;
-    }
-
-    if (
-      typeof value !== 'string' ||
-      !Object.values(BookingStatus).includes(value as BookingStatus)
-    ) {
-      throw new BadRequestException('Trang thai booking khong hop le.');
-    }
-
-    return value as BookingStatus;
-  }
-
-  private requireActorId(value: string | undefined): string {
-    if (value === undefined || !/^[1-9][0-9]*$/.test(value)) {
-      throw new UnauthorizedException('Access token is invalid.');
-    }
-
-    return value;
-  }
-
-  private optionalId(value: unknown, message: string): string | undefined {
-    if (value === undefined || value === null || value === '') {
-      return undefined;
-    }
-
-    return this.requireId(value, message);
-  }
-
-  private requireId(value: unknown, message: string): string {
-    if (typeof value !== 'string' && typeof value !== 'number') {
-      throw new BadRequestException(message);
-    }
-
-    const id = String(value);
-
-    if (!/^[1-9][0-9]*$/.test(id)) {
-      throw new BadRequestException(message);
-    }
-
-    return id;
-  }
-
-  private validateId(id: string, message: string): void {
-    this.requireId(id, message);
   }
 }

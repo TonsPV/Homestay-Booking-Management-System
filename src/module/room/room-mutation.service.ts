@@ -11,8 +11,12 @@ import { IsNull, Repository } from 'typeorm';
 import { getMysqlDuplicateKey } from '../../common/database';
 import type { UserRole } from '../../common/domain/account.enums';
 import {
+  optionalEnumValue,
+  optionalId,
   optionalNullableTrimmedString,
   optionalTrimmedString,
+  requireEnumValue,
+  requireId,
   requireTrimmedString,
 } from '../../common/validation';
 import {
@@ -49,10 +53,7 @@ export class RoomMutationService {
   ) {}
 
   async create(body: CreateRoomDto): Promise<RoomResponse> {
-    const roomTypeId = this.requireId(
-      body.roomTypeId,
-      'Room type id khong hop le.',
-    );
+    const roomTypeId = requireId(body.roomTypeId, 'Room type');
     const roomNumber = requireTrimmedString(
       body.roomNumber,
       'So phong khong hop le.',
@@ -69,7 +70,12 @@ export class RoomMutationService {
         'Mo ta khong hop le.',
         10000,
       ) ?? null;
-    const status = this.optionalStatus(body.status) ?? RoomStatus.READY;
+    const status =
+      optionalEnumValue(
+        body.status,
+        RoomStatus,
+        'Trang thai phong khong hop le.',
+      ) ?? RoomStatus.READY;
 
     this.assertTransitionAllowed({
       currentStatus: RoomStatus.READY,
@@ -104,11 +110,8 @@ export class RoomMutationService {
   }
 
   async update(id: string, body: UpdateRoomDto): Promise<RoomResponse> {
-    this.validateId(id);
-    const roomTypeId = this.optionalId(
-      body.roomTypeId,
-      'Room type id khong hop le.',
-    );
+    requireId(id, '');
+    const roomTypeId = optionalId(body.roomTypeId, 'Room type');
     const roomNumber = optionalTrimmedString(
       body.roomNumber,
       'So phong khong hop le.',
@@ -188,7 +191,7 @@ export class RoomMutationService {
   }
 
   async delete(id: string): Promise<RoomResponse> {
-    this.validateId(id);
+    requireId(id, '');
     const deletionResult = await this.roomRepo.manager.transaction(
       async (manager) => {
         const room = await this.lockAdminRoom(manager, id);
@@ -222,8 +225,12 @@ export class RoomMutationService {
     role: UserRole | undefined,
     auditContext: AuditActorContext,
   ): Promise<RoomResponse> {
-    this.validateId(id);
-    const status = this.requireStatus(body.status);
+    requireId(id, '');
+    const status = requireEnumValue(
+      body.status,
+      RoomStatus,
+      'Trang thai phong khong hop le.',
+    );
     const roomId = await this.roomRepo.manager.transaction(
       // A no-match locking read must not gap-lock new Booking inserts while
       // this transaction waits for the Room row.
@@ -439,57 +446,6 @@ export class RoomMutationService {
     ]);
 
     return booking != null || calendarEntry != null;
-  }
-
-  private requireId(value: unknown, message: string): string {
-    if (typeof value !== 'string' && typeof value !== 'number') {
-      throw new BadRequestException(message);
-    }
-
-    const id = String(value);
-
-    if (!/^[1-9][0-9]*$/.test(id)) {
-      throw new BadRequestException(message);
-    }
-
-    return id;
-  }
-
-  private optionalId(value: unknown, message: string): string | undefined {
-    if (value === undefined || value === null || value === '') {
-      return undefined;
-    }
-
-    return this.requireId(value, message);
-  }
-
-  private validateId(id: string): void {
-    this.requireId(id, 'Id khong hop le.');
-  }
-
-  private requireStatus(value: unknown): RoomStatus {
-    const status = this.optionalStatus(value);
-
-    if (status === undefined) {
-      throw new BadRequestException('Trang thai phong khong hop le.');
-    }
-
-    return status;
-  }
-
-  private optionalStatus(value: unknown): RoomStatus | undefined {
-    if (value === undefined || value === null || value === '') {
-      return undefined;
-    }
-
-    if (
-      typeof value !== 'string' ||
-      !Object.values(RoomStatus).includes(value as RoomStatus)
-    ) {
-      throw new BadRequestException('Trang thai phong khong hop le.');
-    }
-
-    return value as RoomStatus;
   }
 
   private throwDuplicateConflict(error: unknown): never {

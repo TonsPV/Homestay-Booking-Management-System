@@ -89,9 +89,9 @@ describe('Auth error contract (e2e, real HTTP pipeline)', () => {
 
     const customers = await customerRepo.save(
       [
-        { status: 'ACTIVE', tokenVersion: 3 },
-        { status: 'LOCKED', tokenVersion: 2 },
-        { status: 'ACTIVE', tokenVersion: 9 },
+        { status: 'ACTIVE' as const, tokenVersion: 3 },
+        { status: 'LOCKED' as const, tokenVersion: 2 },
+        { status: 'ACTIVE' as const, tokenVersion: 9 },
       ].map((overrides, index) =>
         customerRepo.create({
           fullName: `Auth Error Contract ${index}`,

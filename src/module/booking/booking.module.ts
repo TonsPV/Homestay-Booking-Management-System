@@ -2,13 +2,11 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { PersistenceTransactionModule } from '../../common/infrastructure/persistence/persistence-transaction.module';
-import { TypeOrmTransactionalAuditLog } from '../audit/infrastructure/persistence/typeorm-transactional-audit-log';
-import { TransactionalAuditLog } from '../audit/ports/transactional-audit-log';
+import { AuditModule } from '../audit/audit.module';
 import { AuthModule } from '../auth/auth.module';
 import { CustomerModule } from '../customer/customer.module';
 import { Customer } from '../customer/schema/customer.entity';
-import { TypeOrmPaymentAcceptanceStore } from '../payment/infrastructure/persistence/typeorm-payment-acceptance.store';
-import { TypeOrmPaymentRefundStore } from '../payment/infrastructure/persistence/typeorm-payment-refund.store';
+import { PaymentPersistenceModule } from '../payment/infrastructure/persistence/payment-persistence.module';
 import { Payment } from '../payment/schema/payment.entity';
 import { Room } from '../room/schema/room.entity';
 import { User } from '../user/schema/user.entity';
@@ -41,8 +39,6 @@ import {
   BookingLifecycleStore,
   BookingPaymentStateStore,
 } from './ports/booking-lifecycle.store';
-import { PaymentAcceptanceStore } from '../payment/ports/payment-acceptance.store';
-import { PaymentRefundStore } from '../payment/ports/payment-refund.store';
 import { RoomCalendarStore } from './ports/room-calendar.store';
 import { Booking } from './schema/booking.entity';
 import { RoomCalendar } from './schema/room-calendar.entity';
@@ -58,7 +54,9 @@ import { RoomCalendar } from './schema/room-calendar.entity';
       User,
     ]),
     AuthModule,
+    AuditModule,
     PersistenceTransactionModule,
+    PaymentPersistenceModule,
     CustomerModule,
   ],
   controllers: [BookingController, BookingManagementController],
@@ -89,18 +87,6 @@ import { RoomCalendar } from './schema/room-calendar.entity';
     },
     TypeOrmRoomCalendarStore,
     { provide: RoomCalendarStore, useExisting: TypeOrmRoomCalendarStore },
-    TypeOrmPaymentAcceptanceStore,
-    {
-      provide: PaymentAcceptanceStore,
-      useExisting: TypeOrmPaymentAcceptanceStore,
-    },
-    TypeOrmPaymentRefundStore,
-    { provide: PaymentRefundStore, useExisting: TypeOrmPaymentRefundStore },
-    TypeOrmTransactionalAuditLog,
-    {
-      provide: TransactionalAuditLog,
-      useExisting: TypeOrmTransactionalAuditLog,
-    },
   ],
   exports: [BookingPaymentLifecycleService],
 })

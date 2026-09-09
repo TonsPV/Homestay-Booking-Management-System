@@ -2,7 +2,6 @@ import { HttpStatus } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
 
 import { ErrorCode } from '../../../../src/common/error-codes';
-import { AppHttpException } from '../../../../src/common/http/app-http-exception';
 import type { TransactionContext } from '../../../../src/common/application/transaction';
 import {
   AuditAction,
@@ -87,7 +86,7 @@ describe('BookingPaymentLifecycleService', () => {
     };
     lifecycle = new BookingPaymentLifecycleService(
       {
-        run: (work: (ctx: TransactionContext) => Promise<unknown>) =>
+        run: <T>(work: (ctx: TransactionContext) => Promise<T>) =>
           work(context),
       },
       {
@@ -227,7 +226,7 @@ describe('BookingPaymentLifecycleService', () => {
         reviewAuditInputs.some(
           (input) =>
             input.metadata !== null &&
-            input.metadata.reviewReason ===
+            input.metadata?.reviewReason ===
               PaymentReviewReason.BOOKING_CANCELLED,
         ),
       ).toBe(true);
@@ -346,8 +345,8 @@ describe('BookingPaymentLifecycleService', () => {
         refundAuditInputs.some(
           (input) =>
             input.metadata !== null &&
-            input.metadata.canonicalPaymentId === '501' &&
-            input.metadata.duplicatePaymentId === '500',
+            input.metadata?.canonicalPaymentId === '501' &&
+            input.metadata?.duplicatePaymentId === '500',
         ),
       ).toBe(true);
     });
@@ -365,7 +364,7 @@ describe('BookingPaymentLifecycleService', () => {
       ).rejects.toMatchObject({
         status: HttpStatus.CONFLICT,
         response: { errorCode: ErrorCode.BOOKING_CANCELLATION_ALREADY_PAID },
-      } as AppHttpException);
+      });
       expect(bookingStore.saveState).not.toHaveBeenCalled();
     });
 

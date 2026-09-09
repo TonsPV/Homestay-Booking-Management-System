@@ -122,10 +122,14 @@ describe('AuthService', () => {
     customerRepo.createQueryBuilder.mockReturnValue(createQueryBuilder(null));
     passwordHasher.hash.mockResolvedValue('password-hash');
     customerRepo.save.mockRejectedValue(
-      new QueryFailedError('INSERT', [], {
-        code: 'ER_DUP_ENTRY',
-        message: "Duplicate entry for key 'customers.UQ_customers_phone'",
-      }),
+      new QueryFailedError(
+        'INSERT',
+        [],
+        Object.assign(
+          new Error("Duplicate entry for key 'customers.UQ_customers_phone'"),
+          { code: 'ER_DUP_ENTRY' },
+        ),
+      ),
     );
 
     await expect(

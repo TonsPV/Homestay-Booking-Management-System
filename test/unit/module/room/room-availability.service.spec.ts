@@ -187,7 +187,6 @@ function calendarFixture(overrides: Partial<RoomCalendar> = {}): RoomCalendar {
     stayDate: '2030-01-01',
     status: RoomCalendarStatus.BLOCKED,
     reason: 'Maintenance',
-    createdAt: new Date('2026-01-01'),
     ...overrides,
   };
 }

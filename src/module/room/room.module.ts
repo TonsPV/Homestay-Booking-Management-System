@@ -4,8 +4,6 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { PersistenceTransactionModule } from '../../common/infrastructure/persistence/persistence-transaction.module';
 import { AuthModule } from '../auth/auth.module';
 import { AuditModule } from '../audit/audit.module';
-import { TransactionalAuditLog } from '../audit/ports/transactional-audit-log';
-import { TypeOrmTransactionalAuditLog } from '../audit/infrastructure/persistence/typeorm-transactional-audit-log';
 import { BOOKING_STAY_POLICY_PROVIDER } from '../booking/booking-stay.provider';
 import { Booking } from '../booking/schema/booking.entity';
 import { RoomCalendar } from '../booking/schema/room-calendar.entity';
@@ -49,11 +47,6 @@ import { Room } from './schema/room.entity';
     RoomImageService,
     RoomImageStorageService,
     RoomAvailabilityService,
-    TypeOrmTransactionalAuditLog,
-    {
-      provide: TransactionalAuditLog,
-      useExisting: TypeOrmTransactionalAuditLog,
-    },
     TypeOrmRoomCalendarManagementStore,
     {
       provide: RoomCalendarManagementStore,

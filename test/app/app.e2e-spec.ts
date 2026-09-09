@@ -21,6 +21,7 @@ import {
   BookingStatus,
 } from '../../src/module/booking/domain/booking-state';
 import { RoomCalendar } from '../../src/module/booking/schema/room-calendar.entity';
+import { RoomCalendarStatus } from '../../src/module/booking/domain/room-calendar-status';
 import { BookingService } from '../../src/module/booking/booking.service';
 import { Customer } from '../../src/module/customer/schema/customer.entity';
 import { Payment } from '../../src/module/payment/schema/payment.entity';
@@ -1103,11 +1104,11 @@ describe('Application API (e2e)', () => {
       tokenVersion: raceCustomer.tokenVersion,
     });
     const originalFindOneBy = customerRepo.findOneBy.bind(customerRepo);
-    let observedProfileRead = () => undefined;
+    let observedProfileRead: () => void = () => undefined;
     const profileReadObserved = new Promise<void>((resolveRead) => {
       observedProfileRead = resolveRead;
     });
-    let releaseProfileRead = () => undefined;
+    let releaseProfileRead: () => void = () => undefined;
     const profileReadRelease = new Promise<void>((resolveRelease) => {
       releaseProfileRead = resolveRelease;
     });
@@ -1117,7 +1118,7 @@ describe('Application API (e2e)', () => {
       .mockImplementation(async (where) => {
         const customer = await originalFindOneBy(where);
 
-        if (where.id === raceCustomer.id) {
+        if (!Array.isArray(where) && where.id === raceCustomer.id) {
           targetCustomerReadCount += 1;
 
           if (targetCustomerReadCount === 2) {
@@ -1524,11 +1525,11 @@ describe('Application API (e2e)', () => {
       app.get<LockingRoomMutationService>(RoomMutationService);
     const originalGetLockedRoom =
       roomMutationService.lockRoomForStatusChange.bind(roomMutationService);
-    let observedAdminLock = () => undefined;
+    let observedAdminLock: () => void = () => undefined;
     const adminLockObserved = new Promise<void>((resolveLock) => {
       observedAdminLock = resolveLock;
     });
-    let releaseAdminLock = () => undefined;
+    let releaseAdminLock: () => void = () => undefined;
     const adminLockRelease = new Promise<void>((resolveRelease) => {
       releaseAdminLock = resolveRelease;
     });
@@ -2146,7 +2147,7 @@ describe('Application API (e2e)', () => {
     expect(
       await calendarRepo.countBy({
         roomId,
-        status: 'BLOCKED',
+        status: RoomCalendarStatus.BLOCKED,
       }),
     ).toBe(2);
 

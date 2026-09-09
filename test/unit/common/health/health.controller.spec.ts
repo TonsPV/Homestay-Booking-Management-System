@@ -1,4 +1,4 @@
-import { ServiceUnavailableException } from '@nestjs/common';
+import { Logger, ServiceUnavailableException } from '@nestjs/common';
 
 import { RATE_LIMIT_KEY } from '../../../../src/common/http/rate-limit.decorator';
 import { HealthController } from '../../../../src/common/health/health.controller';
@@ -34,10 +34,16 @@ describe('HealthController', () => {
   });
 
   it('throws 503 without exposing the database error', async () => {
+    const warn = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
     check.mockRejectedValue(new Error('secret host details'));
 
     await expect(controller.getReadiness()).rejects.toEqual(
       new ServiceUnavailableException('Database is unavailable.'),
+    );
+    expect(warn).toHaveBeenCalledWith(
+      'operation=health_readiness errorCode=DATABASE_UNAVAILABLE requestId=unavailable cause=Error',
     );
   });
 

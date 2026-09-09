@@ -187,7 +187,7 @@ describe('RoomTypeService', () => {
         name: 'Invalid beds',
         maxGuests: 2,
         basePrice: '100',
-        beds,
+        beds: beds as never,
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(repository.manager.transaction).not.toHaveBeenCalled();
@@ -466,7 +466,7 @@ describe('RoomTypeService', () => {
     Array.from({ length: 51 }, (_, index) => String(index + 1)),
   ])('rejects an invalid Amenity id set before transaction', async (ids) => {
     await expect(
-      service.setAmenities('1', { amenityIds: ids }),
+      service.setAmenities('1', { amenityIds: ids as never }),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(repository.manager.transaction).not.toHaveBeenCalled();
   });

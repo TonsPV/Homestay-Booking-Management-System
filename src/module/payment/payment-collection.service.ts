@@ -4,7 +4,6 @@ import {
   Injectable,
   Logger,
   NotFoundException,
-  UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
@@ -14,6 +13,8 @@ import {
 } from '../../common/application/transaction';
 import {
   isValidIdempotencyKey,
+  requireActorId,
+  requireId,
   requireTrimmedString,
 } from '../../common/validation';
 import { TransactionalAuditLog } from '../audit/ports/transactional-audit-log';
@@ -101,8 +102,8 @@ export class PaymentCollectionService {
     clientIp: string | undefined,
     body: CreateVnpayPaymentDto,
   ): Promise<OnlinePaymentResponse> {
-    const activeCustomerId = this.requireActorId(customerId);
-    this.validateId(bookingId, 'Booking id khong hop le.');
+    const activeCustomerId = requireActorId(customerId);
+    requireId(bookingId, 'Booking');
     const key = this.requireIdempotencyKey(idempotencyKey);
     const bankCode = this.optionalVnPayBankCode(body.bankCode);
     const locale = this.optionalVnPayLocale(body.locale);
@@ -562,20 +563,6 @@ export class PaymentCollectionService {
     }
 
     return key;
-  }
-
-  private requireActorId(value: string | undefined): string {
-    if (value === undefined || !/^[1-9][0-9]*$/.test(value)) {
-      throw new UnauthorizedException('Access token is invalid.');
-    }
-
-    return value;
-  }
-
-  private validateId(value: string, message: string): void {
-    if (!/^[1-9][0-9]*$/.test(value)) {
-      throw new BadRequestException(message);
-    }
   }
 }
 

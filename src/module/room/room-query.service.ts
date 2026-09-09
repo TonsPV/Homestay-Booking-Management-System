@@ -9,9 +9,13 @@ import { Repository } from 'typeorm';
 
 import { createPaginationMeta } from '../../common/pagination/pagination.types';
 import {
+  currentVietnamDate,
+  optionalEnumValue,
   optionalDecimalAmount,
+  optionalId,
   optionalSearch,
   parsePagination,
+  requireId,
   requirePositiveInt,
 } from '../../common/validation';
 import type { ListAvailableRoomsQueryDto } from './dto/list-available-rooms-query.dto';
@@ -41,8 +45,6 @@ import { RoomTodayAvailabilityStatus } from './room.types';
 import { sortBedConfigs, type BedConfig } from '../room-type/bed-configuration';
 import type { RoomTypeBed } from '../room-type/schema/room-type-bed.entity';
 
-const VIETNAM_UTC_OFFSET_MS = 7 * 60 * 60 * 1000;
-
 @Injectable()
 export class RoomQueryService {
   constructor(
@@ -58,10 +60,7 @@ export class RoomQueryService {
       query as Record<string, unknown>,
     );
     const search = optionalSearch(query.search);
-    const roomTypeId = this.optionalId(
-      query.roomTypeId,
-      'Room type id khong hop le.',
-    );
+    const roomTypeId = optionalId(query.roomTypeId, 'Room type');
     const roomsQuery = this.createPublicQuery()
       .orderBy('room.roomNumber', 'ASC')
       .addOrderBy('image.isCover', 'DESC')
@@ -93,11 +92,12 @@ export class RoomQueryService {
       query as Record<string, unknown>,
     );
     const search = optionalSearch(query.search);
-    const roomTypeId = this.optionalId(
-      query.roomTypeId,
-      'Room type id khong hop le.',
+    const roomTypeId = optionalId(query.roomTypeId, 'Room type');
+    const status = optionalEnumValue(
+      query.status,
+      RoomStatus,
+      'Trang thai phong khong hop le.',
     );
-    const status = this.optionalStatus(query.status);
     const roomsQuery = this.createManagementQuery()
       .orderBy('room.roomNumber', 'ASC')
       .addOrderBy('image.isCover', 'DESC')
@@ -143,10 +143,7 @@ export class RoomQueryService {
       query.guests,
       'So luong khach khong hop le.',
     );
-    const roomTypeId = this.optionalId(
-      query.roomTypeId,
-      'Room type id khong hop le.',
-    );
+    const roomTypeId = optionalId(query.roomTypeId, 'Room type');
     const { page, limit, skip } = parsePagination(
       query as Record<string, unknown>,
     );
@@ -182,10 +179,7 @@ export class RoomQueryService {
       query.guests,
       'So luong khach khong hop le.',
     );
-    const roomTypeId = this.optionalId(
-      query.roomTypeId,
-      'Room type id khong hop le.',
-    );
+    const roomTypeId = optionalId(query.roomTypeId, 'Room type');
     const minPrice = optionalDecimalAmount(
       query.minPrice,
       'Gia toi thieu khong hop le.',
@@ -277,18 +271,10 @@ export class RoomQueryService {
   }
 
   private parseSort(value: unknown): RoomSearchSort {
-    if (value === undefined || value === null || value === '') {
-      return RoomSearchSort.RECOMMENDED;
-    }
-
-    if (
-      typeof value !== 'string' ||
-      !Object.values(RoomSearchSort).includes(value as RoomSearchSort)
-    ) {
-      throw new BadRequestException('Sap xep phong khong hop le.');
-    }
-
-    return value as RoomSearchSort;
+    return (
+      optionalEnumValue(value, RoomSearchSort, 'Sap xep phong khong hop le.') ??
+      RoomSearchSort.RECOMMENDED
+    );
   }
 
   private sortColumn(sort: RoomSearchSort): string {
@@ -318,7 +304,7 @@ export class RoomQueryService {
   }
 
   async getById(id: string): Promise<PublicRoomResponse> {
-    this.validateId(id);
+    requireId(id, '');
 
     const room = await this.createPublicQuery()
       .andWhere('room.id = :id', { id })
@@ -335,7 +321,7 @@ export class RoomQueryService {
   }
 
   async getManagement(id: string): Promise<RoomResponse> {
-    this.validateId(id);
+    requireId(id, '');
 
     const room = await this.createManagementQuery()
       .andWhere('room.id = :id', { id })
@@ -412,7 +398,7 @@ export class RoomQueryService {
   private async getCalendarSummaries(
     rooms: Room[],
   ): Promise<Map<string, ManagementRoomCalendarSummary>> {
-    const asOfDate = this.currentVietnamDate();
+    const asOfDate = currentVietnamDate(new Date());
 
     if (rooms.length === 0) {
       return new Map();
@@ -477,20 +463,14 @@ export class RoomQueryService {
 
   private emptyCalendarSummary(): ManagementRoomCalendarSummary {
     return {
-      asOfDate: this.currentVietnamDate(),
+      asOfDate: currentVietnamDate(new Date()),
       todayStatus: RoomTodayAvailabilityStatus.AVAILABLE,
       nextEvent: null,
     };
   }
 
-  private currentVietnamDate(now = new Date()): string {
-    return new Date(now.getTime() + VIETNAM_UTC_OFFSET_MS)
-      .toISOString()
-      .slice(0, 10);
-  }
-
   private async findAdminRoom(id: string): Promise<Room> {
-    this.validateId(id);
+    requireId(id, '');
 
     const room = await this.roomRepo
       .createQueryBuilder('room')
@@ -595,28 +575,6 @@ export class RoomQueryService {
     }
   }
 
-  private requireId(value: unknown, message: string): string {
-    if (typeof value !== 'string' && typeof value !== 'number') {
-      throw new BadRequestException(message);
-    }
-
-    const id = String(value);
-
-    if (!/^[1-9][0-9]*$/.test(id)) {
-      throw new BadRequestException(message);
-    }
-
-    return id;
-  }
-
-  private optionalId(value: unknown, message: string): string | undefined {
-    if (value === undefined || value === null || value === '') {
-      return undefined;
-    }
-
-    return this.requireId(value, message);
-  }
-
   private optionalIdList(value: unknown, message: string): string[] {
     if (value === undefined || value === null || value === '') {
       return [];
@@ -636,24 +594,5 @@ export class RoomQueryService {
     }
 
     return [...new Set(ids)];
-  }
-
-  private validateId(id: string): void {
-    this.requireId(id, 'Id khong hop le.');
-  }
-
-  private optionalStatus(value: unknown): RoomStatus | undefined {
-    if (value === undefined || value === null || value === '') {
-      return undefined;
-    }
-
-    if (
-      typeof value !== 'string' ||
-      !Object.values(RoomStatus).includes(value as RoomStatus)
-    ) {
-      throw new BadRequestException('Trang thai phong khong hop le.');
-    }
-
-    return value as RoomStatus;
   }
 }

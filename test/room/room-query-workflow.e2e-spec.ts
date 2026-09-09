@@ -19,6 +19,7 @@ import { RoomCalendar } from '../../src/module/booking/schema/room-calendar.enti
 import { RoomCalendarStatus } from '../../src/module/booking/domain/room-calendar-status';
 import { Customer } from '../../src/module/customer/schema/customer.entity';
 import { Room } from '../../src/module/room/schema/room.entity';
+import { RoomStatus } from '../../src/module/room/domain/room-status';
 import { BedType } from '../../src/module/room-type/bed-configuration';
 import { RoomType } from '../../src/module/room-type/schema/room-type.entity';
 import { User } from '../../src/module/user/schema/user.entity';
@@ -139,10 +140,10 @@ describe('Room catalog/query workflow (e2e)', () => {
       2,
       '100.00',
     );
-    const ready = await createRoom(roomType, 'READY');
-    const occupied = await createRoom(roomType, 'OCCUPIED');
-    const hidden = await createRoom(roomType, 'HIDDEN');
-    const maintenance = await createRoom(roomType, 'MAINTENANCE');
+    const ready = await createRoom(roomType, RoomStatus.READY);
+    const occupied = await createRoom(roomType, RoomStatus.OCCUPIED);
+    const hidden = await createRoom(roomType, RoomStatus.HIDDEN);
+    const maintenance = await createRoom(roomType, RoomStatus.MAINTENANCE);
 
     const publicResponse = await request(app.getHttpServer())
       .get('/api/v1/rooms')
@@ -194,8 +195,8 @@ describe('Room catalog/query workflow (e2e)', () => {
       '250.00',
       [firstAmenity, secondAmenity],
     );
-    const available = await createRoom(roomType, 'READY');
-    const blocked = await createRoom(roomType, 'READY');
+    const available = await createRoom(roomType, RoomStatus.READY);
+    const blocked = await createRoom(roomType, RoomStatus.READY);
     const calendar = await calendarRepo.save(
       calendarRepo.create({
         roomId: blocked.id,
@@ -260,16 +261,24 @@ describe('Room catalog/query workflow (e2e)', () => {
       '200.00',
     );
     const sortRoomName = 'Sort fixture ' + uniqueSuffix;
-    const lowPriceRoom = await createRoom(lowPriceType, 'READY', sortRoomName);
-    const tiePriceRoom = await createRoom(tiePriceType, 'READY', sortRoomName);
+    const lowPriceRoom = await createRoom(
+      lowPriceType,
+      RoomStatus.READY,
+      sortRoomName,
+    );
+    const tiePriceRoom = await createRoom(
+      tiePriceType,
+      RoomStatus.READY,
+      sortRoomName,
+    );
     const middlePriceRoom = await createRoom(
       middlePriceType,
-      'READY',
+      RoomStatus.READY,
       sortRoomName,
     );
     const highPriceRoom = await createRoom(
       highPriceType,
-      'READY',
+      RoomStatus.READY,
       sortRoomName,
     );
 
@@ -379,7 +388,7 @@ describe('Room catalog/query workflow (e2e)', () => {
     const roomType = await roomTypeRepo.findOneByOrFail({
       id: roomTypeId,
     });
-    const room = await createRoom(roomType, 'READY');
+    const room = await createRoom(roomType, RoomStatus.READY);
 
     const response = await request(app.getHttpServer())
       .get('/api/v1/rooms/' + room.id)
@@ -477,7 +486,7 @@ describe('Room catalog/query workflow (e2e)', () => {
         roomNumber: 'RQ-' + uniqueSuffix + '-' + nextSequence(),
         name,
         description: null,
-        status: status as Room['status'],
+        status,
       }),
     );
     createdRoomIds.push(room.id);

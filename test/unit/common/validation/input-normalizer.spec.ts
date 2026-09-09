@@ -1,18 +1,80 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, UnauthorizedException } from '@nestjs/common';
 
 import {
+  currentVietnamDate,
   getPhoneLookupVariants,
+  optionalEnumValue,
+  optionalId,
   normalizePhone,
   optionalAccountStatus,
+  parseIsoDate,
   parseBoolean,
+  requireActorId,
   requireAccountStatus,
   requireDecimalAmount,
+  requireEnumValue,
+  requireId,
   requirePositiveDecimalAmount,
   requirePassword,
   requirePositiveInt,
 } from '../../../../src/common/validation/input-normalizer';
 
 describe('input normalizer', () => {
+  it('normalizes shared positive ids and preserves field-specific messages', () => {
+    expect(requireId('42', 'Booking')).toBe('42');
+    expect(requireId(42, 'Room type')).toBe('42');
+    expect(optionalId(undefined, 'Room')).toBeUndefined();
+    expect(optionalId(null, 'Room')).toBeUndefined();
+    expect(optionalId('', 'Room')).toBeUndefined();
+
+    expect(() => requireId('0', 'Booking')).toThrow(BadRequestException);
+    expect(() => requireId('0', 'Booking')).toThrow('Booking id khong hop le.');
+    expect(() => requireId('01', '')).toThrow(BadRequestException);
+    expect(() => requireId('01', '')).toThrow('Id khong hop le.');
+  });
+
+  it('requires the shared authenticated actor id contract', () => {
+    expect(requireActorId('7')).toBe('7');
+    expect(() => requireActorId(undefined)).toThrow(UnauthorizedException);
+    expect(() => requireActorId(undefined)).toThrow('Access token is invalid.');
+    expect(() => requireActorId('0')).toThrow(UnauthorizedException);
+  });
+
+  it('parses real ISO calendar dates and rejects normalized overflows', () => {
+    expect(parseIsoDate(' 2028-02-29 ')).toBe('2028-02-29');
+    expect(parseIsoDate('2026-02-29')).toBeNull();
+    expect(parseIsoDate('2026-13-01')).toBeNull();
+    expect(parseIsoDate('09/09/2026')).toBeNull();
+    expect(parseIsoDate(20260909)).toBeNull();
+  });
+
+  it('calculates the current calendar date using the Vietnam UTC+7 offset', () => {
+    expect(currentVietnamDate(new Date('2026-09-08T16:59:59.999Z'))).toBe(
+      '2026-09-08',
+    );
+    expect(currentVietnamDate(new Date('2026-09-08T17:00:00.000Z'))).toBe(
+      '2026-09-09',
+    );
+  });
+
+  it('normalizes optional and required string-enum values', () => {
+    const values = { READY: 'READY', HIDDEN: 'HIDDEN' } as const;
+
+    expect(optionalEnumValue(undefined, values, 'invalid')).toBeUndefined();
+    expect(optionalEnumValue('READY', values, 'invalid')).toBe('READY');
+    expect(requireEnumValue('HIDDEN', values, 'invalid')).toBe('HIDDEN');
+    expect(() => optionalEnumValue('UNKNOWN', values, 'invalid')).toThrow(
+      BadRequestException,
+    );
+    expect(() => optionalEnumValue('UNKNOWN', values, 'invalid')).toThrow(
+      'invalid',
+    );
+    expect(() => requireEnumValue('', values, 'required')).toThrow(
+      BadRequestException,
+    );
+    expect(() => requireEnumValue('', values, 'required')).toThrow('required');
+  });
+
   it('enforces the shared password policy', () => {
     expect(() => requirePassword('1234567')).toThrow(BadRequestException);
     expect(requirePassword('12345678')).toBe('12345678');

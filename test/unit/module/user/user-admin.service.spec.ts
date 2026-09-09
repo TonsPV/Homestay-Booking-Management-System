@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import type { Repository } from 'typeorm';
 
+import { UserRoleEnum } from '../../../../src/common/domain/account.enums';
 import type { AuditActorContext } from '../../../../src/module/audit/audit-log.service';
 import {
   AuditAction,
@@ -87,7 +88,7 @@ describe('UserAdminService', () => {
         email: ' STAFF@EXAMPLE.COM ',
         phone: '090-123-4567',
         password: 'StrongPassword123!',
-        role: 'STAFF',
+        role: UserRoleEnum.STAFF,
       }),
     ).resolves.toMatchObject({
       fullName: 'Nguyen Van Staff',
@@ -111,7 +112,7 @@ describe('UserAdminService', () => {
         fullName: 'Escalated Admin',
         email: 'escalated@example.com',
         password: 'StrongPassword123!',
-        role: 'ADMIN',
+        role: UserRoleEnum.ADMIN,
       }),
     ).rejects.toThrow('API nay chi dung de cap tai khoan STAFF.');
     expect(userRepo.createQueryBuilder).not.toHaveBeenCalled();
@@ -153,7 +154,7 @@ describe('UserAdminService', () => {
     txRepo.findOne.mockResolvedValue(userFixture());
 
     await expect(
-      service.updateUser('2', { role: 'ADMIN' }, '1'),
+      service.updateUser('2', { role: UserRoleEnum.ADMIN }, '1'),
     ).rejects.toThrow('API nay chi dung de cap tai khoan STAFF.');
     expect(txRepo.save).not.toHaveBeenCalled();
     expect(userRepo.save).not.toHaveBeenCalled();
@@ -173,7 +174,7 @@ describe('UserAdminService', () => {
     txRepo.findOne.mockResolvedValue(userFixture({ id: '1', role: 'ADMIN' }));
 
     await expect(
-      service.updateUser('1', { role: 'STAFF' }, '1'),
+      service.updateUser('1', { role: UserRoleEnum.STAFF }, '1'),
     ).rejects.toThrow('Admin khong the tu ha quyen');
   });
 

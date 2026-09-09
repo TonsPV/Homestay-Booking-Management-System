@@ -8,7 +8,6 @@ import {
   Logger,
   NotFoundException,
   ServiceUnavailableException,
-  UnauthorizedException,
 } from '@nestjs/common';
 
 import {
@@ -20,6 +19,8 @@ import { AppHttpException } from '../../common/http/app-http-exception';
 import {
   isValidIdempotencyKey,
   optionalNullableTrimmedString,
+  requireActorId,
+  requireId,
   requireTrimmedString,
 } from '../../common/validation';
 import {
@@ -30,11 +31,21 @@ import {
 import { TransactionalAuditLog } from '../audit/ports/transactional-audit-log';
 import { BookingPaymentLifecycleService } from '../booking/booking-payment-lifecycle.service';
 import { Booking } from '../booking/schema/booking.entity';
-import {
-  BookingPaymentStatus,
-  BookingStatus,
-} from '../booking/domain/booking-state';
 import { RefundPaymentDto } from './dto/refund-payment.dto';
+import { detectDuplicateChargeRefund } from './domain/duplicate-charge.detector';
+import { PaymentRefundCapability } from './domain/payment-refund-capability';
+import {
+  assertManualRefundAllowed,
+  assertVnPayRefundAllowed,
+  isAcceptedVnPayRefund,
+  isAmbiguousVnPayResult,
+  isSuccessfulVnPayRefund,
+} from './domain/payment-refund.policy';
+import {
+  buildRefundAuditMetadata,
+  buildVnPayRefundInput,
+  mapRefundGatewayResult,
+} from './infrastructure/mapper/payment-refund.mapper';
 import { PaymentQueryService } from './payment-query.service';
 import {
   PaymentRefundIdempotencyConflictError,
@@ -42,18 +53,11 @@ import {
 } from './ports/payment-refund.store';
 import type { PaymentResponse } from './payment.types';
 import { Payment } from './schema/payment.entity';
+import { PaymentMethod, PaymentStatus } from './domain/payment-state';
 import {
-  PaymentMethod,
-  PaymentReviewReason,
-  PaymentStatus,
-} from './domain/payment-state';
-import {
-  toVnPayAmount,
   VnPayGatewayService,
-  type VnPayOperationInput,
   type VnPayTransactionResult,
 } from './vnpay-gateway.service';
-import { PaymentRefundCapability } from './domain/payment-refund-capability';
 
 export { PaymentRefundCapability };
 
@@ -78,8 +82,8 @@ export class PaymentRefundService {
     body: RefundPaymentDto,
     requestId?: string,
   ): Promise<PaymentResponse> {
-    const refundedByUserId = this.requireActorId(userId);
-    this.validateId(paymentId, 'Payment id khong hop le.');
+    const refundedByUserId = requireActorId(userId);
+    requireId(paymentId, 'Payment');
     const reason =
       optionalNullableTrimmedString(
         body.reason,
@@ -119,8 +123,8 @@ export class PaymentRefundService {
     clientIp: string | undefined,
     requestId?: string,
   ): Promise<PaymentResponse> {
-    const refundedByUserId = this.requireActorId(userId);
-    this.validateId(paymentId, 'Payment id khong hop le.');
+    const refundedByUserId = requireActorId(userId);
+    requireId(paymentId, 'Payment');
     const paymentSnapshot = await this.refunds.findPaymentSnapshot(paymentId);
 
     if (paymentSnapshot === null) {
@@ -150,8 +154,8 @@ export class PaymentRefundService {
     clientIp: string | undefined,
     requestId?: string,
   ): Promise<PaymentResponse> {
-    const reconciledByUserId = this.requireActorId(userId);
-    this.validateId(paymentId, 'Payment id khong hop le.');
+    const reconciledByUserId = requireActorId(userId);
+    requireId(paymentId, 'Payment');
     const payment = await this.refunds.findPaymentSnapshot(paymentId);
 
     if (payment === null) {
@@ -236,28 +240,7 @@ export class PaymentRefundService {
         return;
       }
 
-      if (
-        payment.status !== PaymentStatus.SUCCESS ||
-        booking.paymentStatus !== BookingPaymentStatus.PAID
-      ) {
-        throw new AppHttpException(
-          HttpStatus.CONFLICT,
-          ErrorCode.PAYMENT_REFUND_NOT_ALLOWED,
-          'Payment hien khong the hoan tien.',
-        );
-      }
-
-      if (
-        booking.status === BookingStatus.CHECKED_IN ||
-        booking.status === BookingStatus.CHECKED_OUT ||
-        booking.status === BookingStatus.CANCELLED
-      ) {
-        throw new AppHttpException(
-          HttpStatus.CONFLICT,
-          ErrorCode.PAYMENT_REFUND_NOT_ALLOWED,
-          'Khong the hoan tien booking o trang thai hien tai.',
-        );
-      }
+      assertManualRefundAllowed(booking, payment);
 
       const refund = await this.refunds.createRefund(transaction, {
         paymentId: payment.id,
@@ -381,7 +364,7 @@ export class PaymentRefundService {
       );
     }
 
-    if (this.isAcceptedVnPayRefund(paymentSnapshot, gatewayResult)) {
+    if (isAcceptedVnPayRefund(paymentSnapshot, gatewayResult)) {
       return this.getManagementPayment(pendingPayment.id);
     }
 
@@ -463,7 +446,7 @@ export class PaymentRefundService {
         }
 
         if (capability === PaymentRefundCapability.STANDARD_REFUND) {
-          this.assertVnPayRefundAllowed(booking, payment);
+          assertVnPayRefundAllowed(booking, payment);
         }
         const transactionDate = this.resolveGatewayTransactionDate(payment);
 
@@ -496,7 +479,7 @@ export class PaymentRefundService {
           entityType: AuditEntityType.PAYMENT,
           entityId: payment.id,
           requestId,
-          metadata: this.buildRefundAuditMetadata(booking, payment),
+          metadata: buildRefundAuditMetadata(booking, payment),
         });
         return 'NEW';
       });
@@ -513,68 +496,20 @@ export class PaymentRefundService {
     }
   }
 
-  private assertVnPayRefundAllowed(booking: Booking, payment: Payment): void {
-    if (
-      payment.gatewayReference === null ||
-      payment.gatewayTransactionId === null
-    ) {
-      throw new ConflictException(
-        'Payment VNPay thieu thong tin giao dich de hoan tien.',
-      );
-    }
-
-    if (payment.status === PaymentStatus.REQUIRES_REVIEW) {
-      if (
-        booking.status !== BookingStatus.CANCELLED ||
-        payment.reviewReason !== PaymentReviewReason.BOOKING_CANCELLED
-      ) {
-        throw new ConflictException(
-          'Payment can review khong thuoc luong refund booking da huy.',
-        );
-      }
-      return;
-    }
-
-    if (
-      payment.status !== PaymentStatus.SUCCESS ||
-      booking.paymentStatus !== BookingPaymentStatus.PAID
-    ) {
-      throw new ConflictException('Payment hien khong the hoan tien.');
-    }
-
-    if (
-      booking.status !== BookingStatus.PENDING_PAYMENT &&
-      booking.status !== BookingStatus.CONFIRMED
-    ) {
-      throw new ConflictException(
-        'Khong the hoan tien booking o trang thai hien tai.',
-      );
-    }
-  }
-
   private buildVnPayInput(
     payment: Payment,
     requestId: string,
     clientIp: string | undefined,
     orderInfo: string,
-  ): VnPayOperationInput {
-    if (
-      payment.gatewayReference === null ||
-      payment.gatewayTransactionId === null
-    ) {
-      throw new ConflictException('Payment VNPay thieu thong tin giao dich.');
-    }
-
-    return {
-      amount: payment.amount,
-      transactionReference: payment.gatewayReference,
-      transactionId: payment.gatewayTransactionId,
-      transactionDate: this.resolveGatewayTransactionDate(payment),
+  ) {
+    return buildVnPayRefundInput({
+      payment,
+      resolveTransactionDate: () => this.resolveGatewayTransactionDate(payment),
       requestId,
       orderInfo,
-      ipAddress: clientIp,
+      clientIp,
       createdAt: new Date(),
-    };
+    });
   }
 
   private resolveGatewayTransactionDate(payment: Payment): string {
@@ -645,9 +580,9 @@ export class PaymentRefundService {
         return 'PENDING';
       }
 
-      this.assignRefundGatewayResult(refund, result);
+      Object.assign(refund, mapRefundGatewayResult(result));
 
-      if (this.isSuccessfulVnPayRefund(payment, result)) {
+      if (isSuccessfulVnPayRefund(payment, result)) {
         await this.lifecycle.completeRefund(
           transaction,
           booking,
@@ -658,7 +593,7 @@ export class PaymentRefundService {
         return 'SUCCESS';
       }
 
-      if (this.isAmbiguousVnPayResult(result)) {
+      if (isAmbiguousVnPayResult(result)) {
         await this.refunds.saveRefundState(transaction, refund);
         return 'PENDING';
       }
@@ -708,8 +643,8 @@ export class PaymentRefundService {
         return;
       }
 
-      if (this.isSuccessfulVnPayRefund(payment, result)) {
-        this.assignRefundGatewayResult(refund, result);
+      if (isSuccessfulVnPayRefund(payment, result)) {
+        Object.assign(refund, mapRefundGatewayResult(result));
         await this.lifecycle.completeRefund(
           transaction,
           booking,
@@ -721,10 +656,10 @@ export class PaymentRefundService {
       }
 
       if (result.providerTransactionType === '02') {
-        this.assignRefundGatewayResult(refund, result);
+        Object.assign(refund, mapRefundGatewayResult(result));
       }
 
-      if (this.isAmbiguousVnPayResult(result)) {
+      if (isAmbiguousVnPayResult(result)) {
         await this.refunds.saveRefundState(transaction, refund);
         return;
       }
@@ -745,65 +680,6 @@ export class PaymentRefundService {
       await this.refunds.saveRefundState(transaction, refund);
       await this.refunds.savePaymentState(transaction, payment);
     });
-  }
-
-  private assignRefundGatewayResult(
-    refund: NonNullable<Payment['refund']>,
-    result: VnPayTransactionResult,
-  ): void {
-    refund.gatewayTransactionId = result.providerTransactionId;
-    refund.responseCode = result.providerResponseCode;
-    refund.transactionStatus = result.providerTransactionStatus;
-    refund.message = result.message.slice(0, 255);
-  }
-
-  private isSuccessfulVnPayRefund(
-    payment: Payment,
-    result: VnPayTransactionResult,
-  ): boolean {
-    return (
-      result.isVerified &&
-      result.isSuccess &&
-      result.providerResponseCode === '00' &&
-      result.providerTransactionStatus === '00' &&
-      result.providerTransactionType === '02' &&
-      result.providerTransactionId !== null &&
-      result.providerTransactionId.length > 0 &&
-      matchesVnPayAmount(payment.amount, result.gatewayAmount)
-    );
-  }
-
-  private isAmbiguousVnPayResult(result: VnPayTransactionResult): boolean {
-    return (
-      !result.isVerified ||
-      result.providerResponseCode === null ||
-      result.providerResponseCode === '94' ||
-      result.providerResponseCode === '98' ||
-      result.providerResponseCode === '99' ||
-      result.providerTransactionStatus === '05' ||
-      result.providerTransactionStatus === '06' ||
-      (result.isSuccess &&
-        result.providerResponseCode === '00' &&
-        result.providerTransactionStatus === '00' &&
-        result.providerTransactionType === '02' &&
-        (result.providerTransactionId === null ||
-          result.providerTransactionId.length === 0))
-    );
-  }
-
-  private isAcceptedVnPayRefund(
-    payment: Payment,
-    result: VnPayTransactionResult,
-  ): boolean {
-    return (
-      result.isVerified &&
-      result.isSuccess &&
-      result.providerResponseCode === '00' &&
-      (result.providerTransactionStatus === '05' ||
-        result.providerTransactionStatus === '06') &&
-      result.providerTransactionType === '02' &&
-      matchesVnPayAmount(payment.amount, result.gatewayAmount)
-    );
   }
 
   private async recordRefundQueryFailure(paymentId: string): Promise<void> {
@@ -838,22 +714,9 @@ export class PaymentRefundService {
     booking: Booking,
     payment: Payment,
   ): Promise<Payment> {
-    const isEligibleState =
-      payment.status === PaymentStatus.REQUIRES_REVIEW ||
-      ((payment.status === PaymentStatus.REFUND_PENDING ||
-        payment.status === PaymentStatus.REFUNDED) &&
-        payment.refund?.previousPaymentStatus ===
-          PaymentStatus.REQUIRES_REVIEW);
+    const assessment = detectDuplicateChargeRefund(payment, booking.id);
 
-    if (
-      !isEligibleState ||
-      payment.method !== PaymentMethod.VNPAY ||
-      payment.reviewReason !== PaymentReviewReason.ANOTHER_SUCCESSFUL_PAYMENT ||
-      payment.reviewCanonicalPaymentId === null ||
-      payment.reviewCanonicalPaymentId === payment.id ||
-      payment.gatewayReference === null ||
-      payment.gatewayTransactionId === null
-    ) {
+    if (!assessment.isEligibleForResolution) {
       throw this.duplicateDenied(
         'Payment khong phai giao dich VNPay trung can xu ly.',
       );
@@ -861,7 +724,7 @@ export class PaymentRefundService {
 
     const canonicalPayment = await this.refunds.lockCanonicalSuccessfulPayment(
       context,
-      payment.reviewCanonicalPaymentId,
+      assessment.canonicalPaymentId as string,
       booking.id,
     );
 
@@ -872,37 +735,6 @@ export class PaymentRefundService {
     }
 
     return canonicalPayment;
-  }
-
-  private isDuplicateChargeRefund(payment: Payment): boolean {
-    return (
-      payment.refund?.previousPaymentStatus === PaymentStatus.REQUIRES_REVIEW &&
-      payment.reviewReason === PaymentReviewReason.ANOTHER_SUCCESSFUL_PAYMENT &&
-      payment.reviewCanonicalPaymentId !== null &&
-      payment.reviewCanonicalPaymentId !== payment.id
-    );
-  }
-
-  private buildRefundAuditMetadata(
-    booking: Booking,
-    payment: Payment,
-  ): Record<string, string> {
-    if (this.isDuplicateChargeRefund(payment)) {
-      return {
-        bookingId: booking.id,
-        canonicalPaymentId: payment.reviewCanonicalPaymentId as string,
-        duplicatePaymentId: payment.id,
-        reason: PaymentReviewReason.ANOTHER_SUCCESSFUL_PAYMENT,
-        refundRequestId: payment.refund?.requestId as string,
-        capability: PaymentRefundCapability.DUPLICATE_CHARGE_REFUND,
-        method: payment.method,
-      };
-    }
-
-    return {
-      bookingId: booking.id,
-      method: payment.method,
-    };
   }
 
   private duplicateDenied(message: string): AppHttpException {
@@ -936,41 +768,10 @@ export class PaymentRefundService {
 
     return key;
   }
-
-  private requireActorId(value: string | undefined): string {
-    if (value === undefined || !/^[1-9][0-9]*$/.test(value)) {
-      throw new UnauthorizedException('Access token is invalid.');
-    }
-
-    return value;
-  }
-
-  private validateId(value: string, message: string): void {
-    if (!/^[1-9][0-9]*$/.test(value)) {
-      throw new BadRequestException(message);
-    }
-  }
 }
 
 function createVnPayRequestId(prefix: 'Q' | 'R'): string {
   return `${prefix}${randomUUID().replaceAll('-', '').slice(0, 31)}`;
-}
-
-function matchesVnPayAmount(
-  paymentAmount: string,
-  gatewayAmount: string | null,
-): boolean {
-  if (gatewayAmount === null) {
-    return false;
-  }
-
-  const wholeAmount = paymentAmount.replace(/[.]00$/, '');
-
-  return (
-    gatewayAmount === wholeAmount ||
-    gatewayAmount === paymentAmount ||
-    gatewayAmount === toVnPayAmount(paymentAmount)
-  );
 }
 
 function getErrorStack(error: unknown): string | undefined {

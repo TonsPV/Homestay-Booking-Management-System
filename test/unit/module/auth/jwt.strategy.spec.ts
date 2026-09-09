@@ -19,10 +19,7 @@ describe('JwtStrategy', () => {
   let jwtService: JwtService;
 
   beforeEach(() => {
-    resolve =
-      jest.fn<
-        (payload: AccessTokenPayload) => Promise<AuthenticatedPrincipal>
-      >();
+    resolve = jest.fn<Promise<AuthenticatedPrincipal>, [AccessTokenPayload]>();
     const config = {
       getOrThrow: jest.fn((key: string) => {
         if (key === 'JWT_ACCESS_TOKEN_SECRET') {

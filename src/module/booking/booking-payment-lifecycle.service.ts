@@ -17,9 +17,10 @@ import {
   PaymentReviewReason,
   PaymentStatus,
 } from '../payment/domain/payment-state';
+import { detectDuplicateChargeRefund } from '../payment/domain/duplicate-charge.detector';
+import { buildRefundAuditMetadata } from '../payment/infrastructure/mapper/payment-refund.mapper';
 import { PaymentAcceptanceStore } from '../payment/ports/payment-acceptance.store';
 import { PaymentRefundStore } from '../payment/ports/payment-refund.store';
-import { PaymentRefundCapability } from '../payment/domain/payment-refund-capability';
 import { Payment } from '../payment/schema/payment.entity';
 import { BookingTransitionPolicy } from './domain/booking-transition.policy';
 import { BookingPaymentStatus, BookingStatus } from './domain/booking-state';
@@ -370,7 +371,7 @@ export class BookingPaymentLifecycleService {
       );
     }
 
-    if (this.isDuplicateChargeRefund(payment)) {
+    if (detectDuplicateChargeRefund(payment, booking.id).isDuplicateCharge) {
       payment.status = PaymentStatus.REFUNDED;
       refund.refundedAt = now;
       await this.paymentRefunds.saveRefundState(context, refund);
@@ -382,7 +383,7 @@ export class BookingPaymentLifecycleService {
         entityType: AuditEntityType.PAYMENT,
         entityId: payment.id,
         requestId,
-        metadata: this.getRefundAuditMetadata(booking, payment),
+        metadata: buildRefundAuditMetadata(booking, payment),
       });
       return;
     }
@@ -411,7 +412,7 @@ export class BookingPaymentLifecycleService {
       entityType: AuditEntityType.PAYMENT,
       entityId: payment.id,
       requestId,
-      metadata: this.getRefundAuditMetadata(booking, payment),
+      metadata: buildRefundAuditMetadata(booking, payment),
     });
     if (bookingFromStatus !== booking.status) {
       await this.auditLog.record(context, {
@@ -428,37 +429,6 @@ export class BookingPaymentLifecycleService {
         },
       });
     }
-  }
-
-  private isDuplicateChargeRefund(payment: Payment): boolean {
-    return (
-      payment.refund?.previousPaymentStatus === PaymentStatus.REQUIRES_REVIEW &&
-      payment.reviewReason === PaymentReviewReason.ANOTHER_SUCCESSFUL_PAYMENT &&
-      payment.reviewCanonicalPaymentId !== null &&
-      payment.reviewCanonicalPaymentId !== payment.id
-    );
-  }
-
-  private getRefundAuditMetadata(
-    booking: Booking,
-    payment: Payment,
-  ): Record<string, string> {
-    if (this.isDuplicateChargeRefund(payment)) {
-      return {
-        bookingId: booking.id,
-        canonicalPaymentId: payment.reviewCanonicalPaymentId as string,
-        duplicatePaymentId: payment.id,
-        reason: PaymentReviewReason.ANOTHER_SUCCESSFUL_PAYMENT,
-        refundRequestId: payment.refund?.requestId as string,
-        capability: PaymentRefundCapability.DUPLICATE_CHARGE_REFUND,
-        method: payment.method,
-      };
-    }
-
-    return {
-      bookingId: booking.id,
-      method: payment.method,
-    };
   }
 
   private async recordStatusAudit(

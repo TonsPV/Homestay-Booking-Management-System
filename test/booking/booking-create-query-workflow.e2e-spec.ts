@@ -19,6 +19,10 @@ import { RoomCalendar } from '../../src/module/booking/schema/room-calendar.enti
 import { Booking } from '../../src/module/booking/schema/booking.entity';
 import { BookingCustomerStore } from '../../src/module/booking/ports/booking-creation.store';
 import { AuditLog } from '../../src/module/audit/schema/audit-log.entity';
+import {
+  AuditActorType,
+  AuditEntityType,
+} from '../../src/module/audit/domain/audit-log';
 import { Customer } from '../../src/module/customer/schema/customer.entity';
 import { Room } from '../../src/module/room/schema/room.entity';
 import { RoomStatus } from '../../src/module/room/domain/room-status';
@@ -588,8 +592,8 @@ describe('Booking create/query workflow (e2e)', () => {
         expect(
           await dataSource.getRepository(AuditLog).countBy({
             actorId: customer.id,
-            actorType: 'CUSTOMER',
-            entityType: 'BOOKING',
+            actorType: AuditActorType.CUSTOMER,
+            entityType: AuditEntityType.BOOKING,
           }),
         ).toBe(initialCount + 1);
       } finally {
