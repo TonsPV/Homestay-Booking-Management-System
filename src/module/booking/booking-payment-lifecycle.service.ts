@@ -49,20 +49,20 @@ import { Booking } from './schema/booking.entity';
  */
 @Injectable()
 export class BookingPaymentLifecycleService {
-  private readonly paymentTimeoutMilliseconds: number;
+  private readonly paymentTimeoutMs: number;
 
   constructor(
     private readonly transactions: TransactionRunner,
     configService: ConfigService,
-    private readonly bookingTransitionPolicy: BookingTransitionPolicy,
+    private readonly transitionPolicy: BookingTransitionPolicy,
     private readonly bookings: BookingLifecycleStore,
-    private readonly bookingPayments: BookingPaymentStateStore,
+    private readonly payments: BookingPaymentStateStore,
     private readonly roomCalendar: RoomCalendarStore,
     private readonly auditLog: TransactionalAuditLog,
     private readonly paymentAcceptance: PaymentAcceptanceStore,
     private readonly paymentRefunds: PaymentRefundStore,
   ) {
-    this.paymentTimeoutMilliseconds =
+    this.paymentTimeoutMs =
       configService.getOrThrow<number>('BOOKING_PAYMENT_TIMEOUT_MINUTES') *
       60 *
       1000;
@@ -72,11 +72,9 @@ export class BookingPaymentLifecycleService {
    * Expires every unpaid booking whose payment deadline has passed.
    * Owns its transaction: one batch = one transaction.
    */
-  async expirePendingPayments(now = new Date()): Promise<number> {
+  async expireUnpaidBookings(now = new Date()): Promise<number> {
     return this.transactions.run(async (transaction) => {
-      const legacyCutoff = new Date(
-        now.getTime() - this.paymentTimeoutMilliseconds,
-      );
+      const legacyCutoff = new Date(now.getTime() - this.paymentTimeoutMs);
       const expiredBookings = await this.bookings.findExpiredForUpdate(
         transaction,
         now,
@@ -98,7 +96,7 @@ export class BookingPaymentLifecycleService {
       }
 
       await this.bookings.saveState(transaction, expiredBookings);
-      await this.bookingPayments.failPendingOnlinePayments(
+      await this.payments.failPendingOnlinePayments(
         transaction,
         bookingIds,
         'EXPIRED',
@@ -160,8 +158,7 @@ export class BookingPaymentLifecycleService {
 
     if (
       !customerRequested &&
-      !this.bookingTransitionPolicy.evaluate(booking, BookingStatus.CANCELLED)
-        .allowed
+      !this.transitionPolicy.evaluate(booking, BookingStatus.CANCELLED).allowed
     ) {
       throw new AppHttpException(
         HttpStatus.CONFLICT,
@@ -176,7 +173,7 @@ export class BookingPaymentLifecycleService {
     booking.cancellationReason = reason;
 
     await this.bookings.saveState(context, booking);
-    await this.bookingPayments.failPendingOnlinePayments(
+    await this.payments.failPendingOnlinePayments(
       context,
       [booking.id],
       'CANCELLED',

@@ -10,7 +10,7 @@ const DISALLOWED_JWT_SECRETS = new Set([
 export function validateEnvironment(
   config: Record<string, unknown>,
 ): Record<string, unknown> {
-  const nodeEnvironment = readOptionalString(
+  const nodeEnvironment = readString(
     config,
     'NODE_ENV',
     'development',
@@ -29,11 +29,7 @@ export function validateEnvironment(
     );
   }
 
-  const expiresIn = readOptionalString(
-    config,
-    'JWT_ACCESS_TOKEN_EXPIRES_IN',
-    '1h',
-  );
+  const expiresIn = readString(config, 'JWT_ACCESS_TOKEN_EXPIRES_IN', '1h');
 
   if (!isPositiveDuration(expiresIn)) {
     throw new Error(
@@ -41,68 +37,62 @@ export function validateEnvironment(
     );
   }
 
-  const bookingPaymentTimeoutMinutes = readOptionalPositiveInteger(
+  const paymentTimeoutMinutes = readPositiveInt(
     config,
     'BOOKING_PAYMENT_TIMEOUT_MINUTES',
     15,
     1,
     1440,
   );
-  const databasePoolSize = readOptionalPositiveInteger(
-    config,
-    'DB_POOL_SIZE',
-    10,
-    1,
-    100,
-  );
-  const databasePoolQueueLimit = readOptionalPositiveInteger(
+  const dbPoolSize = readPositiveInt(config, 'DB_POOL_SIZE', 10, 1, 100);
+  const dbPoolQueueLimit = readPositiveInt(
     config,
     'DB_POOL_QUEUE_LIMIT',
     50,
     1,
     1000,
   );
-  const databaseConnectTimeoutMs = readOptionalPositiveInteger(
+  const dbConnectTimeoutMs = readPositiveInt(
     config,
     'DB_CONNECT_TIMEOUT_MS',
     5000,
     250,
     60_000,
   );
-  const healthDatabaseProbeTimeoutMs = readOptionalPositiveInteger(
+  const dbProbeTimeoutMs = readPositiveInt(
     config,
     'HEALTH_DB_PROBE_TIMEOUT_MS',
     1000,
     100,
     10_000,
   );
-  const bookingMaxActiveUnpaidPerCustomer = readOptionalPositiveInteger(
+  const maxUnpaidBookings = readPositiveInt(
     config,
     'BOOKING_MAX_ACTIVE_UNPAID_PER_CUSTOMER',
     3,
     1,
     20,
   );
-  const bookingMaxHeldNightsPerCustomer = readOptionalPositiveInteger(
+  const maxHeldNights = readPositiveInt(
     config,
     'BOOKING_MAX_HELD_NIGHTS_PER_CUSTOMER',
     30,
     1,
     365,
   );
-  const bookingMaxAdvanceDays = readOptionalPositiveInteger(
+  const maxAdvanceDays = readPositiveInt(
     config,
     'BOOKING_MAX_ADVANCE_DAYS',
     365,
     1,
     3650,
   );
-  const expirationSchedulersEnabled = readOptionalBoolean(
+  const schedulersEnabled = readBoolean(
     config,
     'EXPIRATION_SCHEDULERS_ENABLED',
     true,
   );
-  const swaggerEnabled = readOptionalBoolean(
+  const swaggerEnabled = readBoolean(
     config,
     'SWAGGER_ENABLED',
     nodeEnvironment !== 'production',
@@ -117,31 +107,27 @@ export function validateEnvironment(
     'HTTP_URLENCODED_BODY_LIMIT',
     '1mb',
   );
-  const roomImageUploadDirectory = readOptionalString(
+  const roomImageDir = readString(
     config,
     'ROOM_IMAGE_UPLOAD_DIR',
     '.data/uploads/room-images',
   );
   const corsOrigins = readCorsOrigins(config);
-  const vnpayEnabled = readOptionalBoolean(config, 'VNPAY_ENABLED', false);
-  const vnpayPaymentUrl = readOptionalString(
+  const vnpayEnabled = readBoolean(config, 'VNPAY_ENABLED', false);
+  const vnpayPaymentUrl = readString(
     config,
     'VNPAY_PAYMENT_URL',
     'https://sandbox.vnpayment.vn/paymentv2/vpcpay.html',
   );
-  const vnpayReturnUrl = readOptionalString(
+  const vnpayReturnUrl = readString(
     config,
     'VNPAY_RETURN_URL',
     'http://localhost:3000/api/v1/payments/vnpay/return',
   );
-  const vnpayFrontendReturnUrl = readOptionalString(
-    config,
-    'VNPAY_FRONTEND_RETURN_URL',
-    '',
-  );
-  const vnpayTmnCode = readOptionalString(config, 'VNPAY_TMN_CODE', '');
-  const vnpayHashSecret = readOptionalString(config, 'VNPAY_HASH_SECRET', '');
-  const vnpayRequestTimeoutMs = readOptionalPositiveInteger(
+  const frontendReturnUrl = readString(config, 'VNPAY_FRONTEND_RETURN_URL', '');
+  const vnpayTmnCode = readString(config, 'VNPAY_TMN_CODE', '');
+  const vnpayHashSecret = readString(config, 'VNPAY_HASH_SECRET', '');
+  const requestTimeoutMs = readPositiveInt(
     config,
     'VNPAY_REQUEST_TIMEOUT_MS',
     10_000,
@@ -152,11 +138,11 @@ export function validateEnvironment(
   assertHttpUrl(vnpayPaymentUrl, 'VNPAY_PAYMENT_URL', true);
   assertHttpUrl(vnpayReturnUrl, 'VNPAY_RETURN_URL', false);
 
-  if (vnpayFrontendReturnUrl.length > 0) {
-    assertHttpUrl(vnpayFrontendReturnUrl, 'VNPAY_FRONTEND_RETURN_URL', false);
+  if (frontendReturnUrl.length > 0) {
+    assertHttpUrl(frontendReturnUrl, 'VNPAY_FRONTEND_RETURN_URL', false);
 
     if (nodeEnvironment === 'production') {
-      assertPublicHttpsUrl(vnpayFrontendReturnUrl, 'VNPAY_FRONTEND_RETURN_URL');
+      assertPublicHttpsUrl(frontendReturnUrl, 'VNPAY_FRONTEND_RETURN_URL');
     }
   }
 
@@ -185,27 +171,27 @@ export function validateEnvironment(
     NODE_ENV: nodeEnvironment,
     JWT_ACCESS_TOKEN_SECRET: secret,
     JWT_ACCESS_TOKEN_EXPIRES_IN: expiresIn,
-    DB_POOL_SIZE: databasePoolSize,
-    DB_POOL_QUEUE_LIMIT: databasePoolQueueLimit,
-    DB_CONNECT_TIMEOUT_MS: databaseConnectTimeoutMs,
-    HEALTH_DB_PROBE_TIMEOUT_MS: healthDatabaseProbeTimeoutMs,
-    BOOKING_PAYMENT_TIMEOUT_MINUTES: bookingPaymentTimeoutMinutes,
-    BOOKING_MAX_ACTIVE_UNPAID_PER_CUSTOMER: bookingMaxActiveUnpaidPerCustomer,
-    BOOKING_MAX_HELD_NIGHTS_PER_CUSTOMER: bookingMaxHeldNightsPerCustomer,
-    BOOKING_MAX_ADVANCE_DAYS: bookingMaxAdvanceDays,
-    EXPIRATION_SCHEDULERS_ENABLED: expirationSchedulersEnabled,
+    DB_POOL_SIZE: dbPoolSize,
+    DB_POOL_QUEUE_LIMIT: dbPoolQueueLimit,
+    DB_CONNECT_TIMEOUT_MS: dbConnectTimeoutMs,
+    HEALTH_DB_PROBE_TIMEOUT_MS: dbProbeTimeoutMs,
+    BOOKING_PAYMENT_TIMEOUT_MINUTES: paymentTimeoutMinutes,
+    BOOKING_MAX_ACTIVE_UNPAID_PER_CUSTOMER: maxUnpaidBookings,
+    BOOKING_MAX_HELD_NIGHTS_PER_CUSTOMER: maxHeldNights,
+    BOOKING_MAX_ADVANCE_DAYS: maxAdvanceDays,
+    EXPIRATION_SCHEDULERS_ENABLED: schedulersEnabled,
     SWAGGER_ENABLED: swaggerEnabled,
     HTTP_JSON_BODY_LIMIT: httpJsonBodyLimit,
     HTTP_URLENCODED_BODY_LIMIT: httpUrlencodedBodyLimit,
-    ROOM_IMAGE_UPLOAD_DIR: roomImageUploadDirectory,
+    ROOM_IMAGE_UPLOAD_DIR: roomImageDir,
     CORS_ORIGINS: corsOrigins,
     VNPAY_ENABLED: vnpayEnabled,
     VNPAY_PAYMENT_URL: vnpayPaymentUrl,
     VNPAY_RETURN_URL: vnpayReturnUrl,
-    VNPAY_FRONTEND_RETURN_URL: vnpayFrontendReturnUrl,
+    VNPAY_FRONTEND_RETURN_URL: frontendReturnUrl,
     VNPAY_TMN_CODE: vnpayTmnCode,
     VNPAY_HASH_SECRET: vnpayHashSecret,
-    VNPAY_REQUEST_TIMEOUT_MS: vnpayRequestTimeoutMs,
+    VNPAY_REQUEST_TIMEOUT_MS: requestTimeoutMs,
   };
 }
 
@@ -222,7 +208,7 @@ function readRequiredString(
   return value;
 }
 
-function readOptionalString(
+function readString(
   config: Record<string, unknown>,
   key: string,
   defaultValue: string,
@@ -240,7 +226,7 @@ function readOptionalString(
   return value.trim();
 }
 
-function readOptionalPositiveInteger(
+function readPositiveInt(
   config: Record<string, unknown>,
   key: string,
   defaultValue: number,
@@ -262,7 +248,7 @@ function readOptionalPositiveInteger(
   return parsed;
 }
 
-function readOptionalBoolean(
+function readBoolean(
   config: Record<string, unknown>,
   key: string,
   defaultValue: boolean,
@@ -289,7 +275,7 @@ function readBodyLimit(
   key: string,
   defaultValue: string,
 ): string {
-  const value = readOptionalString(config, key, defaultValue).toLowerCase();
+  const value = readString(config, key, defaultValue).toLowerCase();
 
   if (!/^\d+(?:b|kb|mb|gb)$/.test(value)) {
     throw new Error(`${key} must be a size such as 100kb, 1mb, or 1gb.`);

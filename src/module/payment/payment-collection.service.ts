@@ -77,18 +77,18 @@ interface VnPayCallbackProcessResult {
 @Injectable()
 export class PaymentCollectionService {
   private readonly logger = new Logger(PaymentCollectionService.name);
-  private readonly paymentTimeoutMilliseconds: number;
+  private readonly paymentTimeoutMs: number;
 
   constructor(
     private readonly transactions: TransactionRunner,
     private readonly payments: PaymentAcceptanceStore,
     private readonly lifecycle: BookingPaymentLifecycleService,
-    private readonly paymentQueryService: PaymentQueryService,
+    private readonly paymentQuery: PaymentQueryService,
     private readonly auditLog: TransactionalAuditLog,
     configService: ConfigService,
     private readonly vnPay: VnPayGatewayService,
   ) {
-    this.paymentTimeoutMilliseconds =
+    this.paymentTimeoutMs =
       configService.getOrThrow<number>('BOOKING_PAYMENT_TIMEOUT_MINUTES') *
       60 *
       1000;
@@ -110,7 +110,7 @@ export class PaymentCollectionService {
 
     try {
       paymentId = await this.transactions.run(async (transaction) => {
-        const booking = await this.getLockedBooking(transaction, bookingId);
+        const booking = await this.lockBooking(transaction, bookingId);
 
         if (booking.customerId !== activeCustomerId) {
           throw new NotFoundException('Khong tim thay booking.');
@@ -122,7 +122,7 @@ export class PaymentCollectionService {
         );
 
         if (existingPayment !== null) {
-          this.assertOnlineIdempotentReplay(existingPayment, bookingId);
+          this.assertIdempotentReplay(existingPayment, bookingId);
           return existingPayment.id;
         }
 
@@ -142,15 +142,13 @@ export class PaymentCollectionService {
           );
         }
 
-        assertBookingCanAcceptPayment(booking, this.paymentTimeoutMilliseconds);
+        assertBookingCanAcceptPayment(booking, this.paymentTimeoutMs);
 
         const expiresAt =
           booking.status === BookingStatus.PENDING_PAYMENT
             ? (booking.paymentExpiresAt ??
-              new Date(
-                booking.createdAt.getTime() + this.paymentTimeoutMilliseconds,
-              ))
-            : new Date(now.getTime() + this.paymentTimeoutMilliseconds);
+              new Date(booking.createdAt.getTime() + this.paymentTimeoutMs))
+            : new Date(now.getTime() + this.paymentTimeoutMs);
         const payment = await this.payments.createPayment(transaction, {
           bookingId: booking.id,
           amount: booking.totalAmount,
@@ -188,11 +186,7 @@ export class PaymentCollectionService {
         return payment.id;
       });
     } catch (error) {
-      paymentId = await this.resolveOnlineIdempotencyConflict(
-        error,
-        key,
-        bookingId,
-      );
+      paymentId = await this.resolveIdempotencyConflict(error, key, bookingId);
     }
 
     const payment = await this.payments.findPaymentSnapshot(paymentId);
@@ -206,7 +200,7 @@ export class PaymentCollectionService {
     }
 
     return {
-      payment: this.paymentQueryService.toCustomerResponse(payment),
+      payment: this.paymentQuery.toCustomerResponse(payment),
       paymentUrl: payment.gatewayPaymentUrl,
       expiresAt: payment.expiresAt,
     };
@@ -226,21 +220,21 @@ export class PaymentCollectionService {
       return { RspCode: '99', Message: 'Input data required' };
     }
 
-    const result = await this.processVnPayCallback(callback, requestId);
+    const callbackResult = await this.processVnPayCallback(callback, requestId);
 
-    if (result.outcome === 'NOT_FOUND') {
+    if (callbackResult.outcome === 'NOT_FOUND') {
       return { RspCode: '01', Message: 'Order not found' };
     }
 
-    if (result.outcome === 'INVALID_AMOUNT') {
+    if (callbackResult.outcome === 'INVALID_AMOUNT') {
       return { RspCode: '04', Message: 'Invalid amount' };
     }
 
-    if (result.outcome === 'ALREADY_PROCESSED') {
+    if (callbackResult.outcome === 'ALREADY_PROCESSED') {
       return { RspCode: '02', Message: 'Order already confirmed' };
     }
 
-    if (result.outcome === 'ERROR') {
+    if (callbackResult.outcome === 'ERROR') {
       return { RspCode: '99', Message: 'Unknown error' };
     }
 
@@ -403,7 +397,7 @@ export class PaymentCollectionService {
       }
 
       const outcome = await this.transactions.run(async (transaction) => {
-        const booking = await this.getLockedBooking(
+        const booking = await this.lockBooking(
           transaction,
           activePaymentSnapshot.bookingId,
         );
@@ -491,10 +485,7 @@ export class PaymentCollectionService {
     }
   }
 
-  private assertOnlineIdempotentReplay(
-    payment: Payment,
-    bookingId: string,
-  ): void {
+  private assertIdempotentReplay(payment: Payment, bookingId: string): void {
     if (
       payment.bookingId !== bookingId ||
       payment.method !== PaymentMethod.VNPAY ||
@@ -506,7 +497,7 @@ export class PaymentCollectionService {
     }
   }
 
-  private async resolveOnlineIdempotencyConflict(
+  private async resolveIdempotencyConflict(
     error: unknown,
     key: string,
     bookingId: string,
@@ -521,14 +512,11 @@ export class PaymentCollectionService {
       throw new ConflictException('Khong the tao giao dich trung lap.');
     }
 
-    this.assertOnlineIdempotentReplay(payment, bookingId);
+    this.assertIdempotentReplay(payment, bookingId);
     return payment.id;
   }
 
-  private async getLockedBooking(
-    context: TransactionContext,
-    bookingId: string,
-  ) {
+  private async lockBooking(context: TransactionContext, bookingId: string) {
     const booking = await this.payments.lockBooking(context, bookingId);
 
     if (booking === null) {

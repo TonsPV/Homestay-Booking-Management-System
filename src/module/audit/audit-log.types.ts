@@ -11,7 +11,7 @@ export interface AuditActorContext {
   requestId?: string;
 }
 
-export interface RecordAuditLogInput extends AuditActorContext {
+export interface AuditLogInput extends AuditActorContext {
   action: AuditAction;
   entityType: AuditEntityType;
   entityId: string;

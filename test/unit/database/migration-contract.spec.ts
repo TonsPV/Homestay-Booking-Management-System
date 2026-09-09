@@ -29,6 +29,7 @@ import { RetireCustomerPhoneClaim1784794000000 } from '../../../src/database/mig
 import { CreatePaymentRefundsAndBackfill1784795000000 } from '../../../src/database/migrations/1784795000000-CreatePaymentRefundsAndBackfill';
 import { HardenAcceptedPaymentOwnership1784796000000 } from '../../../src/database/migrations/1784796000000-HardenAcceptedPaymentOwnership';
 import { RemoveLegacyPaymentRefundColumns1784797000000 } from '../../../src/database/migrations/1784797000000-RemoveLegacyPaymentRefundColumns';
+import { AddCredentialCalendarAuditActions1784798000000 } from '../../../src/database/migrations/1784798000000-AddCredentialCalendarAuditActions';
 
 const MIGRATION_CLASSES = [
   InitialSchemaBaseline1784770000000,
@@ -59,9 +60,19 @@ const MIGRATION_CLASSES = [
   CreatePaymentRefundsAndBackfill1784795000000,
   HardenAcceptedPaymentOwnership1784796000000,
   RemoveLegacyPaymentRefundColumns1784797000000,
+  AddCredentialCalendarAuditActions1784798000000,
 ] as const;
 
 describe('database migration contract', () => {
+  it('refuses to remove credential/calendar actions when evidence exists', async () => {
+    const query = jest.fn().mockResolvedValue([{ count: 1 }]);
+    const runner = { query } as unknown as QueryRunner;
+    await expect(
+      new AddCredentialCalendarAuditActions1784798000000().down(runner),
+    ).rejects.toThrow('while their audit records exist');
+    expect(query).toHaveBeenCalledTimes(1);
+  });
+
   it('registers every migration once in timestamp order with synchronize off', () => {
     const registered = AppDataSource.options.migrations;
 

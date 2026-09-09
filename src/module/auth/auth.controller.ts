@@ -39,7 +39,7 @@ import {
 import type {
   LoginResponse,
   MeResponse,
-  RegistrationAcceptedResponse,
+  RegistrationResult,
 } from './auth.service';
 
 @Controller('v1/auth')
@@ -56,7 +56,7 @@ export class AuthController {
   @ApiRegistrationConflictError()
   registerCustomer(
     @Body() body: RegisterCustomerDto,
-  ): Promise<ApiResponsePayload<RegistrationAcceptedResponse>> {
+  ): Promise<ApiResponsePayload<RegistrationResult>> {
     return this.authService
       .registerCustomer(body)
       .then((result) =>

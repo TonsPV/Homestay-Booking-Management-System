@@ -14,9 +14,9 @@ import { CurrentAuth } from '../auth/decorators/current-auth.decorator';
 import { ActorsGuard } from '../auth/guards/actors.guard';
 import { AuthCustomerDto } from '../auth/dto/auth-response.dto';
 import { CustomerProfileService } from './customer-profile.service';
-import type { CustomerProfileResponse } from './customer-profile.service';
+import type { ProfileResponse } from './customer-profile.service';
 import { CustomerCredentialService } from './customer-credential.service';
-import type { CustomerCredentialResult } from './customer-credential.service';
+import type { CredentialResult } from './customer-credential.service';
 import { ChangeCustomerPasswordDto } from './dto/change-customer-password.dto';
 import { CustomerCredentialResultDto } from './dto/customer-credential-response.dto';
 import { UpdateCustomerProfileDto } from './dto/update-customer-profile.dto';
@@ -29,16 +29,16 @@ import { UpdateCustomerProfileDto } from './dto/update-customer-profile.dto';
 @ApiCommonAuthErrors()
 export class CustomerProfileController {
   constructor(
-    private readonly customerProfileService: CustomerProfileService,
-    private readonly customerCredentialService: CustomerCredentialService,
+    private readonly profileService: CustomerProfileService,
+    private readonly credentialService: CustomerCredentialService,
   ) {}
 
   @Get('me')
   @ApiOkEnvelope(AuthCustomerDto)
   me(
     @CurrentAuth() auth: AccessTokenPayload,
-  ): Promise<ApiResponsePayload<CustomerProfileResponse>> {
-    return this.customerProfileService
+  ): Promise<ApiResponsePayload<ProfileResponse>> {
+    return this.profileService
       .getMe(auth.customer_id)
       .then((customer) =>
         ApiResponse.ok(customer, 'Lay thong tin customer thanh cong.'),
@@ -51,8 +51,8 @@ export class CustomerProfileController {
   updateMe(
     @CurrentAuth() auth: AccessTokenPayload,
     @Body() body: UpdateCustomerProfileDto,
-  ): Promise<ApiResponsePayload<CustomerProfileResponse>> {
-    return this.customerProfileService
+  ): Promise<ApiResponsePayload<ProfileResponse>> {
+    return this.profileService
       .updateMe(auth.customer_id, body)
       .then((customer) =>
         ApiResponse.ok(customer, 'Cap nhat thong tin customer thanh cong.'),
@@ -68,8 +68,8 @@ export class CustomerProfileController {
   changePassword(
     @CurrentAuth() auth: AccessTokenPayload,
     @Body() body: ChangeCustomerPasswordDto,
-  ): Promise<ApiResponsePayload<CustomerCredentialResult>> {
-    return this.customerCredentialService
+  ): Promise<ApiResponsePayload<CredentialResult>> {
+    return this.credentialService
       .changeOwnPassword(auth.customer_id, body)
       .then((result) =>
         ApiResponse.ok(result, 'Cap nhat mat khau customer thanh cong.'),

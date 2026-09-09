@@ -53,7 +53,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   constructor(
     configService: ConfigService,
     private readonly claimsValidator: AccessTokenClaimsValidator,
-    private readonly accessTokenPrincipalService: AccessTokenPrincipalService,
+    private readonly principalService: AccessTokenPrincipalService,
   ) {
     super({
       jwtFromRequest: strictBearerExtractor,
@@ -79,12 +79,12 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
 
     const accessTokenPayload = this.claimsValidator.validate(complete.payload);
 
-    this.claimsValidator.enforceTemporaryValidity(
+    this.claimsValidator.assertTimeValid(
       accessTokenPayload,
       Math.floor(Date.now() / 1000),
     );
 
-    return this.accessTokenPrincipalService.resolve(accessTokenPayload);
+    return this.principalService.resolve(accessTokenPayload);
   }
 
   private readCompleteJwt(payload: unknown): CompleteJwt {

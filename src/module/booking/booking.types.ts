@@ -1,6 +1,6 @@
 import { BookingPaymentStatus, BookingStatus } from './domain/booking-state';
-import type { BookingTransitionCapabilityResponse } from './booking-domain-error.mapper';
-import type { CustomerCredentialCapabilities } from '../customer/customer-credential.policy';
+import type { TransitionCapabilityResponse } from './booking-domain-error.mapper';
+import type { CredentialCapabilities } from '../customer/customer-credential.policy';
 
 export interface BookingAuditContext {
   requestId?: string;
@@ -48,6 +48,6 @@ export interface BookingResponse {
 }
 
 export interface ManagementBookingResponse extends BookingResponse {
-  credentialCapabilities: CustomerCredentialCapabilities;
-  transitionCapabilities: BookingTransitionCapabilityResponse[];
+  credentialCapabilities: CredentialCapabilities;
+  transitionCapabilities: TransitionCapabilityResponse[];
 }

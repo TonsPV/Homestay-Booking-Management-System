@@ -41,7 +41,7 @@ const BEARER_HEADER_REJECTIONS: Array<[string, string]> = [
 // forms when exercised directly (see strict-bearer.extractor.spec.ts), but a
 // real HTTP request reaches the legacy guard as `Bearer token`, which is an
 // invalid JWT and therefore uses the invalid-token message.
-const TRANSPORT_NORMALIZED_BEARER_HEADERS: Array<[string, string]> = [
+const NORMALIZED_BEARER_HEADERS: Array<[string, string]> = [
   ['leading whitespace', ' Bearer token'],
   ['trailing whitespace', 'Bearer token '],
 ];
@@ -58,7 +58,7 @@ describe('Auth error contract (e2e, real HTTP pipeline)', () => {
 
   let app: INestApplication<App>;
   let e2eHarness: E2eHarness | undefined;
-  let customersRepository: Repository<Customer>;
+  let customerRepo: Repository<Customer>;
   let accessTokenService: AccessTokenService;
   let secret: string;
   let activeCustomerId: string;
@@ -79,7 +79,7 @@ describe('Auth error contract (e2e, real HTTP pipeline)', () => {
     await app.init();
 
     const dataSource = app.get(DataSource);
-    customersRepository = dataSource.getRepository(Customer);
+    customerRepo = dataSource.getRepository(Customer);
     accessTokenService = app.get(AccessTokenService);
     secret = app
       .get(ConfigService)
@@ -87,13 +87,13 @@ describe('Auth error contract (e2e, real HTTP pipeline)', () => {
 
     const passwordHash = await app.get(PasswordHasherService).hash(PASSWORD);
 
-    const customers = await customersRepository.save(
+    const customers = await customerRepo.save(
       [
         { status: 'ACTIVE', tokenVersion: 3 },
         { status: 'LOCKED', tokenVersion: 2 },
         { status: 'ACTIVE', tokenVersion: 9 },
       ].map((overrides, index) =>
-        customersRepository.create({
+        customerRepo.create({
           fullName: `Auth Error Contract ${index}`,
           email: nextEmail(index),
           phone: nextPhone(),
@@ -108,7 +108,7 @@ describe('Auth error contract (e2e, real HTTP pipeline)', () => {
     );
 
     e2eHarness.registerCleanup(async () => {
-      await customersRepository.delete(customers.map((c) => c.id));
+      await customerRepo.delete(customers.map((c) => c.id));
     });
   });
 
@@ -160,7 +160,7 @@ describe('Auth error contract (e2e, real HTTP pipeline)', () => {
       });
     });
 
-    it.each(TRANSPORT_NORMALIZED_BEARER_HEADERS)(
+    it.each(NORMALIZED_BEARER_HEADERS)(
       'keeps the legacy invalid-token result for %s after HTTP normalization',
       async (_name, header) => {
         const httpRequest = request(app.getHttpServer())

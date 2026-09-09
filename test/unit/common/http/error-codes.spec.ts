@@ -4,7 +4,7 @@ import { ErrorCode } from '../../../../src/common/error-codes';
 import {
   ERROR_CODE_HTTP_STATUS,
   getFallbackErrorCode,
-  isErrorCodeStatusCompatible,
+  isErrorStatusCompatible,
 } from '../../../../src/common/http/error-codes';
 import { AppHttpException } from '../../../../src/common/http/app-http-exception';
 
@@ -61,13 +61,13 @@ describe('ErrorCode HTTP status contract', () => {
       ErrorCode.COMMON_SERVICE_UNAVAILABLE,
     );
     expect(
-      isErrorCodeStatusCompatible(ErrorCode.COMMON_VALIDATION_FAILED, 422),
+      isErrorStatusCompatible(ErrorCode.COMMON_VALIDATION_FAILED, 422),
     ).toBe(true);
     expect(
-      isErrorCodeStatusCompatible(ErrorCode.COMMON_SERVICE_UNAVAILABLE, 504),
+      isErrorStatusCompatible(ErrorCode.COMMON_SERVICE_UNAVAILABLE, 504),
     ).toBe(true);
-    expect(
-      isErrorCodeStatusCompatible(ErrorCode.BOOKING_ROOM_NOT_FOUND, 409),
-    ).toBe(false);
+    expect(isErrorStatusCompatible(ErrorCode.BOOKING_ROOM_NOT_FOUND, 409)).toBe(
+      false,
+    );
   });
 });

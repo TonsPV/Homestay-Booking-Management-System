@@ -10,7 +10,7 @@ export class PaymentIdempotencyConflictError extends Error {
   }
 }
 
-export interface CreatePaymentRecord {
+export interface CreatePaymentInput {
   bookingId: string;
   amount: string;
   currency: 'VND';
@@ -60,7 +60,7 @@ export abstract class PaymentAcceptanceStore {
 
   abstract createPayment(
     context: TransactionContext,
-    input: CreatePaymentRecord,
+    input: CreatePaymentInput,
   ): Promise<Payment>;
 
   abstract savePaymentState(

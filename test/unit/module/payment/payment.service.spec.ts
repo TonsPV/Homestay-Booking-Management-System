@@ -10,7 +10,7 @@ import type {
 import { TypeOrmTransactionRunner } from '../../../../src/common/infrastructure/persistence/typeorm-transaction.runner';
 import type { TransactionContext } from '../../../../src/common/application/transaction';
 import { ErrorCode } from '../../../../src/common/error-codes';
-import type { RecordAuditLogInput } from '../../../../src/module/audit/audit-log.service';
+import type { AuditLogInput } from '../../../../src/module/audit/audit-log.service';
 import {
   AuditAction,
   AuditActorType,
@@ -50,18 +50,18 @@ import { TypeOrmPaymentRefundStore } from '../../../../src/module/payment/infras
 
 describe('PaymentService characterization', () => {
   let dataSource: { transaction: jest.Mock; getRepository: jest.Mock };
-  let paymentsRepository: {
+  let paymentRepo: {
     findOneBy: jest.Mock;
     findOne: jest.Mock;
     createQueryBuilder: jest.Mock;
     update: jest.Mock;
   };
-  let refundsRepository: {
+  let refundRepo: {
     findOneBy: jest.Mock;
     create: jest.Mock;
     save: jest.Mock;
   };
-  let bookingsRepository: {
+  let bookingRepo: {
     findOneBy: jest.Mock;
     exists: jest.Mock;
   };
@@ -82,18 +82,16 @@ describe('PaymentService characterization', () => {
     jest.useFakeTimers().setSystemTime(new Date('2030-01-01T00:00:00.000Z'));
     currentRefundFixture = null;
     recordedContexts = [];
-    paymentsRepository = {
+    paymentRepo = {
       findOneBy: jest.fn(),
       findOne: jest.fn(
         (options: { where: Record<string, unknown> }) =>
-          paymentsRepository.findOneBy(
-            options.where,
-          ) as Promise<Payment | null>,
+          paymentRepo.findOneBy(options.where) as Promise<Payment | null>,
       ),
       createQueryBuilder: jest.fn(),
       update: jest.fn(),
     };
-    refundsRepository = {
+    refundRepo = {
       findOneBy: jest.fn((criteria: Record<string, unknown>) => {
         const key = criteria.idempotencyKey;
         return Promise.resolve(
@@ -111,7 +109,7 @@ describe('PaymentService characterization', () => {
         return Promise.resolve(value);
       }),
     };
-    bookingsRepository = {
+    bookingRepo = {
       findOneBy: jest.fn(),
       exists: jest.fn(),
     };
@@ -119,10 +117,10 @@ describe('PaymentService characterization', () => {
       transaction: jest.fn(),
       getRepository: jest.fn((entity: unknown) =>
         entity === Payment
-          ? paymentsRepository
+          ? paymentRepo
           : entity === PaymentRefund
-            ? refundsRepository
-            : bookingsRepository,
+            ? refundRepo
+            : bookingRepo,
       ),
     };
     gateway = {
@@ -136,8 +134,8 @@ describe('PaymentService characterization', () => {
     const config = { getOrThrow: jest.fn(() => 15) };
 
     const paymentQueryService = new PaymentQueryService(
-      paymentsRepository as unknown as Repository<Payment>,
-      bookingsRepository as unknown as Repository<Booking>,
+      paymentRepo as unknown as Repository<Payment>,
+      bookingRepo as unknown as Repository<Booking>,
     );
     const transactionRunner = new TypeOrmTransactionRunner(
       dataSource as unknown as DataSource,
@@ -216,9 +214,7 @@ describe('PaymentService characterization', () => {
     });
     const manager = createMutationManager(booking, payment);
     dataSource.transaction.mockImplementation(runTransaction(manager));
-    paymentsRepository.createQueryBuilder.mockReturnValue(
-      createPaymentQuery(payment),
-    );
+    paymentRepo.createQueryBuilder.mockReturnValue(createPaymentQuery(payment));
 
     await expect(
       service.recordManualPayment(
@@ -296,9 +292,7 @@ describe('PaymentService characterization', () => {
       existingPayment: payment,
     });
     dataSource.transaction.mockImplementation(runTransaction(manager));
-    paymentsRepository.createQueryBuilder.mockReturnValue(
-      createPaymentQuery(payment),
-    );
+    paymentRepo.createQueryBuilder.mockReturnValue(createPaymentQuery(payment));
 
     await service.recordManualPayment(
       '20',
@@ -328,9 +322,7 @@ describe('PaymentService characterization', () => {
     });
     const manager = createMutationManager(booking, payment);
     dataSource.transaction.mockImplementation(runTransaction(manager));
-    paymentsRepository.createQueryBuilder.mockReturnValue(
-      createPaymentQuery(payment),
-    );
+    paymentRepo.createQueryBuilder.mockReturnValue(createPaymentQuery(payment));
 
     await service.recordManualPayment(
       '20',
@@ -381,14 +373,12 @@ describe('PaymentService characterization', () => {
     });
     const manager = createMutationManager(booking, payment);
     dataSource.transaction.mockImplementation(runTransaction(manager));
-    paymentsRepository.findOneBy.mockResolvedValue(payment);
+    paymentRepo.findOneBy.mockResolvedValue(payment);
     gateway.createPaymentRequest.mockReturnValue({
       redirectUrl: 'https://vnpay.test/pay/P500',
       transactionDate: '20300101070000',
     });
-    paymentsRepository.createQueryBuilder.mockReturnValue(
-      createPaymentQuery(payment),
-    );
+    paymentRepo.createQueryBuilder.mockReturnValue(createPaymentQuery(payment));
 
     await expect(
       service.createVnPayPayment('10', '100', 'online-key-0001', '127.0.0.1', {
@@ -431,7 +421,7 @@ describe('PaymentService characterization', () => {
       gatewayReference: 'P500',
     });
     mockValidCallback(gateway, { vnp_Amount: '999' });
-    paymentsRepository.findOneBy.mockResolvedValue(payment);
+    paymentRepo.findOneBy.mockResolvedValue(payment);
 
     await expect(service.handleVnPayIpn({})).resolves.toEqual({
       RspCode: '04',
@@ -447,7 +437,7 @@ describe('PaymentService characterization', () => {
       RspCode: '99',
       Message: 'Input data required',
     });
-    expect(paymentsRepository.findOneBy).not.toHaveBeenCalled();
+    expect(paymentRepo.findOneBy).not.toHaveBeenCalled();
     expect(dataSource.transaction).not.toHaveBeenCalled();
   });
 
@@ -458,7 +448,7 @@ describe('PaymentService characterization', () => {
       gatewayReference: 'P500',
     });
     mockValidCallback(gateway);
-    paymentsRepository.findOneBy.mockResolvedValue(payment);
+    paymentRepo.findOneBy.mockResolvedValue(payment);
 
     await expect(
       service.handleVnPayReturn({}, 'request-vnpay-return'),
@@ -485,7 +475,7 @@ describe('PaymentService characterization', () => {
     });
     const manager = createMutationManager(booking, payment);
     mockValidCallback(gateway);
-    paymentsRepository.findOneBy.mockResolvedValue(payment);
+    paymentRepo.findOneBy.mockResolvedValue(payment);
     dataSource.transaction.mockImplementation(runTransaction(manager));
 
     await expect(
@@ -554,7 +544,7 @@ describe('PaymentService characterization', () => {
     });
     const manager = createMutationManager(booking, payment);
     mockValidCallback(gateway);
-    paymentsRepository.findOneBy.mockResolvedValue(payment);
+    paymentRepo.findOneBy.mockResolvedValue(payment);
     dataSource.transaction.mockImplementation(runTransaction(manager));
 
     await expect(
@@ -588,7 +578,7 @@ describe('PaymentService characterization', () => {
       vnp_ResponseCode: '24',
       vnp_TransactionStatus: '02',
     });
-    paymentsRepository.findOneBy.mockResolvedValue(payment);
+    paymentRepo.findOneBy.mockResolvedValue(payment);
     dataSource.transaction.mockImplementation(runTransaction(manager));
 
     await expect(service.handleVnPayIpn({})).resolves.toEqual({
@@ -629,7 +619,7 @@ describe('PaymentService characterization', () => {
     mockValidCallback(gateway, {
       vnp_TransactionNo: 'shared-transaction',
     });
-    paymentsRepository.findOneBy.mockResolvedValue(payment);
+    paymentRepo.findOneBy.mockResolvedValue(payment);
     dataSource.transaction.mockImplementation(runTransaction(manager));
 
     await expect(service.handleVnPayIpn({})).resolves.toEqual({
@@ -654,7 +644,7 @@ describe('PaymentService characterization', () => {
     });
     const manager = createMutationManager(booking, payment);
     mockValidCallback(gateway);
-    paymentsRepository.findOneBy.mockResolvedValue(payment);
+    paymentRepo.findOneBy.mockResolvedValue(payment);
     dataSource.transaction.mockImplementation(runTransaction(manager));
 
     await expect(service.handleVnPayIpn({})).resolves.toEqual({
@@ -686,7 +676,7 @@ describe('PaymentService characterization', () => {
       canonicalPayment,
     });
     mockValidCallback(gateway);
-    paymentsRepository.findOneBy.mockResolvedValue(payment);
+    paymentRepo.findOneBy.mockResolvedValue(payment);
     dataSource.transaction.mockImplementation(runTransaction(manager));
 
     await expect(
@@ -733,7 +723,7 @@ describe('PaymentService characterization', () => {
       canonicalPayment,
     });
     mockValidCallback(gateway);
-    paymentsRepository.findOneBy.mockResolvedValue(payment);
+    paymentRepo.findOneBy.mockResolvedValue(payment);
     dataSource.transaction.mockImplementation(runTransaction(manager));
 
     await expect(service.handleVnPayIpn({})).resolves.toEqual({
@@ -756,7 +746,7 @@ describe('PaymentService characterization', () => {
       status: PaymentStatus.PENDING,
     });
     const manager = createMutationManager(booking, payment);
-    paymentsRepository.findOneBy.mockResolvedValue(payment);
+    paymentRepo.findOneBy.mockResolvedValue(payment);
     dataSource.transaction.mockImplementation(runTransaction(manager));
 
     await expect(
@@ -777,7 +767,7 @@ describe('PaymentService characterization', () => {
     });
     const payment = refundableVnPayPayment();
     const manager = createMutationManager(booking, payment);
-    paymentsRepository.findOneBy.mockResolvedValue(payment);
+    paymentRepo.findOneBy.mockResolvedValue(payment);
     dataSource.transaction.mockImplementation(runTransaction(manager));
 
     await expect(
@@ -806,12 +796,10 @@ describe('PaymentService characterization', () => {
       createdByUserId: '20',
     });
     const manager = createMutationManager(booking, payment);
-    paymentsRepository.findOneBy
+    paymentRepo.findOneBy
       .mockResolvedValueOnce(payment)
       .mockResolvedValueOnce(payment);
-    paymentsRepository.createQueryBuilder.mockReturnValue(
-      createPaymentQuery(payment),
-    );
+    paymentRepo.createQueryBuilder.mockReturnValue(createPaymentQuery(payment));
     dataSource.transaction.mockImplementation(runTransaction(manager));
 
     await service.refund(
@@ -885,10 +873,8 @@ describe('PaymentService characterization', () => {
       }),
     });
     const manager = createMutationManager(booking, payment);
-    paymentsRepository.findOneBy.mockResolvedValue(payment);
-    paymentsRepository.createQueryBuilder.mockReturnValue(
-      createPaymentQuery(payment),
-    );
+    paymentRepo.findOneBy.mockResolvedValue(payment);
+    paymentRepo.createQueryBuilder.mockReturnValue(createPaymentQuery(payment));
     dataSource.transaction.mockImplementation(runTransaction(manager));
 
     await expect(
@@ -922,10 +908,8 @@ describe('PaymentService characterization', () => {
       gatewayTransactionDate: '20300101070000',
     });
     const manager = createMutationManager(booking, payment);
-    paymentsRepository.findOneBy.mockResolvedValue(payment);
-    paymentsRepository.createQueryBuilder.mockReturnValue(
-      createPaymentQuery(payment),
-    );
+    paymentRepo.findOneBy.mockResolvedValue(payment);
+    paymentRepo.createQueryBuilder.mockReturnValue(createPaymentQuery(payment));
     dataSource.transaction.mockImplementation(runTransaction(manager));
     gateway.requestRefund.mockRejectedValue(new Error('provider timeout'));
 
@@ -981,10 +965,8 @@ describe('PaymentService characterization', () => {
       }),
     });
     const manager = createMutationManager(booking, payment);
-    paymentsRepository.findOneBy.mockResolvedValue(payment);
-    paymentsRepository.createQueryBuilder.mockReturnValue(
-      createPaymentQuery(payment),
-    );
+    paymentRepo.findOneBy.mockResolvedValue(payment);
+    paymentRepo.createQueryBuilder.mockReturnValue(createPaymentQuery(payment));
     dataSource.transaction.mockImplementation(runTransaction(manager));
     gateway.lookupTransaction.mockResolvedValue({
       ...successfulRefundResult(),
@@ -1016,10 +998,8 @@ describe('PaymentService characterization', () => {
     });
     const payment = refundableVnPayPayment();
     const manager = createMutationManager(booking, payment);
-    paymentsRepository.findOneBy.mockResolvedValue(payment);
-    paymentsRepository.createQueryBuilder.mockReturnValue(
-      createPaymentQuery(payment),
-    );
+    paymentRepo.findOneBy.mockResolvedValue(payment);
+    paymentRepo.createQueryBuilder.mockReturnValue(createPaymentQuery(payment));
     dataSource.transaction.mockImplementation(runTransaction(manager));
     gateway.requestRefund.mockResolvedValue(successfulRefundResult());
 
@@ -1083,10 +1063,8 @@ describe('PaymentService characterization', () => {
       reviewReason: PaymentReviewReason.BOOKING_CANCELLED,
     });
     const manager = createMutationManager(booking, payment);
-    paymentsRepository.findOneBy.mockResolvedValue(payment);
-    paymentsRepository.createQueryBuilder.mockReturnValue(
-      createPaymentQuery(payment),
-    );
+    paymentRepo.findOneBy.mockResolvedValue(payment);
+    paymentRepo.createQueryBuilder.mockReturnValue(createPaymentQuery(payment));
     dataSource.transaction.mockImplementation(runTransaction(manager));
     gateway.requestRefund.mockResolvedValue(successfulRefundResult());
 
@@ -1122,10 +1100,8 @@ describe('PaymentService characterization', () => {
     });
     const payment = refundableVnPayPayment();
     const manager = createMutationManager(booking, payment);
-    paymentsRepository.findOneBy.mockResolvedValue(payment);
-    paymentsRepository.createQueryBuilder.mockReturnValue(
-      createPaymentQuery(payment),
-    );
+    paymentRepo.findOneBy.mockResolvedValue(payment);
+    paymentRepo.createQueryBuilder.mockReturnValue(createPaymentQuery(payment));
     dataSource.transaction.mockImplementation(runTransaction(manager));
     gateway.requestRefund.mockResolvedValue({
       ...successfulRefundResult(),
@@ -1155,10 +1131,8 @@ describe('PaymentService characterization', () => {
     });
     const payment = refundableVnPayPayment();
     const manager = createMutationManager(booking, payment);
-    paymentsRepository.findOneBy.mockResolvedValue(payment);
-    paymentsRepository.createQueryBuilder.mockReturnValue(
-      createPaymentQuery(payment),
-    );
+    paymentRepo.findOneBy.mockResolvedValue(payment);
+    paymentRepo.createQueryBuilder.mockReturnValue(createPaymentQuery(payment));
     dataSource.transaction.mockImplementation(runTransaction(manager));
     gateway.requestRefund.mockResolvedValue({
       ...successfulRefundResult(),
@@ -1194,10 +1168,8 @@ describe('PaymentService characterization', () => {
     });
     const payment = refundableVnPayPayment();
     const manager = createMutationManager(booking, payment);
-    paymentsRepository.findOneBy.mockResolvedValue(payment);
-    paymentsRepository.createQueryBuilder.mockReturnValue(
-      createPaymentQuery(payment),
-    );
+    paymentRepo.findOneBy.mockResolvedValue(payment);
+    paymentRepo.createQueryBuilder.mockReturnValue(createPaymentQuery(payment));
     dataSource.transaction.mockImplementation(runTransaction(manager));
     gateway.requestRefund.mockResolvedValue({
       ...successfulRefundResult(),
@@ -1232,10 +1204,8 @@ describe('PaymentService characterization', () => {
       }),
     });
     const manager = createMutationManager(booking, payment);
-    paymentsRepository.findOneBy.mockResolvedValue(payment);
-    paymentsRepository.createQueryBuilder.mockReturnValue(
-      createPaymentQuery(payment),
-    );
+    paymentRepo.findOneBy.mockResolvedValue(payment);
+    paymentRepo.createQueryBuilder.mockReturnValue(createPaymentQuery(payment));
     dataSource.transaction.mockImplementation(runTransaction(manager));
     gateway.lookupTransaction.mockResolvedValue({
       ...successfulRefundResult(),
@@ -1279,10 +1249,8 @@ describe('PaymentService characterization', () => {
       }),
     });
     const manager = createMutationManager(booking, payment);
-    paymentsRepository.findOneBy.mockResolvedValue(payment);
-    paymentsRepository.createQueryBuilder.mockReturnValue(
-      createPaymentQuery(payment),
-    );
+    paymentRepo.findOneBy.mockResolvedValue(payment);
+    paymentRepo.createQueryBuilder.mockReturnValue(createPaymentQuery(payment));
     dataSource.transaction.mockImplementation(runTransaction(manager));
     gateway.lookupTransaction.mockResolvedValue(successfulRefundResult());
 
@@ -1366,8 +1334,8 @@ describe('PaymentService characterization', () => {
     const manager = createMutationManager(booking, duplicate, {
       canonicalPayment: canonical,
     });
-    paymentsRepository.findOneBy.mockResolvedValue(duplicate);
-    paymentsRepository.createQueryBuilder.mockReturnValue(
+    paymentRepo.findOneBy.mockResolvedValue(duplicate);
+    paymentRepo.createQueryBuilder.mockReturnValue(
       createPaymentQuery(duplicate),
     );
     dataSource.transaction.mockImplementation(runTransaction(manager));
@@ -1437,7 +1405,7 @@ describe('PaymentService characterization', () => {
     });
     const canonical = refundableVnPayPayment({ id: '501' });
     const manager = createMutationManager(booking, canonical);
-    paymentsRepository.findOneBy.mockResolvedValue(canonical);
+    paymentRepo.findOneBy.mockResolvedValue(canonical);
     dataSource.transaction.mockImplementation(runTransaction(manager));
 
     await expect(
@@ -1463,7 +1431,7 @@ describe('PaymentService characterization', () => {
       reviewCanonicalPaymentId: null,
     });
     const manager = createMutationManager(booking, reviewed);
-    paymentsRepository.findOneBy.mockResolvedValue(reviewed);
+    paymentRepo.findOneBy.mockResolvedValue(reviewed);
     dataSource.transaction.mockImplementation(runTransaction(manager));
 
     await expect(
@@ -1487,7 +1455,7 @@ describe('PaymentService characterization', () => {
     const manager = createMutationManager(booking, duplicate, {
       canonicalPayment: null,
     });
-    paymentsRepository.findOneBy.mockResolvedValue(duplicate);
+    paymentRepo.findOneBy.mockResolvedValue(duplicate);
     dataSource.transaction.mockImplementation(runTransaction(manager));
 
     await expect(
@@ -1515,7 +1483,7 @@ describe('PaymentService characterization', () => {
     const manager = createMutationManager(booking, duplicate, {
       canonicalPayment: canonical,
     });
-    paymentsRepository.findOneBy.mockResolvedValue(duplicate);
+    paymentRepo.findOneBy.mockResolvedValue(duplicate);
     dataSource.transaction.mockImplementation(runTransaction(manager));
 
     await expect(
@@ -1551,8 +1519,8 @@ describe('PaymentService characterization', () => {
     const manager = createMutationManager(booking, duplicate, {
       canonicalPayment: canonical,
     });
-    paymentsRepository.findOneBy.mockResolvedValue(duplicate);
-    paymentsRepository.createQueryBuilder.mockReturnValue(
+    paymentRepo.findOneBy.mockResolvedValue(duplicate);
+    paymentRepo.createQueryBuilder.mockReturnValue(
       createPaymentQuery(duplicate),
     );
     dataSource.transaction.mockImplementation(runTransaction(manager));
@@ -1594,8 +1562,8 @@ describe('PaymentService characterization', () => {
     const manager = createMutationManager(booking, duplicate, {
       canonicalPayment: canonical,
     });
-    paymentsRepository.findOneBy.mockResolvedValue(duplicate);
-    paymentsRepository.createQueryBuilder.mockReturnValue(
+    paymentRepo.findOneBy.mockResolvedValue(duplicate);
+    paymentRepo.createQueryBuilder.mockReturnValue(
       createPaymentQuery(duplicate),
     );
     dataSource.transaction.mockImplementation(runTransaction(manager));
@@ -1690,8 +1658,8 @@ describe('PaymentService characterization', () => {
     const manager = createMutationManager(booking, duplicate, {
       canonicalPayment: canonical,
     });
-    paymentsRepository.findOneBy.mockResolvedValue(duplicate);
-    paymentsRepository.createQueryBuilder.mockReturnValue(
+    paymentRepo.findOneBy.mockResolvedValue(duplicate);
+    paymentRepo.createQueryBuilder.mockReturnValue(
       createPaymentQuery(duplicate),
     );
     dataSource.transaction.mockImplementation(runTransaction(manager));
@@ -1723,8 +1691,8 @@ describe('PaymentService characterization', () => {
     const manager = createMutationManager(booking, duplicate, {
       canonicalPayment: canonical,
     });
-    paymentsRepository.findOneBy.mockResolvedValue(duplicate);
-    paymentsRepository.createQueryBuilder.mockReturnValue(
+    paymentRepo.findOneBy.mockResolvedValue(duplicate);
+    paymentRepo.createQueryBuilder.mockReturnValue(
       createPaymentQuery(duplicate),
     );
     dataSource.transaction.mockImplementation(runTransaction(manager));
@@ -1910,9 +1878,9 @@ function runTransaction(manager: EntityManager) {
     Promise.resolve(work(manager));
 }
 
-function getRecordedAuditInputs(record: jest.Mock): RecordAuditLogInput[] {
+function getRecordedAuditInputs(record: jest.Mock): AuditLogInput[] {
   return (record.mock.calls as unknown[][]).map(
-    ([, input]) => input as RecordAuditLogInput,
+    ([, input]) => input as AuditLogInput,
   );
 }
 

@@ -6,7 +6,7 @@ import { assertBookingCanAcceptPayment } from '../../../../src/module/payment/do
 import { BookingPaymentNotAllowedError } from '../../../../src/module/payment/domain/payment.errors';
 
 describe('payment booking domain policy', () => {
-  const paymentTimeoutMilliseconds = 15 * 60 * 1000;
+  const paymentTimeoutMs = 15 * 60 * 1000;
   const now = new Date('2030-01-01T00:10:00.000Z').getTime();
 
   it.each([BookingStatus.PENDING_PAYMENT, BookingStatus.CONFIRMED])(
@@ -15,7 +15,7 @@ describe('payment booking domain policy', () => {
       expect(() =>
         assertBookingCanAcceptPayment(
           bookingFixture({ status }),
-          paymentTimeoutMilliseconds,
+          paymentTimeoutMs,
           now,
         ),
       ).not.toThrow();
@@ -55,7 +55,7 @@ describe('payment booking domain policy', () => {
       expect.assertions(3);
 
       try {
-        assertBookingCanAcceptPayment(booking, paymentTimeoutMilliseconds, now);
+        assertBookingCanAcceptPayment(booking, paymentTimeoutMs, now);
       } catch (error) {
         expect(error).toBeInstanceOf(BookingPaymentNotAllowedError);
         expect(error).toMatchObject({ reason });
@@ -70,7 +70,7 @@ describe('payment booking domain policy', () => {
     expect(() =>
       assertBookingCanAcceptPayment(
         booking,
-        paymentTimeoutMilliseconds,
+        paymentTimeoutMs,
         new Date('2030-01-01T00:15:00.000Z').getTime(),
       ),
     ).toThrow(BookingPaymentNotAllowedError);

@@ -9,7 +9,7 @@ import {
   AuditActorType,
   AuditEntityType,
 } from '../../../../src/module/audit/domain/audit-log';
-import type { RecordAuditLogInput } from '../../../../src/module/audit/audit-log.service';
+import type { AuditLogInput } from '../../../../src/module/audit/audit-log.service';
 import { BookingPaymentLifecycleService } from '../../../../src/module/booking/booking-payment-lifecycle.service';
 import { BookingTransitionPolicy } from '../../../../src/module/booking/domain/booking-transition.policy';
 import {
@@ -143,9 +143,7 @@ describe('BookingPaymentLifecycleService', () => {
         }),
       );
       const [, statusChangeInput] = (
-        auditLog.record.mock.calls as Array<
-          [TransactionContext, RecordAuditLogInput]
-        >
+        auditLog.record.mock.calls as Array<[TransactionContext, AuditLogInput]>
       )[1];
       expect(statusChangeInput.metadata).toMatchObject({
         fromStatus: BookingStatus.PENDING_PAYMENT,
@@ -223,9 +221,7 @@ describe('BookingPaymentLifecycleService', () => {
       expect(booking.status).toBe(BookingStatus.CANCELLED);
       expect(paymentAcceptanceStore.saveBookingState).not.toHaveBeenCalled();
       const reviewAuditInputs = (
-        auditLog.record.mock.calls as Array<
-          [TransactionContext, RecordAuditLogInput]
-        >
+        auditLog.record.mock.calls as Array<[TransactionContext, AuditLogInput]>
       ).map(([, input]) => input);
       expect(
         reviewAuditInputs.some(
@@ -344,9 +340,7 @@ describe('BookingPaymentLifecycleService', () => {
       expect(paymentRefundStore.saveBookingState).not.toHaveBeenCalled();
       expect(calendarStore.releaseBookingReservation).not.toHaveBeenCalled();
       const refundAuditInputs = (
-        auditLog.record.mock.calls as Array<
-          [TransactionContext, RecordAuditLogInput]
-        >
+        auditLog.record.mock.calls as Array<[TransactionContext, AuditLogInput]>
       ).map(([, input]) => input);
       expect(
         refundAuditInputs.some(
@@ -411,13 +405,13 @@ describe('BookingPaymentLifecycleService', () => {
     });
   });
 
-  describe('expirePendingPayments', () => {
+  describe('expireUnpaidBookings', () => {
     it('expires the locked unpaid batch with payments and calendars in one transaction', async () => {
       const now = new Date('2030-01-01T01:00:00.000Z');
       const expired = [bookingFixture(), bookingFixture({ id: '101' })];
       bookingStore.findExpiredForUpdate.mockResolvedValue(expired);
 
-      await expect(lifecycle.expirePendingPayments(now)).resolves.toBe(2);
+      await expect(lifecycle.expireUnpaidBookings(now)).resolves.toBe(2);
 
       expect(expired).toEqual([
         expect.objectContaining({ status: BookingStatus.CANCELLED }),
@@ -439,7 +433,7 @@ describe('BookingPaymentLifecycleService', () => {
     });
 
     it('does nothing when no booking has expired', async () => {
-      await expect(lifecycle.expirePendingPayments()).resolves.toBe(0);
+      await expect(lifecycle.expireUnpaidBookings()).resolves.toBe(0);
       expect(bookingStore.saveState).not.toHaveBeenCalled();
       expect(
         paymentStateStore.failPendingOnlinePayments,

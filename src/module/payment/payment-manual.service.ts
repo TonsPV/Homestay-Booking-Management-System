@@ -35,16 +35,16 @@ import { PaymentMethod, PaymentStatus } from './domain/payment-state';
  */
 @Injectable()
 export class PaymentManualService {
-  private readonly paymentTimeoutMilliseconds: number;
+  private readonly paymentTimeoutMs: number;
 
   constructor(
     private readonly transactions: TransactionRunner,
     private readonly payments: PaymentAcceptanceStore,
     private readonly lifecycle: BookingPaymentLifecycleService,
-    private readonly paymentQueryService: PaymentQueryService,
+    private readonly paymentQuery: PaymentQueryService,
     configService: ConfigService,
   ) {
-    this.paymentTimeoutMilliseconds =
+    this.paymentTimeoutMs =
       configService.getOrThrow<number>('BOOKING_PAYMENT_TIMEOUT_MINUTES') *
       60 *
       1000;
@@ -65,7 +65,7 @@ export class PaymentManualService {
 
     try {
       paymentId = await this.transactions.run(async (transaction) => {
-        const booking = await this.getLockedBooking(transaction, bookingId);
+        const booking = await this.lockBooking(transaction, bookingId);
         const existingPayment = await this.payments.findByIdempotencyKey(
           transaction,
           key,
@@ -95,7 +95,7 @@ export class PaymentManualService {
           );
         }
 
-        assertBookingCanAcceptPayment(booking, this.paymentTimeoutMilliseconds);
+        assertBookingCanAcceptPayment(booking, this.paymentTimeoutMs);
 
         const bookingFromStatus = booking.status;
         const now = new Date();
@@ -136,7 +136,7 @@ export class PaymentManualService {
       );
     }
 
-    return this.paymentQueryService.getManagementPayment(paymentId);
+    return this.paymentQuery.getManagementPayment(paymentId);
   }
 
   private assertIdempotentReplay(
@@ -177,10 +177,7 @@ export class PaymentManualService {
     return payment.id;
   }
 
-  private async getLockedBooking(
-    context: TransactionContext,
-    bookingId: string,
-  ) {
+  private async lockBooking(context: TransactionContext, bookingId: string) {
     const booking = await this.payments.lockBooking(context, bookingId);
 
     if (booking === null) {
@@ -191,7 +188,7 @@ export class PaymentManualService {
   }
 
   private requireManualMethod(value: unknown): PaymentMethod {
-    const method = this.optionalPaymentMethod(value);
+    const method = this.optionalMethod(value);
 
     if (
       method === undefined ||
@@ -203,7 +200,7 @@ export class PaymentManualService {
     return method;
   }
 
-  private optionalPaymentMethod(value: unknown): PaymentMethod | undefined {
+  private optionalMethod(value: unknown): PaymentMethod | undefined {
     if (value === undefined || value === null || value === '') {
       return undefined;
     }

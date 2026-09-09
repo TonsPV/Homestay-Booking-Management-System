@@ -18,7 +18,7 @@ import {
 import { ErrorCode } from '../../common/error-codes';
 import { AppHttpException } from '../../common/http/app-http-exception';
 import {
-  getVietnamesePhoneLookupVariants,
+  getPhoneLookupVariants,
   isValidIdempotencyKey,
   optionalNullableEmail,
   optionalNullableTrimmedString,
@@ -61,7 +61,7 @@ import {
 
 const MAX_TOTAL_CENTS = 999_999_999_999n;
 
-interface NormalizedCreateBookingInput {
+interface BookingInput {
   roomId: string;
   checkInDate: string;
   checkOutDate: string;
@@ -79,7 +79,7 @@ interface BookingContact {
   email: string | null;
 }
 
-export interface CustomerBookingCreationResult {
+export interface CustomerBookingResult {
   customerId: string;
   bookingId: string;
 }
@@ -94,28 +94,28 @@ interface BookingRequestIntent {
 @Injectable()
 export class BookingCreationService {
   private readonly logger = new Logger(BookingCreationService.name);
-  private readonly paymentTimeoutMilliseconds: number;
-  private readonly maxActiveUnpaidBookingsPerCustomer: number;
-  private readonly maxHeldNightsPerCustomer: number;
+  private readonly paymentTimeoutMs: number;
+  private readonly maxUnpaidBookings: number;
+  private readonly maxHeldNights: number;
 
   constructor(
     private readonly transactions: TransactionRunner,
     configService: ConfigService,
-    private readonly bookingStayPolicy: BookingStayPolicy,
+    private readonly stayPolicy: BookingStayPolicy,
     private readonly bookings: BookingCreationStore,
     private readonly customers: BookingCustomerStore,
     private readonly rooms: BookingRoomStore,
     private readonly roomCalendar: RoomCalendarStore,
     private readonly auditLog: TransactionalAuditLog,
   ) {
-    this.paymentTimeoutMilliseconds =
+    this.paymentTimeoutMs =
       configService.getOrThrow<number>('BOOKING_PAYMENT_TIMEOUT_MINUTES') *
       60 *
       1000;
-    this.maxActiveUnpaidBookingsPerCustomer = configService.getOrThrow<number>(
+    this.maxUnpaidBookings = configService.getOrThrow<number>(
       'BOOKING_MAX_ACTIVE_UNPAID_PER_CUSTOMER',
     );
-    this.maxHeldNightsPerCustomer = configService.getOrThrow<number>(
+    this.maxHeldNights = configService.getOrThrow<number>(
       'BOOKING_MAX_HELD_NIGHTS_PER_CUSTOMER',
     );
   }
@@ -125,16 +125,19 @@ export class BookingCreationService {
     body: CreateBookingDto,
     context?: BookingAuditContext,
     requestIntentKey?: string,
-  ): Promise<CustomerBookingCreationResult> {
+  ): Promise<CustomerBookingResult> {
     const activeCustomerId = this.requireActorId(customerId);
-    const input = this.normalizeCreateInput(body);
+    const input = this.normalizeInput(body);
     const requestIntent = this.buildRequestIntent(
       BookingRequestIntentActorType.CUSTOMER,
       activeCustomerId,
       requestIntentKey,
       { input },
     );
-    const bookingId = await this.createBookingInTransaction(
+    if (requestIntent === null) {
+      this.assertStayAllowed(input);
+    }
+    const bookingId = await this.createBooking(
       input,
       async (transaction) =>
         this.getActiveCustomer(transaction, activeCustomerId, true, true),
@@ -156,7 +159,7 @@ export class BookingCreationService {
     requestIntentKey?: string,
   ): Promise<string> {
     const createdByUserId = this.requireActorId(userId);
-    const input = this.normalizeCreateInput(body);
+    const input = this.normalizeInput(body);
     const requestedCustomerId = this.optionalId(
       body.customerId,
       'Customer id khong hop le.',
@@ -167,11 +170,14 @@ export class BookingCreationService {
       requestIntentKey,
       { input, requestedCustomerId },
     );
+    if (requestIntent === null) {
+      this.assertStayAllowed(input);
+    }
 
-    return this.createBookingInTransaction(
+    return this.createBooking(
       input,
       async (transaction) =>
-        this.resolveManagementCustomer(transaction, requestedCustomerId, input),
+        this.resolveCustomer(transaction, requestedCustomerId, input),
       createdByUserId,
       false,
       AuditActorType.USER,
@@ -181,43 +187,61 @@ export class BookingCreationService {
     );
   }
 
-  private async createBookingInTransaction(
-    input: NormalizedCreateBookingInput,
+  private async createBooking(
+    input: BookingInput,
     resolveCustomer: (context: TransactionContext) => Promise<Customer>,
     createdByUserId: string | null,
-    enforceCustomerAdmission: boolean,
+    enforceAdmission: boolean,
     actorType: AuditActorType,
     actorId: string,
     requestIntent: BookingRequestIntent | null,
     requestId?: string,
   ): Promise<string> {
     try {
-      return await this.transactions.run(async (transaction) => {
+      const lookup =
+        requestIntent === null
+          ? null
+          : {
+              actorType: requestIntent.actorType,
+              actorId: requestIntent.actorId,
+              key: requestIntent.key,
+            };
+      // Replay without opening a transaction or re-applying admission rules.
+      // A consistent read inside REPEATABLE READ before the customer lock
+      // would freeze a stale snapshot for the quota queries below.
+      if (lookup !== null && requestIntent !== null) {
         const existingBooking =
-          requestIntent === null
+          await this.bookings.findRequestIntentSnapshot(lookup);
+        if (existingBooking !== null) {
+          this.assertIntentReplay(existingBooking, requestIntent);
+          return existingBooking.id;
+        }
+      }
+
+      return await this.transactions.run(async (transaction) => {
+        const customer = await resolveCustomer(transaction);
+
+        // Customer admission holds its lock before the first consistent read.
+        // Recheck identity: a concurrent request may have committed while we waited.
+        const existingBooking =
+          lookup === null
             ? null
-            : await this.bookings.findRequestIntent(transaction, {
-                actorType: requestIntent.actorType,
-                actorId: requestIntent.actorId,
-                key: requestIntent.key,
-              });
+            : await this.bookings.findRequestIntent(transaction, lookup);
 
         if (existingBooking !== null && requestIntent !== null) {
-          this.assertRequestIntentReplay(existingBooking, requestIntent);
+          this.assertIntentReplay(existingBooking, requestIntent);
           return existingBooking.id;
         }
 
-        const customer = await resolveCustomer(transaction);
-
-        if (enforceCustomerAdmission) {
-          await this.assertCustomerBookingAdmission(
-            transaction,
-            customer.id,
-            input.nights,
-          );
+        if (requestIntent !== null) {
+          this.assertStayAllowed(input);
         }
 
-        const room = await this.getBookableRoom(transaction, input.roomId);
+        if (enforceAdmission) {
+          await this.assertAdmission(transaction, customer.id, input.nights);
+        }
+
+        const room = await this.lockBookableRoom(transaction, input.roomId);
 
         if (input.guestCount > room.roomType.maxGuests) {
           throw new AppHttpException(
@@ -255,9 +279,7 @@ export class BookingCreationService {
           ),
           status: BookingStatus.PENDING_PAYMENT,
           paymentStatus: BookingPaymentStatus.UNPAID,
-          paymentExpiresAt: new Date(
-            Date.now() + this.paymentTimeoutMilliseconds,
-          ),
+          paymentExpiresAt: new Date(Date.now() + this.paymentTimeoutMs),
           customerNote: input.customerNote,
           cancelledAt: null,
           cancellationReason: null,
@@ -270,7 +292,7 @@ export class BookingCreationService {
           transaction,
           room.id,
           savedBooking.id,
-          this.bookingStayPolicy.enumerateStayDates(
+          this.stayPolicy.enumerateStayDates(
             input.checkInDate,
             input.checkOutDate,
           ),
@@ -305,12 +327,12 @@ export class BookingCreationService {
         });
 
         if (existingBooking !== null) {
-          this.assertRequestIntentReplay(existingBooking, requestIntent);
+          this.assertIntentReplay(existingBooking, requestIntent);
           return existingBooking.id;
         }
       }
 
-      this.throwBookingWriteConflict(error, input.roomId, requestId);
+      this.throwWriteConflict(error, input.roomId, requestId);
     }
   }
 
@@ -347,7 +369,7 @@ export class BookingCreationService {
     return { actorType, actorId, key, hash };
   }
 
-  private assertRequestIntentReplay(
+  private assertIntentReplay(
     booking: Booking,
     requestIntent: BookingRequestIntent,
   ): void {
@@ -360,10 +382,10 @@ export class BookingCreationService {
     }
   }
 
-  private async resolveManagementCustomer(
+  private async resolveCustomer(
     context: TransactionContext,
     requestedCustomerId: string | undefined,
-    input: NormalizedCreateBookingInput,
+    input: BookingInput,
   ): Promise<Customer> {
     if (requestedCustomerId !== undefined) {
       return this.getActiveCustomer(context, requestedCustomerId, false, false);
@@ -395,11 +417,11 @@ export class BookingCreationService {
 
     const existingCustomer = await this.customers.findByPhoneVariants(
       context,
-      getVietnamesePhoneLookupVariants(input.contactPhone),
+      getPhoneLookupVariants(input.contactPhone),
     );
 
     if (existingCustomer !== null) {
-      this.assertCustomerIsActive(existingCustomer);
+      this.assertActiveCustomer(existingCustomer);
       return existingCustomer;
     }
 
@@ -439,12 +461,12 @@ export class BookingCreationService {
     context: TransactionContext,
     id: string,
     missingIsUnauthorized: boolean,
-    lockForBookingAdmission: boolean,
+    lockForAdmission: boolean,
   ): Promise<Customer> {
     const customer = await this.customers.findById(
       context,
       id,
-      lockForBookingAdmission,
+      lockForAdmission,
     );
 
     if (customer === null) {
@@ -455,11 +477,11 @@ export class BookingCreationService {
       throw new NotFoundException('Khong tim thay customer.');
     }
 
-    this.assertCustomerIsActive(customer);
+    this.assertActiveCustomer(customer);
     return customer;
   }
 
-  private async assertCustomerBookingAdmission(
+  private async assertAdmission(
     context: TransactionContext,
     customerId: string,
     requestedNights: number,
@@ -469,12 +491,12 @@ export class BookingCreationService {
       customerId,
     );
 
-    if (activeUnpaidCount >= this.maxActiveUnpaidBookingsPerCustomer) {
+    if (activeUnpaidCount >= this.maxUnpaidBookings) {
       throw new AppHttpException(
         HttpStatus.CONFLICT,
         ErrorCode.BOOKING_ACTIVE_UNPAID_LIMIT_REACHED,
-        `Ban dang co toi da ${this.maxActiveUnpaidBookingsPerCustomer} booking cho thanh toan. Vui long thanh toan, huy hoac cho booking het han.`,
-        { details: { limit: this.maxActiveUnpaidBookingsPerCustomer } },
+        `Ban dang co toi da ${this.maxUnpaidBookings} booking cho thanh toan. Vui long thanh toan, huy hoac cho booking het han.`,
+        { details: { limit: this.maxUnpaidBookings } },
       );
     }
 
@@ -485,30 +507,27 @@ export class BookingCreationService {
     const heldNights = activeUnpaidBookings.reduce(
       (total, booking) =>
         total +
-        this.bookingStayPolicy.countNights(
-          booking.checkInDate,
-          booking.checkOutDate,
-        ),
+        this.stayPolicy.countNights(booking.checkInDate, booking.checkOutDate),
       0,
     );
 
-    if (heldNights + requestedNights > this.maxHeldNightsPerCustomer) {
+    if (heldNights + requestedNights > this.maxHeldNights) {
       throw new AppHttpException(
         HttpStatus.CONFLICT,
         ErrorCode.BOOKING_HELD_NIGHTS_LIMIT_REACHED,
-        `Tong so dem dang giu va booking moi khong duoc vuot qua ${this.maxHeldNightsPerCustomer} dem.`,
-        { details: { limit: this.maxHeldNightsPerCustomer } },
+        `Tong so dem dang giu va booking moi khong duoc vuot qua ${this.maxHeldNights} dem.`,
+        { details: { limit: this.maxHeldNights } },
       );
     }
   }
 
-  private assertCustomerIsActive(customer: Customer): void {
+  private assertActiveCustomer(customer: Customer): void {
     if (customer.status === 'LOCKED') {
       throw new ForbiddenException('Tai khoan bi khoa.');
     }
   }
 
-  private async getBookableRoom(
+  private async lockBookableRoom(
     context: TransactionContext,
     id: string,
   ): Promise<Room> {
@@ -556,11 +575,9 @@ export class BookingCreationService {
     return room;
   }
 
-  private normalizeCreateInput(
-    body: CreateBookingDto,
-  ): NormalizedCreateBookingInput {
+  private normalizeInput(body: CreateBookingDto): BookingInput {
     const roomId = this.requireId(body.roomId, 'Room id khong hop le.');
-    const stayRange = this.requireStayRange(
+    const stayRange = this.normalizeStayRange(
       body.checkInDate,
       body.checkOutDate,
     );
@@ -599,9 +616,17 @@ export class BookingCreationService {
     };
   }
 
-  private requireStayRange(checkIn: unknown, checkOut: unknown) {
+  private normalizeStayRange(checkIn: unknown, checkOut: unknown) {
     try {
-      return this.bookingStayPolicy.requireStayRange(checkIn, checkOut);
+      return this.stayPolicy.normalizeStayRange(checkIn, checkOut);
+    } catch (error) {
+      throwMappedBookingDomainError(error);
+    }
+  }
+
+  private assertStayAllowed(input: BookingInput): void {
+    try {
+      this.stayPolicy.assertWithinBookingWindow(input);
     } catch (error) {
       throwMappedBookingDomainError(error);
     }
@@ -609,7 +634,7 @@ export class BookingCreationService {
 
   private resolveContact(
     customer: Customer,
-    input: NormalizedCreateBookingInput,
+    input: BookingInput,
   ): BookingContact {
     return {
       name: input.contactName ?? customer.fullName,
@@ -680,7 +705,7 @@ export class BookingCreationService {
     return this.requireId(value, message);
   }
 
-  private throwBookingWriteConflict(
+  private throwWriteConflict(
     error: unknown,
     roomId: string,
     requestId?: string,

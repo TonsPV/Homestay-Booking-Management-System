@@ -28,7 +28,7 @@ describe('BookingQueryService', () => {
         existsBy: jest.fn().mockResolvedValue(false),
       } as unknown as Repository<Payment>,
       {
-        evaluateByCustomerId: jest.fn().mockResolvedValue({
+        getCapabilitiesByCustomerId: jest.fn().mockResolvedValue({
           canSetInitialPassword: true,
           reasonCode: null,
         }),

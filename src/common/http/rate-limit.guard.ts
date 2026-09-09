@@ -9,7 +9,7 @@ import { Reflector } from '@nestjs/core';
 import type { Request, Response } from 'express';
 
 import {
-  assertValidRateLimitOptions,
+  assertRateLimitOptions,
   RATE_LIMIT_KEY,
   type RateLimitOptions,
 } from './rate-limit.decorator';
@@ -38,7 +38,7 @@ export class RateLimitGuard implements CanActivate {
       return true;
     }
 
-    assertValidRateLimitOptions(options);
+    assertRateLimitOptions(options);
 
     const http = context.switchToHttp();
     const request = http.getRequest<Request>();

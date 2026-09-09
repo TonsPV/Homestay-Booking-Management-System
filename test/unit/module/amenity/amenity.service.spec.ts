@@ -18,11 +18,12 @@ describe('AmenityService', () => {
       transaction: jest.Mock;
     };
   };
-  let managerAmenityRepository: {
+  let txAmenityRepo: {
     createQueryBuilder: jest.Mock;
+    save: jest.Mock;
     softRemove: jest.Mock;
   };
-  let managerRoomTypeRepository: {
+  let txRoomTypeRepo: {
     createQueryBuilder: jest.Mock;
   };
   let transactionManager: {
@@ -31,20 +32,19 @@ describe('AmenityService', () => {
   let service: AmenityService;
 
   beforeEach(() => {
-    managerAmenityRepository = {
+    txAmenityRepo = {
       createQueryBuilder: jest.fn(),
+      save: jest.fn((value: Amenity) => Promise.resolve(amenityFixture(value))),
       softRemove: jest.fn((value: Amenity) =>
         Promise.resolve({ ...value, deletedAt: new Date('2026-02-01') }),
       ),
     };
-    managerRoomTypeRepository = {
+    txRoomTypeRepo = {
       createQueryBuilder: jest.fn(),
     };
     transactionManager = {
       getRepository: jest.fn((entity: unknown) =>
-        entity === Amenity
-          ? managerAmenityRepository
-          : managerRoomTypeRepository,
+        entity === Amenity ? txAmenityRepo : txRoomTypeRepo,
       ),
     };
     repository = {
@@ -146,8 +146,10 @@ describe('AmenityService', () => {
 
   it('updates fields but rejects an empty update', async () => {
     const amenity = amenityFixture();
-    repository.findOneBy.mockResolvedValue(amenity);
-    repository.createQueryBuilder.mockReturnValue(createQueryBuilder());
+    const lockQuery = createQueryBuilder({ one: amenity });
+    txAmenityRepo.createQueryBuilder
+      .mockReturnValueOnce(lockQuery)
+      .mockReturnValueOnce(createQueryBuilder());
 
     await expect(
       service.update('1', { name: ' Wi-Fi 6 ', description: null }),
@@ -155,6 +157,10 @@ describe('AmenityService', () => {
       name: 'Wi-Fi 6',
       description: null,
     });
+    expect(repository.manager.transaction).toHaveBeenCalledTimes(1);
+    expect(lockQuery.setLock).toHaveBeenCalledWith('pessimistic_write');
+    expect(txAmenityRepo.save).toHaveBeenCalledWith(amenity);
+    expect(repository.save).not.toHaveBeenCalled();
     await expect(service.update('1', {})).rejects.toBeInstanceOf(
       BadRequestException,
     );
@@ -164,8 +170,8 @@ describe('AmenityService', () => {
     const amenity = amenityFixture();
     const amenityQuery = createQueryBuilder({ one: amenity });
     const roomTypeQuery = createQueryBuilder({ exists: false });
-    managerAmenityRepository.createQueryBuilder.mockReturnValue(amenityQuery);
-    managerRoomTypeRepository.createQueryBuilder.mockReturnValue(roomTypeQuery);
+    txAmenityRepo.createQueryBuilder.mockReturnValue(amenityQuery);
+    txRoomTypeRepo.createQueryBuilder.mockReturnValue(roomTypeQuery);
 
     await expect(service.softDelete('1')).resolves.toMatchObject({
       id: '1',
@@ -180,15 +186,15 @@ describe('AmenityService', () => {
       id: '1',
     });
     expect(amenityQuery.setLock).toHaveBeenCalledWith('pessimistic_write');
-    expect(managerAmenityRepository.softRemove).toHaveBeenCalledWith(amenity);
+    expect(txAmenityRepo.softRemove).toHaveBeenCalledWith(amenity);
     expect(repository.softRemove).not.toHaveBeenCalled();
   });
 
   it('refuses with AMENITY_IN_USE when an active RoomType references the amenity', async () => {
     const amenityQuery = createQueryBuilder({ one: amenityFixture() });
     const roomTypeQuery = createQueryBuilder({ exists: true });
-    managerAmenityRepository.createQueryBuilder.mockReturnValue(amenityQuery);
-    managerRoomTypeRepository.createQueryBuilder.mockReturnValue(roomTypeQuery);
+    txAmenityRepo.createQueryBuilder.mockReturnValue(amenityQuery);
+    txRoomTypeRepo.createQueryBuilder.mockReturnValue(roomTypeQuery);
 
     await expect(service.softDelete('1')).rejects.toMatchObject({
       response: {
@@ -206,7 +212,7 @@ describe('AmenityService', () => {
     expect(roomTypeQuery.where).toHaveBeenCalledWith(
       'roomType.deletedAt IS NULL',
     );
-    expect(managerAmenityRepository.softRemove).not.toHaveBeenCalled();
+    expect(txAmenityRepo.softRemove).not.toHaveBeenCalled();
     expect(repository.softRemove).not.toHaveBeenCalled();
   });
 
@@ -217,17 +223,15 @@ describe('AmenityService', () => {
     'rejects a %s amenity after locking and before checking relations or mutating',
     async (_label, lockedAmenity) => {
       const amenityQuery = createQueryBuilder({ one: lockedAmenity });
-      managerAmenityRepository.createQueryBuilder.mockReturnValue(amenityQuery);
+      txAmenityRepo.createQueryBuilder.mockReturnValue(amenityQuery);
 
       await expect(service.softDelete('1')).rejects.toBeInstanceOf(
         NotFoundException,
       );
 
       expect(amenityQuery.setLock).toHaveBeenCalledWith('pessimistic_write');
-      expect(
-        managerRoomTypeRepository.createQueryBuilder,
-      ).not.toHaveBeenCalled();
-      expect(managerAmenityRepository.softRemove).not.toHaveBeenCalled();
+      expect(txRoomTypeRepo.createQueryBuilder).not.toHaveBeenCalled();
+      expect(txAmenityRepo.softRemove).not.toHaveBeenCalled();
       expect(repository.softRemove).not.toHaveBeenCalled();
     },
   );
@@ -238,7 +242,7 @@ describe('AmenityService', () => {
     );
 
     expect(repository.manager.transaction).not.toHaveBeenCalled();
-    expect(managerAmenityRepository.softRemove).not.toHaveBeenCalled();
+    expect(txAmenityRepo.softRemove).not.toHaveBeenCalled();
   });
 
   it('restores a deleted amenity after checking name availability', async () => {

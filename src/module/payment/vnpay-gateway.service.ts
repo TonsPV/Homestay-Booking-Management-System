@@ -29,7 +29,7 @@ export interface CreatedVnPayPayment {
   transactionDate: string;
 }
 
-export interface VnPayTransactionOperationInput {
+export interface VnPayOperationInput {
   amount: string;
   transactionReference: string;
   transactionId: string;
@@ -40,7 +40,7 @@ export interface VnPayTransactionOperationInput {
   createdAt: Date;
 }
 
-export interface VnPayRefundInput extends VnPayTransactionOperationInput {
+export interface VnPayRefundInput extends VnPayOperationInput {
   createdBy: string;
 }
 
@@ -84,7 +84,7 @@ interface VerifiedVnPayCallback {
   parameters: Record<string, string>;
 }
 
-interface VnPayConfiguration {
+interface VnPayConfig {
   paymentUrl: string;
   returnUrl: string;
   tmnCode: string;
@@ -93,7 +93,7 @@ interface VnPayConfiguration {
 
 export type VnPayBankCode = 'VNPAYQR' | 'VNBANK' | 'INTCARD';
 
-const VIETNAM_UTC_OFFSET_MILLISECONDS = 7 * 60 * 60 * 1000;
+const VIETNAM_UTC_OFFSET_MS = 7 * 60 * 60 * 1000;
 const VNPAY_TRANSACTION_ENDPOINT = '/merchant_webapi/api/transaction';
 
 @Injectable()
@@ -111,7 +111,7 @@ export class VnPayGatewayService {
   }
 
   createPaymentUrl(input: CreateVnPayUrlInput): string {
-    const configuration = this.getConfiguration();
+    const configuration = this.getConfig();
     const client = createVnPayClient(configuration);
 
     return client.buildPaymentUrl({
@@ -135,7 +135,7 @@ export class VnPayGatewayService {
   }
 
   verifyCallback(query: Record<string, unknown>): VerifiedVnPayCallback {
-    const configuration = this.getConfiguration();
+    const configuration = this.getConfig();
     const parameters: Record<string, string> = {};
     let receivedSignature: string | undefined;
 
@@ -204,7 +204,7 @@ export class VnPayGatewayService {
   async refundFull(
     input: VnPayRefundInput,
   ): Promise<VnPayGatewayOperationResult> {
-    const configuration = this.getConfiguration();
+    const configuration = this.getConfig();
     const body: Record<string, string | number> = {
       vnp_Amount: toVnPayBaseAmount(input.amount) * 100,
       vnp_Command: 'refund',
@@ -269,13 +269,13 @@ export class VnPayGatewayService {
   async requestRefund(
     input: VnPayRefundInput,
   ): Promise<VnPayTransactionResult> {
-    return toApplicationTransactionResult(await this.refundFull(input));
+    return toTransactionResult(await this.refundFull(input));
   }
 
   async queryTransaction(
-    input: VnPayTransactionOperationInput,
+    input: VnPayOperationInput,
   ): Promise<VnPayGatewayOperationResult> {
-    const configuration = this.getConfiguration();
+    const configuration = this.getConfig();
     const response = await withVnPayDeadline(
       createVnPayClient(configuration).queryDr({
         vnp_CreateDate: Number(formatVnPayDate(input.createdAt)),
@@ -296,16 +296,16 @@ export class VnPayGatewayService {
   }
 
   async lookupTransaction(
-    input: VnPayTransactionOperationInput,
+    input: VnPayOperationInput,
   ): Promise<VnPayTransactionResult> {
-    return toApplicationTransactionResult(await this.queryTransaction(input));
+    return toTransactionResult(await this.queryTransaction(input));
   }
 
   getTmnCode(): string {
-    return this.getConfiguration().tmnCode;
+    return this.getConfig().tmnCode;
   }
 
-  private getConfiguration(): VnPayConfiguration {
+  private getConfig(): VnPayConfig {
     if (!this.isEnabled()) {
       throw new ServiceUnavailableException(
         'VNPay chua duoc cau hinh tren he thong.',
@@ -348,9 +348,7 @@ export function toVnPayAmount(amount: string): string {
 }
 
 export function formatVnPayDate(value: Date): string {
-  const vietnamTime = new Date(
-    value.getTime() + VIETNAM_UTC_OFFSET_MILLISECONDS,
-  );
+  const vietnamTime = new Date(value.getTime() + VIETNAM_UTC_OFFSET_MS);
 
   return vietnamTime.toISOString().replace(/[-:T]/g, '').slice(0, 14);
 }
@@ -368,7 +366,7 @@ export function parseVnPayDate(value: string | undefined): Date | null {
   const second = Number(value.slice(12, 14));
   const timestamp =
     Date.UTC(year, month - 1, day, hour, minute, second) -
-    VIETNAM_UTC_OFFSET_MILLISECONDS;
+    VIETNAM_UTC_OFFSET_MS;
   const parsed = new Date(timestamp);
 
   if (formatVnPayDate(parsed) !== value || Number.isNaN(parsed.getTime())) {
@@ -378,7 +376,7 @@ export function parseVnPayDate(value: string | undefined): Date | null {
   return parsed;
 }
 
-function createVnPayClient(configuration: VnPayConfiguration): VNPay {
+function createVnPayClient(configuration: VnPayConfig): VNPay {
   const paymentUrl = new URL(configuration.paymentUrl);
   const paymentEndpoint = paymentUrl.pathname.replace(/^\/+/, '');
 
@@ -419,7 +417,7 @@ function requireVnPayTransactionNumber(value: string): number {
 
 function normalizeOperationResponse(
   response: QueryDrResponse,
-  expected: Pick<VnPayConfiguration, 'tmnCode'> & {
+  expected: Pick<VnPayConfig, 'tmnCode'> & {
     transactionReference: string;
   },
 ): VnPayGatewayOperationResult {
@@ -452,7 +450,7 @@ function normalizeOperationResponse(
   };
 }
 
-function toApplicationTransactionResult(
+function toTransactionResult(
   result: VnPayGatewayOperationResult,
 ): VnPayTransactionResult {
   return {
@@ -470,7 +468,7 @@ function toApplicationTransactionResult(
 
 function normalizeRawRefundResponse(
   value: unknown,
-  expected: Pick<VnPayConfiguration, 'hashSecret' | 'tmnCode'> & {
+  expected: Pick<VnPayConfig, 'hashSecret' | 'tmnCode'> & {
     transactionReference: string;
   },
 ): VnPayGatewayOperationResult {

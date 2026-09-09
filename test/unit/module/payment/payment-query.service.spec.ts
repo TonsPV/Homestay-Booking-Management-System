@@ -12,10 +12,10 @@ import {
 
 describe('PaymentQueryService', () => {
   let paymentQuery: ReturnType<typeof createPaymentQuery>;
-  let paymentsRepository: {
+  let paymentRepo: {
     createQueryBuilder: jest.Mock;
   };
-  let bookingsRepository: {
+  let bookingRepo: {
     findOneBy: jest.Mock;
     exists: jest.Mock;
   };
@@ -23,16 +23,16 @@ describe('PaymentQueryService', () => {
 
   beforeEach(() => {
     paymentQuery = createPaymentQuery();
-    paymentsRepository = {
+    paymentRepo = {
       createQueryBuilder: jest.fn(() => paymentQuery),
     };
-    bookingsRepository = {
+    bookingRepo = {
       findOneBy: jest.fn(),
       exists: jest.fn(),
     };
     service = new PaymentQueryService(
-      paymentsRepository as unknown as Repository<Payment>,
-      bookingsRepository as unknown as Repository<Booking>,
+      paymentRepo as unknown as Repository<Payment>,
+      bookingRepo as unknown as Repository<Booking>,
     );
   });
 
@@ -48,7 +48,7 @@ describe('PaymentQueryService', () => {
         fullName: 'Internal Operator',
       },
     });
-    bookingsRepository.findOneBy.mockResolvedValue({
+    bookingRepo.findOneBy.mockResolvedValue({
       id: '100',
       customerId: '10',
     });
@@ -102,7 +102,7 @@ describe('PaymentQueryService', () => {
   });
 
   it('hides another customer booking as not found', async () => {
-    bookingsRepository.findOneBy.mockResolvedValue({
+    bookingRepo.findOneBy.mockResolvedValue({
       id: '100',
       customerId: '11',
     });
@@ -110,23 +110,23 @@ describe('PaymentQueryService', () => {
     await expect(
       service.listForCustomer('10', '100', {}),
     ).rejects.toBeInstanceOf(NotFoundException);
-    expect(paymentsRepository.createQueryBuilder).not.toHaveBeenCalled();
+    expect(paymentRepo.createQueryBuilder).not.toHaveBeenCalled();
   });
 
   it('rejects a missing customer actor before querying', async () => {
     await expect(
       service.listForCustomer(undefined, '100', {}),
     ).rejects.toBeInstanceOf(UnauthorizedException);
-    expect(bookingsRepository.findOneBy).not.toHaveBeenCalled();
+    expect(bookingRepo.findOneBy).not.toHaveBeenCalled();
   });
 
   it('requires the booking to exist for a management-scoped list', async () => {
-    bookingsRepository.exists.mockResolvedValue(false);
+    bookingRepo.exists.mockResolvedValue(false);
 
     await expect(service.listManagement('100', {})).rejects.toBeInstanceOf(
       NotFoundException,
     );
-    expect(paymentsRepository.createQueryBuilder).not.toHaveBeenCalled();
+    expect(paymentRepo.createQueryBuilder).not.toHaveBeenCalled();
   });
 
   it('adds the stale refund count to the all-management list metadata', async () => {

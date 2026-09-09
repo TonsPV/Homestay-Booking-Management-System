@@ -13,8 +13,8 @@ import {
   BookingRoomStore,
   CustomerIdentityConflictError,
   type BookingRequestIntentLookup,
-  type CreateBookingRecord,
-  type CreatePasswordlessCustomerRecord,
+  type CreateBookingInput,
+  type NewPasswordlessCustomer,
 } from '../../ports/booking-creation.store';
 import { Booking } from '../../schema/booking.entity';
 import {
@@ -91,7 +91,7 @@ export class TypeOrmBookingCreationStore extends BookingCreationStore {
 
   async createBooking(
     context: TransactionContext,
-    input: CreateBookingRecord,
+    input: CreateBookingInput,
   ): Promise<Booking> {
     const repository = this.transactions
       .managerFor(context)
@@ -124,7 +124,7 @@ export class TypeOrmBookingCustomerStore extends BookingCustomerStore {
   async findById(
     context: TransactionContext,
     customerId: string,
-    lockForBookingAdmission: boolean,
+    lockForAdmission: boolean,
   ): Promise<Customer | null> {
     const query = this.transactions
       .managerFor(context)
@@ -132,7 +132,7 @@ export class TypeOrmBookingCustomerStore extends BookingCustomerStore {
       .createQueryBuilder('customer')
       .where('customer.id = :id', { id: customerId });
 
-    if (lockForBookingAdmission) {
+    if (lockForAdmission) {
       query.setLock('pessimistic_write');
     }
 
@@ -164,7 +164,7 @@ export class TypeOrmBookingCustomerStore extends BookingCustomerStore {
 
   async createPasswordless(
     context: TransactionContext,
-    input: CreatePasswordlessCustomerRecord,
+    input: NewPasswordlessCustomer,
   ): Promise<Customer> {
     const repository = this.transactions
       .managerFor(context)

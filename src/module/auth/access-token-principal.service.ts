@@ -28,8 +28,8 @@ import { UserAuthorizationReader } from './authorization/user-authorization-read
 @Injectable()
 export class AccessTokenPrincipalService {
   constructor(
-    private readonly userAuthorizationReader: UserAuthorizationReader,
-    private readonly customerAuthorizationReader: CustomerAuthorizationReader,
+    private readonly userAuth: UserAuthorizationReader,
+    private readonly customerAuth: CustomerAuthorizationReader,
   ) {}
 
   async resolve(payload: AccessTokenPayload): Promise<AuthenticatedPrincipal> {
@@ -50,8 +50,7 @@ export class AccessTokenPrincipalService {
       throw new UnauthorizedException('Invalid access token.');
     }
 
-    const customer =
-      await this.customerAuthorizationReader.findById(customerId);
+    const customer = await this.customerAuth.findById(customerId);
 
     if (customer === null || customer.tokenVersion !== tokenVersion) {
       throw new UnauthorizedException('Invalid access token.');
@@ -81,7 +80,7 @@ export class AccessTokenPrincipalService {
       throw new UnauthorizedException('Invalid access token.');
     }
 
-    const user = await this.userAuthorizationReader.findById(userId);
+    const user = await this.userAuth.findById(userId);
 
     if (user === null || user.tokenVersion !== tokenVersion) {
       throw new UnauthorizedException('Invalid access token.');

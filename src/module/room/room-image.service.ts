@@ -19,7 +19,7 @@ import type { RoomImageResponse } from './room.service';
 export class RoomImageService {
   constructor(
     private readonly dataSource: DataSource,
-    private readonly roomImageStorage: RoomImageStorageService,
+    private readonly imageStorage: RoomImageStorageService,
   ) {}
 
   async create(
@@ -28,10 +28,10 @@ export class RoomImageService {
     file?: UploadedRoomImageFile,
   ): Promise<RoomImageResponse> {
     this.validateId(roomId, 'Room id khong hop le.');
-    const input = body ?? {};
-    const sortOrder = this.parseSortOrder(input.sortOrder);
+    const imageInput = body ?? {};
+    const sortOrder = this.parseSortOrder(imageInput.sortOrder);
     const requestedCover = parseBoolean(
-      input.isCover,
+      imageInput.isCover,
       false,
       'Gia tri anh bia khong hop le.',
     );
@@ -40,36 +40,36 @@ export class RoomImageService {
       throw new BadRequestException('Vui long chon tep anh.');
     }
 
-    const imageUrl = await this.roomImageStorage.store(roomId, file);
+    const imageUrl = await this.imageStorage.store(roomId, file);
     let queryRunner: QueryRunner;
 
     try {
       queryRunner = this.dataSource.createQueryRunner();
     } catch (error) {
-      await this.roomImageStorage.deleteManaged(imageUrl);
+      await this.imageStorage.deleteManaged(imageUrl);
       throw error;
     }
 
     try {
       await queryRunner.connect();
       await queryRunner.startTransaction();
-      await this.getLockedActiveRoom(queryRunner.manager, roomId);
+      await this.lockRoom(queryRunner.manager, roomId);
 
-      const imagesRepository = queryRunner.manager.getRepository(RoomImage);
-      const imageCount = await imagesRepository.countBy({ roomId });
+      const imageRepo = queryRunner.manager.getRepository(RoomImage);
+      const imageCount = await imageRepo.countBy({ roomId });
       const isCover = requestedCover || imageCount === 0;
 
       if (isCover) {
-        await imagesRepository.update({ roomId }, { isCover: false });
+        await imageRepo.update({ roomId }, { isCover: false });
       }
 
-      const image = imagesRepository.create({
+      const image = imageRepo.create({
         roomId,
         imageUrl,
         sortOrder,
         isCover,
       });
-      const savedImage = await imagesRepository.save(image);
+      const savedImage = await imageRepo.save(image);
 
       await queryRunner.commitTransaction();
 
@@ -79,7 +79,7 @@ export class RoomImageService {
         await queryRunner.rollbackTransaction();
       }
 
-      await this.roomImageStorage.deleteManaged(imageUrl);
+      await this.imageStorage.deleteManaged(imageUrl);
 
       throw error;
     } finally {
@@ -90,49 +90,58 @@ export class RoomImageService {
   async delete(imageId: string): Promise<RoomImageResponse> {
     this.validateId(imageId, 'Image id khong hop le.');
 
-    const response = await this.dataSource.transaction(async (manager) => {
-      const imagesRepository = manager.getRepository(RoomImage);
-      const image = await this.getLockedRoomImage(manager, imageId);
+    const deletedImage = await this.dataSource.transaction(async (manager) => {
+      const imageRepo = manager.getRepository(RoomImage);
+      const image = await this.lockImage(manager, imageId);
 
-      const response = this.toResponse(image);
-      await imagesRepository.remove(image);
+      const imageResponse = this.toResponse(image);
+      await imageRepo.remove(image);
 
       if (image.isCover) {
-        const nextCover = await imagesRepository.findOne({
+        const nextCover = await imageRepo.findOne({
           where: { roomId: image.roomId },
           order: { sortOrder: 'ASC', id: 'ASC' },
+          // The first image lookup is a consistent read used only to discover
+          // the Room id.  Use a current/locking read after the Room lock so
+          // this selection cannot be based on a repeatable-read snapshot
+          // taken before another image mutation committed.
+          lock: { mode: 'pessimistic_write' },
         });
 
         if (nextCover !== null) {
-          nextCover.isCover = true;
-          await imagesRepository.save(nextCover);
+          // TypeORM save() performs a consistent-read diff before issuing its
+          // UPDATE. That diff can still see the snapshot created before the
+          // Room lock, so it may conclude that a stale `isCover=true` value is
+          // already persisted and skip the promotion. Use a direct update,
+          // just like setCover(), to force the current-row write.
+          await imageRepo.update(
+            { id: nextCover.id, roomId: image.roomId },
+            { isCover: true },
+          );
         }
       }
 
-      return response;
+      return imageResponse;
     });
 
-    await this.roomImageStorage.deleteManaged(response.imageUrl);
+    await this.imageStorage.deleteManaged(deletedImage.imageUrl);
 
-    return response;
+    return deletedImage;
   }
 
   setCover(imageId: string): Promise<RoomImageResponse> {
     this.validateId(imageId, 'Image id khong hop le.');
 
     return this.dataSource.transaction(async (manager) => {
-      const imagesRepository = manager.getRepository(RoomImage);
-      const image = await this.getLockedRoomImage(manager, imageId);
+      const imageRepo = manager.getRepository(RoomImage);
+      const image = await this.lockImage(manager, imageId);
 
-      await imagesRepository.update(
-        { roomId: image.roomId },
-        { isCover: false },
-      );
+      await imageRepo.update({ roomId: image.roomId }, { isCover: false });
 
       // Do not use save(image) here. The entity can come from a repeatable-read
       // snapshot where it was already the cover, so TypeORM may detect no
       // change after the bulk reset above and leave the room with no cover.
-      await imagesRepository.update(
+      await imageRepo.update(
         { id: image.id, roomId: image.roomId },
         { isCover: true },
       );
@@ -142,7 +151,7 @@ export class RoomImageService {
     });
   }
 
-  private async getLockedActiveRoom(
+  private async lockRoom(
     manager: EntityManager,
     roomId: string,
   ): Promise<Room> {
@@ -161,12 +170,12 @@ export class RoomImageService {
     return room;
   }
 
-  private async getLockedRoomImage(
+  private async lockImage(
     manager: EntityManager,
     imageId: string,
   ): Promise<RoomImage> {
-    const imagesRepository = manager.getRepository(RoomImage);
-    const imageSnapshot = await imagesRepository.findOne({
+    const imageRepo = manager.getRepository(RoomImage);
+    const imageSnapshot = await imageRepo.findOne({
       select: { id: true, roomId: true },
       where: { id: imageId },
     });
@@ -175,11 +184,15 @@ export class RoomImageService {
       throw new NotFoundException('Khong tim thay anh phong.');
     }
 
-    await this.getLockedActiveRoom(manager, imageSnapshot.roomId);
+    await this.lockRoom(manager, imageSnapshot.roomId);
 
-    const image = await imagesRepository.findOneBy({
-      id: imageId,
-      roomId: imageSnapshot.roomId,
+    // The Room lock serializes all image mutations for this Room.  This must
+    // be a locking (current) read as well: a normal repository read here can
+    // reuse the snapshot created by imageSnapshot under MySQL REPEATABLE READ
+    // and return a stale isCover value.
+    const image = await imageRepo.findOne({
+      where: { id: imageId, roomId: imageSnapshot.roomId },
+      lock: { mode: 'pessimistic_write' },
     });
 
     if (image === null) {

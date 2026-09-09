@@ -210,16 +210,16 @@ let testRoomImage: Buffer;
 describe('Application API (e2e)', () => {
   let app: INestApplication<App>;
   let dataSource: DataSource;
-  let customersRepository: Repository<Customer>;
-  let usersRepository: Repository<User>;
-  let amenitiesRepository: Repository<Amenity>;
-  let roomTypesRepository: Repository<RoomType>;
-  let roomsRepository: Repository<Room>;
-  let roomImagesRepository: Repository<RoomImage>;
-  let bookingsRepository: Repository<Booking>;
-  let roomCalendarRepository: Repository<RoomCalendar>;
-  let paymentsRepository: Repository<Payment>;
-  let paymentRefundsRepository: Repository<PaymentRefund>;
+  let customerRepo: Repository<Customer>;
+  let userRepo: Repository<User>;
+  let amenityRepo: Repository<Amenity>;
+  let roomTypeRepo: Repository<RoomType>;
+  let roomRepo: Repository<Room>;
+  let imageRepo: Repository<RoomImage>;
+  let bookingRepo: Repository<Booking>;
+  let calendarRepo: Repository<RoomCalendar>;
+  let paymentRepo: Repository<Payment>;
+  let refundRepo: Repository<PaymentRefund>;
   let vnPayGatewayService: VnPayGatewayService;
   let e2eHarness: E2eHarness;
   let adminToken: string;
@@ -260,20 +260,20 @@ describe('Application API (e2e)', () => {
     await app.init();
 
     dataSource = app.get(DataSource);
-    customersRepository = dataSource.getRepository(Customer);
-    usersRepository = dataSource.getRepository(User);
-    amenitiesRepository = dataSource.getRepository(Amenity);
-    roomTypesRepository = dataSource.getRepository(RoomType);
-    roomsRepository = dataSource.getRepository(Room);
-    roomImagesRepository = dataSource.getRepository(RoomImage);
-    bookingsRepository = dataSource.getRepository(Booking);
-    roomCalendarRepository = dataSource.getRepository(RoomCalendar);
-    paymentsRepository = dataSource.getRepository(Payment);
-    paymentRefundsRepository = dataSource.getRepository(PaymentRefund);
+    customerRepo = dataSource.getRepository(Customer);
+    userRepo = dataSource.getRepository(User);
+    amenityRepo = dataSource.getRepository(Amenity);
+    roomTypeRepo = dataSource.getRepository(RoomType);
+    roomRepo = dataSource.getRepository(Room);
+    imageRepo = dataSource.getRepository(RoomImage);
+    bookingRepo = dataSource.getRepository(Booking);
+    calendarRepo = dataSource.getRepository(RoomCalendar);
+    paymentRepo = dataSource.getRepository(Payment);
+    refundRepo = dataSource.getRepository(PaymentRefund);
     vnPayGatewayService = app.get(VnPayGatewayService);
 
-    const testAdmin = await usersRepository.save(
-      usersRepository.create({
+    const testAdmin = await userRepo.save(
+      userRepo.create({
         fullName: 'E2E Administrator',
         email: `e2e-admin-${uniqueSuffix}@example.com`,
         phone: null,
@@ -608,7 +608,7 @@ describe('Application API (e2e)', () => {
       .send({ status: 'LOCKED' })
       .expect(400);
 
-    const userBeforeReset = await usersRepository.findOneByOrFail({
+    const userBeforeReset = await userRepo.findOneByOrFail({
       id: testStaffId,
     });
 
@@ -620,7 +620,7 @@ describe('Application API (e2e)', () => {
       .send({ password: resetPassword })
       .expect(200);
 
-    const userAfterReset = await usersRepository
+    const userAfterReset = await userRepo
       .createQueryBuilder('user')
       .addSelect('user.passwordHash')
       .where('user.id = :id', { id: testStaffId })
@@ -715,7 +715,7 @@ describe('Application API (e2e)', () => {
       .set('Authorization', `Bearer ${staffToken}`)
       .expect(401);
 
-    const activeStaff = await usersRepository.findOneByOrFail({
+    const activeStaff = await userRepo.findOneByOrFail({
       id: testStaffId,
     });
 
@@ -778,7 +778,7 @@ describe('Application API (e2e)', () => {
       message: 'Dang ky tai khoan thanh cong.',
       data: { accepted: true },
     });
-    const registeredCustomer = await customersRepository.findOneByOrFail({
+    const registeredCustomer = await customerRepo.findOneByOrFail({
       phone: canonicalCustomerPhone,
     });
     testCustomerId = registeredCustomer.id;
@@ -839,7 +839,7 @@ describe('Application API (e2e)', () => {
       message: 'Khong the dang ky bang email hoac so dien thoai nay.',
       error: 'Conflict',
     });
-    expect(await customersRepository.countBy({ email: customerEmail })).toBe(1);
+    expect(await customerRepo.countBy({ email: customerEmail })).toBe(1);
 
     const lockResponse = await request(app.getHttpServer())
       .patch(`/api/v1/customers/${testCustomerId}/status`)
@@ -878,8 +878,8 @@ describe('Application API (e2e)', () => {
         password: 'StrongPassword123!',
       })
       .expect(401);
-    const passwordlessCustomer = await customersRepository.save(
-      customersRepository.create({
+    const passwordlessCustomer = await customerRepo.save(
+      customerRepo.create({
         fullName: 'E2E Passwordless Customer',
         email: `passwordless-${uniqueSuffix}@example.com`,
         phone: `+8497${String(Date.now()).slice(-7)}`,
@@ -1013,10 +1013,9 @@ describe('Application API (e2e)', () => {
 
     customerToken = statusReloginBody.data.accessToken;
 
-    const customerBeforePasswordChange =
-      await customersRepository.findOneByOrFail({
-        id: testCustomerId,
-      });
+    const customerBeforePasswordChange = await customerRepo.findOneByOrFail({
+      id: testCustomerId,
+    });
 
     expect(customerBeforePasswordChange.tokenVersion).toBe(4);
 
@@ -1029,8 +1028,7 @@ describe('Application API (e2e)', () => {
       })
       .expect(400);
     expect(
-      (await customersRepository.findOneByOrFail({ id: testCustomerId }))
-        .tokenVersion,
+      (await customerRepo.findOneByOrFail({ id: testCustomerId })).tokenVersion,
     ).toBe(4);
 
     await request(app.getHttpServer())
@@ -1071,7 +1069,7 @@ describe('Application API (e2e)', () => {
       .set('Authorization', `Bearer ${customerToken}`)
       .expect(200);
 
-    const customerAfterPasswordChange = await customersRepository
+    const customerAfterPasswordChange = await customerRepo
       .createQueryBuilder('customer')
       .addSelect('customer.passwordHash')
       .where('customer.id = :id', { id: testCustomerId })
@@ -1089,8 +1087,8 @@ describe('Application API (e2e)', () => {
   });
 
   it('keeps customer lock and token revocation when a stale profile update resumes', async () => {
-    const raceCustomer = await customersRepository.save(
-      customersRepository.create({
+    const raceCustomer = await customerRepo.save(
+      customerRepo.create({
         fullName: 'E2E Profile Race Customer',
         email: `e2e-profile-race-${uniqueSuffix}@example.com`,
         phone: `+8495${String(Date.now()).slice(-7)}`,
@@ -1104,8 +1102,7 @@ describe('Application API (e2e)', () => {
       customerId: raceCustomer.id,
       tokenVersion: raceCustomer.tokenVersion,
     });
-    const originalFindOneBy =
-      customersRepository.findOneBy.bind(customersRepository);
+    const originalFindOneBy = customerRepo.findOneBy.bind(customerRepo);
     let observedProfileRead = () => undefined;
     const profileReadObserved = new Promise<void>((resolveRead) => {
       observedProfileRead = resolveRead;
@@ -1116,7 +1113,7 @@ describe('Application API (e2e)', () => {
     });
     let targetCustomerReadCount = 0;
     const findOneBySpy = jest
-      .spyOn(customersRepository, 'findOneBy')
+      .spyOn(customerRepo, 'findOneBy')
       .mockImplementation(async (where) => {
         const customer = await originalFindOneBy(where);
 
@@ -1154,7 +1151,7 @@ describe('Application API (e2e)', () => {
       findOneBySpy.mockRestore();
     }
 
-    const persistedCustomer = await customersRepository.findOneByOrFail({
+    const persistedCustomer = await customerRepo.findOneByOrFail({
       id: raceCustomer.id,
     });
 
@@ -1518,12 +1515,15 @@ describe('Application API (e2e)', () => {
   it('prevents a stale STAFF room transition from overwriting ADMIN HIDDEN', async () => {
     const roomId = requireTestRoomId();
     type LockingRoomMutationService = {
-      getLockedRoomForStatus(manager: EntityManager, id: string): Promise<Room>;
+      lockRoomForStatusChange(
+        manager: EntityManager,
+        id: string,
+      ): Promise<Room>;
     };
     const roomMutationService =
       app.get<LockingRoomMutationService>(RoomMutationService);
     const originalGetLockedRoom =
-      roomMutationService.getLockedRoomForStatus.bind(roomMutationService);
+      roomMutationService.lockRoomForStatusChange.bind(roomMutationService);
     let observedAdminLock = () => undefined;
     const adminLockObserved = new Promise<void>((resolveLock) => {
       observedAdminLock = resolveLock;
@@ -1533,7 +1533,7 @@ describe('Application API (e2e)', () => {
       releaseAdminLock = resolveRelease;
     });
     const getLockedRoomSpy = jest
-      .spyOn(roomMutationService, 'getLockedRoomForStatus')
+      .spyOn(roomMutationService, 'lockRoomForStatusChange')
       .mockImplementationOnce(async (manager, id) => {
         const room = await originalGetLockedRoom(manager, id);
 
@@ -1566,11 +1566,9 @@ describe('Application API (e2e)', () => {
       getLockedRoomSpy.mockRestore();
     }
 
-    expect(await roomsRepository.findOneByOrFail({ id: roomId })).toMatchObject(
-      {
-        status: 'HIDDEN',
-      },
-    );
+    expect(await roomRepo.findOneByOrFail({ id: roomId })).toMatchObject({
+      status: 'HIDDEN',
+    });
     await request(app.getHttpServer())
       .patch(`/api/v1/rooms/${roomId}/status`)
       .set('Authorization', `Bearer ${adminToken}`)
@@ -1685,7 +1683,7 @@ describe('Application API (e2e)', () => {
     await request(app.getHttpServer())
       .get(secondBody.data.imageUrl)
       .expect(404);
-    const remainingImage = await roomImagesRepository.findOneBy({
+    const remainingImage = await imageRepo.findOneBy({
       id: firstBody.data.id,
     });
     expect(remainingImage?.isCover).toBe(true);
@@ -1718,7 +1716,7 @@ describe('Application API (e2e)', () => {
       firstResponse.body as ApiResponseBody<RoomImageBody>,
       secondResponse.body as ApiResponseBody<RoomImageBody>,
     ];
-    const images = await roomImagesRepository.findBy({ roomId });
+    const images = await imageRepo.findBy({ roomId });
 
     expect(responseBodies.filter((body) => body.data.isCover)).toHaveLength(1);
     expect(images.filter((image) => image.isCover)).toHaveLength(1);
@@ -1726,7 +1724,7 @@ describe('Application API (e2e)', () => {
 
   it('serializes concurrent room cover changes', async () => {
     const roomId = requireTestRoomId();
-    const images = await roomImagesRepository.findBy({ roomId });
+    const images = await imageRepo.findBy({ roomId });
 
     expect(images).toHaveLength(2);
 
@@ -1737,7 +1735,7 @@ describe('Application API (e2e)', () => {
           .set('Authorization', `Bearer ${adminToken}`),
       ),
     );
-    const updatedImages = await roomImagesRepository.findBy({ roomId });
+    const updatedImages = await imageRepo.findBy({ roomId });
 
     expect(responses.map((response) => response.status)).toEqual([200, 200]);
     expect(updatedImages.filter((image) => image.isCover)).toHaveLength(1);
@@ -1777,7 +1775,7 @@ describe('Application API (e2e)', () => {
       .set('Authorization', `Bearer ${requireCustomerToken()}`)
       .expect(403);
 
-    const managementAvailabilityResponse = await request(app.getHttpServer())
+    const availabilityResponse = await request(app.getHttpServer())
       .get('/api/v1/management/rooms/available')
       .query({
         checkIn: '2030-06-01',
@@ -1787,7 +1785,7 @@ describe('Application API (e2e)', () => {
       .set('Authorization', `Bearer ${requireStaffToken()}`)
       .expect(200);
     const managementAvailabilityBody =
-      managementAvailabilityResponse.body as ApiResponseBody<RoomBody[]>;
+      availabilityResponse.body as ApiResponseBody<RoomBody[]>;
     const availableRoom = managementAvailabilityBody.data.find(
       (room) => room.id === roomId,
     );
@@ -1853,12 +1851,12 @@ describe('Application API (e2e)', () => {
       roomId,
     );
 
-    const hiddenManagementDetailResponse = await request(app.getHttpServer())
+    const hiddenDetailResponse = await request(app.getHttpServer())
       .get(`/api/v1/management/rooms/${roomId}`)
       .set('Authorization', `Bearer ${adminToken}`)
       .expect(200);
     const hiddenManagementDetailBody =
-      hiddenManagementDetailResponse.body as ApiResponseBody<RoomBody>;
+      hiddenDetailResponse.body as ApiResponseBody<RoomBody>;
 
     expect(hiddenManagementDetailBody.data.status).toBe('HIDDEN');
 
@@ -2112,7 +2110,7 @@ describe('Application API (e2e)', () => {
       });
 
     expect(
-      await roomCalendarRepository.countBy({
+      await calendarRepo.countBy({
         bookingId: bookingBody.data.id,
       }),
     ).toBe(2);
@@ -2146,7 +2144,7 @@ describe('Application API (e2e)', () => {
       concurrentResponses.map((response) => response.status).sort(),
     ).toEqual([201, 409]);
     expect(
-      await roomCalendarRepository.countBy({
+      await calendarRepo.countBy({
         roomId,
         status: 'BLOCKED',
       }),
@@ -2229,13 +2227,13 @@ describe('Application API (e2e)', () => {
       ),
     ).toBeLessThan(60_000);
     expect(
-      await roomCalendarRepository.countBy({
+      await calendarRepo.countBy({
         roomId,
         bookingId,
       }),
     ).toBe(2);
     expect(
-      await bookingsRepository.countBy({
+      await bookingRepo.countBy({
         roomId,
         checkInDate: '2032-08-01',
         checkOutDate: '2032-08-03',
@@ -2285,9 +2283,9 @@ describe('Application API (e2e)', () => {
     const cancelBody = cancelResponse.body as ApiResponseBody<BookingBody>;
 
     expect(cancelBody.data.status).toBe('CANCELLED');
-    expect(await roomCalendarRepository.countBy({ bookingId })).toBe(0);
+    expect(await calendarRepo.countBy({ bookingId })).toBe(0);
     expect(
-      await paymentsRepository.findOneByOrFail({
+      await paymentRepo.findOneByOrFail({
         id: pendingPaymentBody.data.payment.id,
       }),
     ).toMatchObject({
@@ -2311,8 +2309,8 @@ describe('Application API (e2e)', () => {
   });
 
   it('atomically caps concurrent unpaid holds for one customer', async () => {
-    const quotaCustomer = await customersRepository.save(
-      customersRepository.create({
+    const quotaCustomer = await customerRepo.save(
+      customerRepo.create({
         fullName: 'E2E Booking Quota Customer',
         email: `e2e-booking-quota-${uniqueSuffix}@example.com`,
         phone: `+8496${String(Date.now()).slice(-7)}`,
@@ -2358,7 +2356,7 @@ describe('Application API (e2e)', () => {
       );
 
     expect(
-      await bookingsRepository.countBy({
+      await bookingRepo.countBy({
         customerId: quotaCustomer.id,
         status: BookingStatus.PENDING_PAYMENT,
         paymentStatus: BookingPaymentStatus.UNPAID,
@@ -2383,7 +2381,7 @@ describe('Application API (e2e)', () => {
       .expect(201);
 
     expect(
-      await bookingsRepository.countBy({
+      await bookingRepo.countBy({
         customerId: quotaCustomer.id,
         status: BookingStatus.PENDING_PAYMENT,
         paymentStatus: BookingPaymentStatus.UNPAID,
@@ -2445,7 +2443,7 @@ describe('Application API (e2e)', () => {
 
     counterCustomerIds.push(createBody.data.customerId);
 
-    const counterCustomer = await customersRepository
+    const counterCustomer = await customerRepo
       .createQueryBuilder('customer')
       .addSelect('customer.passwordHash')
       .where('customer.id = :id', { id: createBody.data.customerId })
@@ -2486,7 +2484,7 @@ describe('Application API (e2e)', () => {
       .send({ password: 'AnotherCounterPassword456!' })
       .expect(409);
 
-    const counterCustomerWithPassword = await customersRepository
+    const counterCustomerWithPassword = await customerRepo
       .createQueryBuilder('customer')
       .addSelect('customer.passwordHash')
       .where('customer.id = :id', { id: createBody.data.customerId })
@@ -2567,11 +2565,9 @@ describe('Application API (e2e)', () => {
       .set('Authorization', `Bearer ${requireStaffToken()}`)
       .send({ status: 'CHECKED_IN' })
       .expect(200);
-    expect(await roomsRepository.findOneByOrFail({ id: roomId })).toMatchObject(
-      {
-        status: 'OCCUPIED',
-      },
-    );
+    expect(await roomRepo.findOneByOrFail({ id: roomId })).toMatchObject({
+      status: 'OCCUPIED',
+    });
     const occupiedPublicResponse = await request(app.getHttpServer())
       .get(`/api/v1/rooms/${roomId}`)
       .expect(200);
@@ -2596,11 +2592,9 @@ describe('Application API (e2e)', () => {
     const checkoutBody = checkoutResponse.body as ApiResponseBody<BookingBody>;
 
     expect(checkoutBody.data.status).toBe('CHECKED_OUT');
-    expect(await roomsRepository.findOneByOrFail({ id: roomId })).toMatchObject(
-      {
-        status: 'CLEANING',
-      },
-    );
+    expect(await roomRepo.findOneByOrFail({ id: roomId })).toMatchObject({
+      status: 'CLEANING',
+    });
     const checkoutPublicResponse = await request(app.getHttpServer())
       .get(`/api/v1/rooms/${roomId}`)
       .expect(200);
@@ -2675,7 +2669,7 @@ describe('Application API (e2e)', () => {
       status: 'SUCCESS',
       createdByUserId: testStaffId,
     });
-    expect(await paymentsRepository.countBy({ bookingId })).toBe(1);
+    expect(await paymentRepo.countBy({ bookingId })).toBe(1);
 
     await request(app.getHttpServer())
       .patch(`/api/v1/management/bookings/${bookingId}/status`)
@@ -2750,7 +2744,7 @@ describe('Application API (e2e)', () => {
       refundedByUserId: testAdminId,
     });
     expect(refundBody.data.refundedAt).toEqual(expect.any(String));
-    expect(await roomCalendarRepository.countBy({ bookingId })).toBe(0);
+    expect(await calendarRepo.countBy({ bookingId })).toBe(0);
 
     const refundedBookingResponse = await request(app.getHttpServer())
       .get(`/api/v1/bookings/${bookingId}`)
@@ -2851,7 +2845,7 @@ describe('Application API (e2e)', () => {
 
     expect(replayBody.data.payment.id).toBe(payment.id);
     expect(replayBody.data.paymentUrl).toBe(onlineBody.data.paymentUrl);
-    expect(await paymentsRepository.countBy({ bookingId })).toBe(1);
+    expect(await paymentRepo.countBy({ bookingId })).toBe(1);
 
     await request(app.getHttpServer())
       .post(`/api/v1/bookings/${bookingId}/payments`)
@@ -2904,9 +2898,9 @@ describe('Application API (e2e)', () => {
         paymentStatus: null,
       },
     });
-    expect(
-      (await paymentsRepository.findOneByOrFail({ id: payment.id })).status,
-    ).toBe('PENDING');
+    expect((await paymentRepo.findOneByOrFail({ id: payment.id })).status).toBe(
+      'PENDING',
+    );
 
     const invalidSignatureResponse = await request(app.getHttpServer())
       .get('/api/v1/payments/vnpay/ipn')
@@ -2963,9 +2957,9 @@ describe('Application API (e2e)', () => {
       paymentStatus: 'PENDING',
     });
 
-    expect(
-      (await paymentsRepository.findOneByOrFail({ id: payment.id })).status,
-    ).toBe('PENDING');
+    expect((await paymentRepo.findOneByOrFail({ id: payment.id })).status).toBe(
+      'PENDING',
+    );
 
     const ipnResponse = await request(app.getHttpServer())
       .get('/api/v1/payments/vnpay/ipn')
@@ -2980,10 +2974,10 @@ describe('Application API (e2e)', () => {
       Message: 'Confirm Success',
     });
 
-    const paidPayment = await paymentsRepository.findOneByOrFail({
+    const paidPayment = await paymentRepo.findOneByOrFail({
       id: payment.id,
     });
-    const paidBooking = await bookingsRepository.findOneByOrFail({
+    const paidBooking = await bookingRepo.findOneByOrFail({
       id: bookingId,
     });
 
@@ -3064,7 +3058,7 @@ describe('Application API (e2e)', () => {
       });
       expect(refundSpy).toHaveBeenCalledTimes(1);
       expect(
-        await bookingsRepository.findOneByOrFail({ id: bookingId }),
+        await bookingRepo.findOneByOrFail({ id: bookingId }),
       ).toMatchObject({
         status: 'CANCELLED',
         paymentStatus: 'REFUNDED',
@@ -3118,12 +3112,12 @@ describe('Application API (e2e)', () => {
         .expect(503);
 
       expect(
-        await paymentsRepository.findOneByOrFail({ id: paid.payment.id }),
+        await paymentRepo.findOneByOrFail({ id: paid.payment.id }),
       ).toMatchObject({
         status: 'REFUND_PENDING',
       });
       expect(
-        await paymentRefundsRepository.findOneByOrFail({
+        await refundRepo.findOneByOrFail({
           paymentId: paid.payment.id,
         }),
       ).toMatchObject({ idempotencyKey: refundKey });
@@ -3144,12 +3138,12 @@ describe('Application API (e2e)', () => {
       expect(refundSpy).toHaveBeenCalledTimes(1);
       expect(querySpy).toHaveBeenCalledTimes(1);
       expect(
-        await paymentsRepository.findOneByOrFail({ id: paid.payment.id }),
+        await paymentRepo.findOneByOrFail({ id: paid.payment.id }),
       ).toMatchObject({
         status: 'REFUND_PENDING',
       });
       expect(
-        await paymentRefundsRepository.findOneByOrFail({
+        await refundRepo.findOneByOrFail({
           paymentId: paid.payment.id,
         }),
       ).toMatchObject({ gatewayTransactionId: null });
@@ -3173,7 +3167,7 @@ describe('Application API (e2e)', () => {
         .post(`/api/v1/management/payments/${paid.payment.id}/reconcile-refund`)
         .expect(401);
 
-      await paymentRefundsRepository.update(
+      await refundRepo.update(
         { paymentId: paid.payment.id },
         { gatewayTransactionId: '987654321012346' },
       );
@@ -3212,7 +3206,7 @@ describe('Application API (e2e)', () => {
       );
       expect(refundSpy).toHaveBeenCalledTimes(1);
       expect(
-        await bookingsRepository.findOneByOrFail({ id: paid.bookingId }),
+        await bookingRepo.findOneByOrFail({ id: paid.bookingId }),
       ).toMatchObject({
         status: 'CANCELLED',
         paymentStatus: 'REFUNDED',
@@ -3265,7 +3259,7 @@ describe('Application API (e2e)', () => {
         });
 
       expect(
-        await bookingsRepository.findOneByOrFail({ id: paid.bookingId }),
+        await bookingRepo.findOneByOrFail({ id: paid.bookingId }),
       ).toMatchObject({
         status: 'CONFIRMED',
         paymentStatus: 'PAID',
@@ -3305,17 +3299,17 @@ describe('Application API (e2e)', () => {
         .expect(409);
 
       expect(
-        await paymentsRepository.findOneByOrFail({ id: paid.payment.id }),
+        await paymentRepo.findOneByOrFail({ id: paid.payment.id }),
       ).toMatchObject({
         status: 'SUCCESS',
       });
       expect(
-        await paymentRefundsRepository.findOneByOrFail({
+        await refundRepo.findOneByOrFail({
           paymentId: paid.payment.id,
         }),
       ).toMatchObject({ idempotencyKey: refundKey, responseCode: '91' });
       expect(
-        await bookingsRepository.findOneByOrFail({ id: paid.bookingId }),
+        await bookingRepo.findOneByOrFail({ id: paid.bookingId }),
       ).toMatchObject({
         status: 'CONFIRMED',
         paymentStatus: 'PAID',
@@ -3421,15 +3415,13 @@ describe('Application API (e2e)', () => {
         Message: 'Confirm Success',
       });
 
-    expect(
-      await paymentsRepository.findOneByOrFail({ id: payment.id }),
-    ).toMatchObject({
-      status: 'SUCCESS',
-      gatewayTransactionId: callbackParameters.vnp_TransactionNo,
-    });
-    expect(
-      await bookingsRepository.findOneByOrFail({ id: bookingId }),
-    ).toMatchObject({
+    expect(await paymentRepo.findOneByOrFail({ id: payment.id })).toMatchObject(
+      {
+        status: 'SUCCESS',
+        gatewayTransactionId: callbackParameters.vnp_TransactionNo,
+      },
+    );
+    expect(await bookingRepo.findOneByOrFail({ id: bookingId })).toMatchObject({
       status: 'CONFIRMED',
       paymentStatus: 'PAID',
       paymentExpiresAt: null,
@@ -3478,22 +3470,20 @@ describe('Application API (e2e)', () => {
       onlineResponse.body as ApiResponseBody<OnlinePaymentBody>;
     const payment = onlineBody.data.payment;
 
-    await bookingsRepository.update(bookingId, {
+    await bookingRepo.update(bookingId, {
       paymentExpiresAt: new Date(Date.now() - 1000),
     });
-    await paymentsRepository.update(payment.id, {
+    await paymentRepo.update(payment.id, {
       expiresAt: new Date(Date.now() - 1000),
     });
-    await app.get(BookingService).expirePendingPayments();
+    await app.get(BookingService).expireUnpaidBookings();
     await app.get(PaymentService).expirePendingOnlinePayments();
 
-    expect(
-      await bookingsRepository.findOneByOrFail({ id: bookingId }),
-    ).toMatchObject({
+    expect(await bookingRepo.findOneByOrFail({ id: bookingId })).toMatchObject({
       status: 'CANCELLED',
       paymentStatus: 'UNPAID',
     });
-    expect(await roomCalendarRepository.countBy({ bookingId })).toBe(0);
+    expect(await calendarRepo.countBy({ bookingId })).toBe(0);
 
     const [wholeAmount, fractionalAmount] = payment.amount.split('.');
     const callbackParameters = {
@@ -3525,21 +3515,19 @@ describe('Application API (e2e)', () => {
       RspCode: '00',
       Message: 'Confirm Success',
     });
-    expect(
-      await paymentsRepository.findOneByOrFail({ id: payment.id }),
-    ).toMatchObject({
-      status: 'REQUIRES_REVIEW',
-      gatewayTransactionId: callbackParameters.vnp_TransactionNo,
-      gatewayResponseCode: '00',
-      gatewayTransactionStatus: '00',
-    });
-    expect(
-      await bookingsRepository.findOneByOrFail({ id: bookingId }),
-    ).toMatchObject({
+    expect(await paymentRepo.findOneByOrFail({ id: payment.id })).toMatchObject(
+      {
+        status: 'REQUIRES_REVIEW',
+        gatewayTransactionId: callbackParameters.vnp_TransactionNo,
+        gatewayResponseCode: '00',
+        gatewayTransactionStatus: '00',
+      },
+    );
+    expect(await bookingRepo.findOneByOrFail({ id: bookingId })).toMatchObject({
       status: 'CANCELLED',
       paymentStatus: 'UNPAID',
     });
-    expect(await roomCalendarRepository.countBy({ bookingId })).toBe(0);
+    expect(await calendarRepo.countBy({ bookingId })).toBe(0);
 
     await request(app.getHttpServer())
       .get('/api/v1/management/payments')
@@ -3609,10 +3597,10 @@ describe('Application API (e2e)', () => {
     const onlinePaymentBody =
       onlinePaymentResponse.body as ApiResponseBody<OnlinePaymentBody>;
 
-    await bookingsRepository.update(bookingId, {
+    await bookingRepo.update(bookingId, {
       paymentExpiresAt: new Date(Date.now() - 1000),
     });
-    await paymentsRepository.update(onlinePaymentBody.data.payment.id, {
+    await paymentRepo.update(onlinePaymentBody.data.payment.id, {
       expiresAt: new Date(Date.now() - 1000),
     });
 
@@ -3630,7 +3618,7 @@ describe('Application API (e2e)', () => {
       legacyCreateResponse.body as ApiResponseBody<BookingBody>;
     const legacyBookingId = legacyCreateBody.data.id;
 
-    await bookingsRepository.update(legacyBookingId, {
+    await bookingRepo.update(legacyBookingId, {
       paymentExpiresAt: null,
       createdAt: new Date(Date.now() - 60 * 60 * 1000),
     });
@@ -3642,7 +3630,7 @@ describe('Application API (e2e)', () => {
       .expect(409);
 
     await app.get(PaymentService).expirePendingOnlinePayments();
-    await app.get(BookingService).expirePendingPayments();
+    await app.get(BookingService).expireUnpaidBookings();
 
     const expiredResponse = await request(app.getHttpServer())
       .get(`/api/v1/bookings/${bookingId}`)
@@ -3655,9 +3643,9 @@ describe('Application API (e2e)', () => {
       paymentStatus: 'UNPAID',
       paymentExpiresAt: null,
     });
-    expect(await roomCalendarRepository.countBy({ bookingId })).toBe(0);
+    expect(await calendarRepo.countBy({ bookingId })).toBe(0);
     expect(
-      await paymentsRepository.findOneByOrFail({
+      await paymentRepo.findOneByOrFail({
         id: onlinePaymentBody.data.payment.id,
       }),
     ).toMatchObject({
@@ -3665,14 +3653,12 @@ describe('Application API (e2e)', () => {
       gatewayResponseCode: 'EXPIRED',
     });
 
-    const legacyExpiredBooking = await bookingsRepository.findOneByOrFail({
+    const legacyExpiredBooking = await bookingRepo.findOneByOrFail({
       id: legacyBookingId,
     });
 
     expect(legacyExpiredBooking.status).toBe('CANCELLED');
-    expect(
-      await roomCalendarRepository.countBy({ bookingId: legacyBookingId }),
-    ).toBe(0);
+    expect(await calendarRepo.countBy({ bookingId: legacyBookingId })).toBe(0);
   });
 
   it('hard-deletes a room without booking history', async () => {
@@ -3714,16 +3700,16 @@ describe('Application API (e2e)', () => {
       .get(`/api/v1/rooms/${roomId}`)
       .expect(404);
 
-    expect(await roomsRepository.findOneBy({ id: roomId })).toBeNull();
+    expect(await roomRepo.findOneBy({ id: roomId })).toBeNull();
   });
 
   afterAll(async () => {
     await e2eHarness.cleanup(async () => {
-      if (roomCalendarRepository !== undefined && testRoomId !== undefined) {
-        await roomCalendarRepository.delete({ roomId: testRoomId });
+      if (calendarRepo !== undefined && testRoomId !== undefined) {
+        await calendarRepo.delete({ roomId: testRoomId });
       }
 
-      if (bookingsRepository !== undefined && testRoomId !== undefined) {
+      if (bookingRepo !== undefined && testRoomId !== undefined) {
         await dataSource.query(
           'UPDATE bookings SET accepted_payment_id = NULL WHERE room_id = ?',
           [testRoomId],
@@ -3743,15 +3729,15 @@ describe('Application API (e2e)', () => {
            WHERE booking.room_id = ?`,
           [testRoomId],
         );
-        await bookingsRepository.delete({ roomId: testRoomId });
+        await bookingRepo.delete({ roomId: testRoomId });
       }
 
-      if (roomImagesRepository !== undefined && testRoomId !== undefined) {
+      if (imageRepo !== undefined && testRoomId !== undefined) {
         await clearManagedRoomImages(testRoomId);
       }
 
-      if (roomsRepository !== undefined && testRoomId !== undefined) {
-        await roomsRepository.delete(testRoomId);
+      if (roomRepo !== undefined && testRoomId !== undefined) {
+        await roomRepo.delete(testRoomId);
       }
 
       if (dataSource !== undefined && testRoomNumber !== undefined) {
@@ -3760,30 +3746,30 @@ describe('Application API (e2e)', () => {
         ]);
       }
 
-      if (roomTypesRepository !== undefined && testRoomTypeId !== undefined) {
-        await roomTypesRepository.delete(testRoomTypeId);
+      if (roomTypeRepo !== undefined && testRoomTypeId !== undefined) {
+        await roomTypeRepo.delete(testRoomTypeId);
       }
 
-      if (amenitiesRepository !== undefined && testAmenityIds.length > 0) {
-        await amenitiesRepository.delete(testAmenityIds);
+      if (amenityRepo !== undefined && testAmenityIds.length > 0) {
+        await amenityRepo.delete(testAmenityIds);
       }
 
-      if (customersRepository !== undefined && testCustomerId !== undefined) {
-        await customersRepository.delete(testCustomerId);
+      if (customerRepo !== undefined && testCustomerId !== undefined) {
+        await customerRepo.delete(testCustomerId);
       }
 
-      if (customersRepository !== undefined) {
+      if (customerRepo !== undefined) {
         for (const customerId of counterCustomerIds) {
-          await customersRepository.delete(customerId);
+          await customerRepo.delete(customerId);
         }
       }
 
-      if (usersRepository !== undefined && testAdminId !== undefined) {
-        await usersRepository.delete(testAdminId);
+      if (userRepo !== undefined && testAdminId !== undefined) {
+        await userRepo.delete(testAdminId);
       }
 
-      if (usersRepository !== undefined && testStaffId !== undefined) {
-        await usersRepository.delete(testStaffId);
+      if (userRepo !== undefined && testStaffId !== undefined) {
+        await userRepo.delete(testStaffId);
       }
 
       if (app !== undefined) {
@@ -3870,13 +3856,13 @@ describe('Application API (e2e)', () => {
   }
 
   async function clearManagedRoomImages(roomId: string): Promise<void> {
-    const images = await roomImagesRepository.findBy({ roomId });
+    const images = await imageRepo.findBy({ roomId });
     const storage = app.get(RoomImageStorageService);
 
     await Promise.all(
       images.map((image) => storage.deleteManaged(image.imageUrl)),
     );
-    await roomImagesRepository.delete({ roomId });
+    await imageRepo.delete({ roomId });
   }
 
   function requireTestRoomTypeId(): string {
@@ -3927,12 +3913,10 @@ describe('Application API (e2e)', () => {
   }
 
   function getVietnamDate(dayOffset: number): string {
-    const vietnamOffsetMilliseconds = 7 * 60 * 60 * 1000;
+    const vietnamOffsetMs = 7 * 60 * 60 * 1000;
     const dayMilliseconds = 24 * 60 * 60 * 1000;
 
-    return new Date(
-      Date.now() + vietnamOffsetMilliseconds + dayOffset * dayMilliseconds,
-    )
+    return new Date(Date.now() + vietnamOffsetMs + dayOffset * dayMilliseconds)
       .toISOString()
       .slice(0, 10);
   }

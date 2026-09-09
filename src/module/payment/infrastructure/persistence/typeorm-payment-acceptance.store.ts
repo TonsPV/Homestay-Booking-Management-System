@@ -8,7 +8,7 @@ import { Booking } from '../../../booking/schema/booking.entity';
 import {
   PaymentAcceptanceStore,
   PaymentIdempotencyConflictError,
-  type CreatePaymentRecord,
+  type CreatePaymentInput,
 } from '../../ports/payment-acceptance.store';
 import { Payment } from '../../schema/payment.entity';
 import { PaymentMethod, PaymentStatus } from '../../domain/payment-state';
@@ -103,7 +103,7 @@ export class TypeOrmPaymentAcceptanceStore extends PaymentAcceptanceStore {
 
   async createPayment(
     context: TransactionContext,
-    input: CreatePaymentRecord,
+    input: CreatePaymentInput,
   ): Promise<Payment> {
     const repository = this.transactions
       .managerFor(context)

@@ -1,7 +1,7 @@
 import {
   BedType,
   parseLegacyBedType,
-  sortBedConfigurations,
+  sortBedConfigs,
 } from '../../../../src/module/room-type/bed-configuration';
 
 describe('bed configuration parser', () => {
@@ -31,7 +31,7 @@ describe('bed configuration parser', () => {
 
   it('sorts configurations by the stable domain order', () => {
     expect(
-      sortBedConfigurations([
+      sortBedConfigs([
         { type: BedType.SOFA_BED, quantity: 1 },
         { type: BedType.SINGLE, quantity: 1 },
         { type: BedType.DOUBLE, quantity: 1 },

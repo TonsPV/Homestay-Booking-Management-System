@@ -2,24 +2,24 @@ import { parse, resolve } from 'node:path';
 
 import type { ConfigService } from '@nestjs/config';
 
-import { resolveRoomImageUploadDirectory } from '../../../src/config/room-image-storage';
+import { resolveRoomImageDir } from '../../../src/config/room-image-storage';
 
 describe('room image storage configuration', () => {
   it('resolves the default to a dedicated project subdirectory', () => {
-    expect(resolveRoomImageUploadDirectory(createConfig())).toBe(
+    expect(resolveRoomImageDir(createConfig())).toBe(
       resolve(process.cwd(), '.data/uploads/room-images'),
     );
   });
 
   it.each(['.', '..'])('rejects unsafe relative directory %s', (directory) => {
-    expect(() =>
-      resolveRoomImageUploadDirectory(createConfig(directory)),
-    ).toThrow('ROOM_IMAGE_UPLOAD_DIR');
+    expect(() => resolveRoomImageDir(createConfig(directory))).toThrow(
+      'ROOM_IMAGE_UPLOAD_DIR',
+    );
   });
 
   it('rejects a filesystem root', () => {
     expect(() =>
-      resolveRoomImageUploadDirectory(createConfig(parse(process.cwd()).root)),
+      resolveRoomImageDir(createConfig(parse(process.cwd()).root)),
     ).toThrow('ROOM_IMAGE_UPLOAD_DIR');
   });
 });

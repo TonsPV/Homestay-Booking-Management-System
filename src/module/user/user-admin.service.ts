@@ -17,7 +17,7 @@ import {
   type PaginationMeta,
 } from '../../common/pagination/pagination.types';
 import {
-  getVietnamesePhoneLookupVariants,
+  getPhoneLookupVariants,
   optionalEmail,
   optionalAccountStatus,
   optionalNullablePhone,
@@ -61,8 +61,8 @@ export interface AdminUserListResponse {
 export class UserAdminService {
   constructor(
     @InjectRepository(User)
-    private readonly usersRepository: Repository<User>,
-    private readonly passwordHasherService: PasswordHasherService,
+    private readonly userRepo: Repository<User>,
+    private readonly passwordHasher: PasswordHasherService,
     private readonly auditLogService: AuditLogService,
   ) {}
 
@@ -75,27 +75,27 @@ export class UserAdminService {
     const email = requireEmail(body.email);
     const phone = optionalNullablePhone(body.phone) ?? null;
     const password = requirePassword(body.password);
-    this.optionalIssuableRole(body.role);
+    this.optionalStaffRole(body.role);
 
-    await this.ensureEmailIsAvailable(email);
+    await this.assertEmailAvailable(email);
 
     if (phone !== null) {
-      await this.ensurePhoneIsAvailable(phone);
+      await this.assertPhoneAvailable(phone);
     }
 
-    const user = this.usersRepository.create({
+    const user = this.userRepo.create({
       fullName,
       email,
       phone,
-      passwordHash: await this.passwordHasherService.hash(password),
+      passwordHash: await this.passwordHasher.hash(password),
       role: 'STAFF',
       status: 'ACTIVE',
     });
 
     try {
-      return this.toAdminUserResponse(await this.usersRepository.save(user));
+      return this.toAdminResponse(await this.userRepo.save(user));
     } catch (error) {
-      this.throwUserDuplicateConflict(error);
+      this.throwDuplicateConflict(error);
     }
   }
 
@@ -106,7 +106,7 @@ export class UserAdminService {
     const search = optionalSearch(query.search);
     const role = this.optionalRole(query.role);
     const status = optionalAccountStatus(query.status);
-    const usersQuery = this.usersRepository
+    const usersQuery = this.userRepo
       .createQueryBuilder('user')
       .where('user.deletedAt IS NULL')
       .orderBy('user.createdAt', 'DESC')
@@ -134,7 +134,7 @@ export class UserAdminService {
     const [users, total] = await usersQuery.getManyAndCount();
 
     return {
-      items: users.map((user) => this.toAdminUserResponse(user)),
+      items: users.map((user) => this.toAdminResponse(user)),
       meta: createPaginationMeta(page, limit, total),
     };
   }
@@ -144,18 +144,18 @@ export class UserAdminService {
     body: UpdateUserDto,
     currentAdminId: string | undefined,
   ): Promise<AdminUserResponse> {
-    return this.withUserTransaction((repository) =>
-      this.updateUserWithRepository(repository, id, body, currentAdminId),
+    return this.withTransaction((repository) =>
+      this.saveUserChanges(repository, id, body, currentAdminId),
     );
   }
 
-  private async updateUserWithRepository(
+  private async saveUserChanges(
     repository: Repository<User>,
     id: string,
     body: UpdateUserDto,
     currentAdminId: string | undefined,
   ): Promise<AdminUserResponse> {
-    const user = await this.getUser(id, repository);
+    const user = await this.lockUserForUpdate(id, repository);
     const fullName = optionalTrimmedString(
       body.fullName,
       'Ho ten khong hop le.',
@@ -164,7 +164,7 @@ export class UserAdminService {
     const email = optionalEmail(body.email);
     const phone = optionalNullablePhone(body.phone);
     const password = optionalPassword(body.password);
-    const role = this.optionalIssuableRole(body.role);
+    const role = this.optionalStaffRole(body.role);
 
     if (
       fullName === undefined &&
@@ -177,13 +177,13 @@ export class UserAdminService {
     }
 
     if (email !== undefined) {
-      await this.ensureEmailIsAvailable(email, user.id, repository);
+      await this.assertEmailAvailable(email, user.id, repository);
       user.email = email;
     }
 
     if (phone !== undefined) {
       if (phone !== null) {
-        await this.ensurePhoneIsAvailable(phone, user.id, repository);
+        await this.assertPhoneAvailable(phone, user.id, repository);
       }
 
       user.phone = phone;
@@ -204,14 +204,14 @@ export class UserAdminService {
     }
 
     if (password !== undefined) {
-      user.passwordHash = await this.passwordHasherService.hash(password);
+      user.passwordHash = await this.passwordHasher.hash(password);
       user.tokenVersion += 1;
     }
 
     try {
-      return this.toAdminUserResponse(await repository.save(user));
+      return this.toAdminResponse(await repository.save(user));
     } catch (error) {
-      this.throwUserDuplicateConflict(error);
+      this.throwDuplicateConflict(error);
     }
   }
 
@@ -221,8 +221,8 @@ export class UserAdminService {
     currentAdminId: string | undefined,
     auditContext: AuditActorContext,
   ): Promise<AdminUserResponse> {
-    return this.withUserTransaction((repository, manager) =>
-      this.updateStatusWithRepository(
+    return this.withTransaction((repository, manager) =>
+      this.saveStatus(
         repository,
         id,
         statusValue,
@@ -233,15 +233,15 @@ export class UserAdminService {
     );
   }
 
-  private async updateStatusWithRepository(
+  private async saveStatus(
     repository: Repository<User>,
     id: string,
     statusValue: unknown,
     currentAdminId: string | undefined,
-    manager: EntityManager | undefined,
+    manager: EntityManager,
     auditContext: AuditActorContext,
   ): Promise<AdminUserResponse> {
-    const user = await this.getUser(id, repository);
+    const user = await this.lockUserForUpdate(id, repository);
     const status = requireAccountStatus(statusValue);
 
     if (
@@ -260,60 +260,44 @@ export class UserAdminService {
       user.tokenVersion += 1;
       const savedUser = await repository.save(user);
 
-      if (manager !== undefined) {
-        await this.auditLogService.record(manager, {
-          ...auditContext,
-          action:
-            status === 'LOCKED'
-              ? AuditAction.ACCOUNT_LOCKED
-              : AuditAction.ACCOUNT_UNLOCKED,
-          entityType: AuditEntityType.USER,
-          entityId: savedUser.id,
-          metadata: { fromStatus: previousStatus, toStatus: status },
-        });
-      }
+      await this.auditLogService.record(manager, {
+        ...auditContext,
+        action:
+          status === 'LOCKED'
+            ? AuditAction.ACCOUNT_LOCKED
+            : AuditAction.ACCOUNT_UNLOCKED,
+        entityType: AuditEntityType.USER,
+        entityId: savedUser.id,
+        metadata: { fromStatus: previousStatus, toStatus: status },
+      });
 
-      return this.toAdminUserResponse(savedUser);
+      return this.toAdminResponse(savedUser);
     }
 
-    return this.toAdminUserResponse(await repository.save(user));
+    return this.toAdminResponse(await repository.save(user));
   }
 
-  private async withUserTransaction<T>(
+  private async withTransaction<T>(
     operation: (
       repository: Repository<User>,
-      manager: EntityManager | undefined,
+      manager: EntityManager,
     ) => Promise<T>,
   ): Promise<T> {
-    const repository = this.usersRepository as Repository<User> & {
-      manager?: EntityManager;
-    };
-
-    if (repository.manager === undefined) {
-      return operation(this.usersRepository, undefined);
-    }
-
-    return repository.manager.transaction((manager) =>
+    return this.userRepo.manager.transaction((manager) =>
       operation(manager.getRepository(User), manager),
     );
   }
 
-  private async getUser(
+  private async lockUserForUpdate(
     id: string,
-    repository: Repository<User> = this.usersRepository,
+    repository: Repository<User>,
   ): Promise<User> {
     this.validateId(id);
 
-    const repositoryWithFindOne = repository as Repository<User> & {
-      findOne?: Repository<User>['findOne'];
-    };
-    const user =
-      typeof repositoryWithFindOne.findOne === 'function'
-        ? await repositoryWithFindOne.findOne({
-            where: { id },
-            lock: { mode: 'pessimistic_write' },
-          })
-        : await repository.findOneBy({ id });
+    const user = await repository.findOne({
+      where: { id },
+      lock: { mode: 'pessimistic_write' },
+    });
 
     if (user === null) {
       throw new NotFoundException('Khong tim thay user.');
@@ -322,10 +306,10 @@ export class UserAdminService {
     return user;
   }
 
-  private async ensureEmailIsAvailable(
+  private async assertEmailAvailable(
     email: string,
     currentUserId?: string,
-    repository: Repository<User> = this.usersRepository,
+    repository: Repository<User> = this.userRepo,
   ): Promise<void> {
     const existingUserQuery = repository
       .createQueryBuilder('user')
@@ -343,16 +327,16 @@ export class UserAdminService {
     }
   }
 
-  private async ensurePhoneIsAvailable(
+  private async assertPhoneAvailable(
     phone: string,
     currentUserId?: string,
-    repository: Repository<User> = this.usersRepository,
+    repository: Repository<User> = this.userRepo,
   ): Promise<void> {
     const existingUserQuery = repository
       .createQueryBuilder('user')
       .where('user.deletedAt IS NULL')
       .andWhere('user.phone IN (:...phones)', {
-        phones: getVietnamesePhoneLookupVariants(phone),
+        phones: getPhoneLookupVariants(phone),
       });
 
     if (currentUserId !== undefined) {
@@ -366,7 +350,7 @@ export class UserAdminService {
     }
   }
 
-  private throwUserDuplicateConflict(error: unknown): never {
+  private throwDuplicateConflict(error: unknown): never {
     const duplicateKey = getMysqlDuplicateKey(error);
 
     if (duplicateKey === undefined) {
@@ -396,7 +380,7 @@ export class UserAdminService {
     return value;
   }
 
-  private optionalIssuableRole(value: unknown): 'STAFF' | undefined {
+  private optionalStaffRole(value: unknown): 'STAFF' | undefined {
     const role = this.optionalRole(value);
 
     if (role === 'ADMIN') {
@@ -412,7 +396,7 @@ export class UserAdminService {
     }
   }
 
-  private toAdminUserResponse(user: User): AdminUserResponse {
+  private toAdminResponse(user: User): AdminUserResponse {
     return {
       id: user.id,
       fullName: user.fullName,

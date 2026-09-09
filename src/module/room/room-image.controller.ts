@@ -27,7 +27,7 @@ import type { RoomImageResponse } from './room.service';
 @ApiBearerAuth()
 @ApiCommonAuthErrors()
 export class RoomImageController {
-  constructor(private readonly roomImageService: RoomImageService) {}
+  constructor(private readonly imageService: RoomImageService) {}
 
   @Delete(':imageId')
   @HttpCode(HttpStatus.OK)
@@ -35,7 +35,7 @@ export class RoomImageController {
   delete(
     @Param('imageId') imageId: string,
   ): Promise<ApiResponsePayload<RoomImageResponse>> {
-    return this.roomImageService
+    return this.imageService
       .delete(imageId)
       .then((image) => ApiResponse.ok(image, 'Xoa anh phong thanh cong.'));
   }
@@ -45,7 +45,7 @@ export class RoomImageController {
   setCover(
     @Param('imageId') imageId: string,
   ): Promise<ApiResponsePayload<RoomImageResponse>> {
-    return this.roomImageService
+    return this.imageService
       .setCover(imageId)
       .then((image) => ApiResponse.ok(image, 'Dat anh bia thanh cong.'));
   }

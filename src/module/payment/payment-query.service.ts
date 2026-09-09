@@ -18,6 +18,9 @@ import type { CustomerPaymentResponse, PaymentResponse } from './payment.types';
 import { Payment } from './schema/payment.entity';
 import { PaymentMethod, PaymentStatus } from './domain/payment-state';
 
+const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
+const STALE_REFUND_DAYS = 7;
+
 export interface PaymentListResult {
   items: PaymentResponse[];
   meta: PaginationMeta;
@@ -28,7 +31,7 @@ export interface CustomerPaymentListResult {
   meta: PaginationMeta;
 }
 
-export interface PaymentManagementListResult {
+export interface ManagementPaymentListResult {
   items: PaymentResponse[];
   meta: PaginationMeta & {
     staleRefundCount: number;
@@ -39,9 +42,9 @@ export interface PaymentManagementListResult {
 export class PaymentQueryService {
   constructor(
     @InjectRepository(Payment)
-    private readonly paymentsRepository: Repository<Payment>,
+    private readonly paymentRepo: Repository<Payment>,
     @InjectRepository(Booking)
-    private readonly bookingsRepository: Repository<Booking>,
+    private readonly bookingRepo: Repository<Booking>,
   ) {}
 
   async listForCustomer(
@@ -51,13 +54,13 @@ export class PaymentQueryService {
   ): Promise<CustomerPaymentListResult> {
     const activeCustomerId = this.requireActorId(customerId);
     this.validateId(bookingId, 'Booking id khong hop le.');
-    const booking = await this.bookingsRepository.findOneBy({ id: bookingId });
+    const booking = await this.bookingRepo.findOneBy({ id: bookingId });
 
     if (booking === null || booking.customerId !== activeCustomerId) {
       throw new NotFoundException('Khong tim thay booking.');
     }
 
-    return this.listCustomerPayments(bookingId, query);
+    return this.listCustomer(bookingId, query);
   }
 
   async listManagement(
@@ -67,7 +70,7 @@ export class PaymentQueryService {
     this.validateId(bookingId, 'Booking id khong hop le.');
 
     if (
-      (await this.bookingsRepository.exists({
+      (await this.bookingRepo.exists({
         where: { id: bookingId },
       })) === false
     ) {
@@ -80,40 +83,42 @@ export class PaymentQueryService {
   async listAllManagement(
     query: ListPaymentsQueryDto,
     allowedMethods?: readonly PaymentMethod[],
-  ): Promise<PaymentManagementListResult> {
-    const [result, staleRefundCount] = await Promise.all([
+  ): Promise<ManagementPaymentListResult> {
+    const [paymentList, staleRefundCount] = await Promise.all([
       this.listPayments(query, undefined, allowedMethods),
       allowedMethods === undefined ? this.countStaleRefunds() : 0,
     ]);
 
     return {
-      ...result,
+      ...paymentList,
       meta: {
-        ...result.meta,
+        ...paymentList.meta,
         staleRefundCount,
       },
     };
   }
 
   async getManagementPayment(id: string): Promise<PaymentResponse> {
-    return this.toResponse(await this.getPaymentEntity(id));
+    return this.toManagementResponse(await this.requirePayment(id));
   }
 
   countStaleRefunds(now = new Date()): Promise<number> {
-    const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const staleRefundCutoff = new Date(
+      now.getTime() - STALE_REFUND_DAYS * MILLISECONDS_PER_DAY,
+    );
 
-    return this.paymentsRepository
+    return this.paymentRepo
       .createQueryBuilder('payment')
       .innerJoin('payment.refund', 'refund')
       .where('payment.status = :status', {
         status: PaymentStatus.REFUND_PENDING,
       })
-      .andWhere('refund.requestedAt < :cutoff', { cutoff: sevenDaysAgo })
+      .andWhere('refund.requestedAt < :cutoff', { cutoff: staleRefundCutoff })
       .getCount();
   }
 
-  async getPaymentEntity(id: string): Promise<Payment> {
-    const payment = await this.createPaymentQuery()
+  private async requirePayment(id: string): Promise<Payment> {
+    const payment = await this.createQuery()
       .where('payment.id = :id', { id })
       .getOne();
 
@@ -124,7 +129,7 @@ export class PaymentQueryService {
     return payment;
   }
 
-  toResponse(payment: Payment): PaymentResponse {
+  toManagementResponse(payment: Payment): PaymentResponse {
     const refund = payment.refund ?? null;
 
     return {
@@ -199,16 +204,16 @@ export class PaymentQueryService {
     return this.listPayments(query, bookingId);
   }
 
-  private async listCustomerPayments(
+  private async listCustomer(
     bookingId: string,
     query: ListPaymentsQueryDto,
   ): Promise<CustomerPaymentListResult> {
     const { page, limit, skip } = parsePagination(
       query as Record<string, unknown>,
     );
-    const status = this.optionalPaymentStatus(query.status);
-    const method = this.optionalPaymentMethod(query.method);
-    const paymentsQuery = this.paymentsRepository
+    const status = this.optionalStatus(query.status);
+    const method = this.optionalMethod(query.method);
+    const paymentsQuery = this.paymentRepo
       .createQueryBuilder('payment')
       .leftJoinAndSelect('payment.refund', 'refund')
       .andWhere('payment.bookingId = :bookingId', { bookingId })
@@ -241,9 +246,9 @@ export class PaymentQueryService {
     const { page, limit, skip } = parsePagination(
       query as Record<string, unknown>,
     );
-    const status = this.optionalPaymentStatus(query.status);
-    const method = this.optionalPaymentMethod(query.method);
-    const paymentsQuery = this.createPaymentQuery()
+    const status = this.optionalStatus(query.status);
+    const method = this.optionalMethod(query.method);
+    const paymentsQuery = this.createQuery()
       .orderBy('payment.createdAt', 'DESC')
       .addOrderBy('payment.id', 'DESC')
       .skip(skip)
@@ -270,20 +275,20 @@ export class PaymentQueryService {
     const [payments, total] = await paymentsQuery.getManyAndCount();
 
     return {
-      items: payments.map((payment) => this.toResponse(payment)),
+      items: payments.map((payment) => this.toManagementResponse(payment)),
       meta: createPaginationMeta(page, limit, total),
     };
   }
 
-  private createPaymentQuery(): SelectQueryBuilder<Payment> {
-    return this.paymentsRepository
+  private createQuery(): SelectQueryBuilder<Payment> {
+    return this.paymentRepo
       .createQueryBuilder('payment')
       .leftJoinAndSelect('payment.createdByUser', 'createdByUser')
       .leftJoinAndSelect('payment.refund', 'refund')
       .leftJoinAndSelect('refund.refundedByUser', 'refundedByUser');
   }
 
-  private optionalPaymentMethod(value: unknown): PaymentMethod | undefined {
+  private optionalMethod(value: unknown): PaymentMethod | undefined {
     if (value === undefined || value === null || value === '') {
       return undefined;
     }
@@ -298,7 +303,7 @@ export class PaymentQueryService {
     return value as PaymentMethod;
   }
 
-  private optionalPaymentStatus(value: unknown): PaymentStatus | undefined {
+  private optionalStatus(value: unknown): PaymentStatus | undefined {
     if (value === undefined || value === null || value === '') {
       return undefined;
     }

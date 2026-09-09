@@ -5,7 +5,7 @@ import {
 } from './booking.errors';
 import { BookingPaymentStatus, BookingStatus } from './booking-state';
 
-const VIETNAM_UTC_OFFSET_MILLISECONDS = 7 * 60 * 60 * 1000;
+const VIETNAM_UTC_OFFSET_MS = 7 * 60 * 60 * 1000;
 
 export const MANAGEMENT_STATUS_TRANSITIONS: Readonly<
   Record<BookingStatus, readonly BookingStatus[]>
@@ -173,15 +173,15 @@ export class BookingTransitionPolicy {
 
   private isInsideStayWindow(
     booking: BookingTransitionState,
-    currentDate = this.getCurrentVietnamDate(),
+    currentDate = this.currentVietnamDate(),
   ): boolean {
     return (
       currentDate >= booking.checkInDate && currentDate < booking.checkOutDate
     );
   }
 
-  private getCurrentVietnamDate(now = new Date()): string {
-    return new Date(now.getTime() + VIETNAM_UTC_OFFSET_MILLISECONDS)
+  private currentVietnamDate(now = new Date()): string {
+    return new Date(now.getTime() + VIETNAM_UTC_OFFSET_MS)
       .toISOString()
       .slice(0, 10);
   }

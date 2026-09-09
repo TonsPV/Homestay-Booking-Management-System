@@ -120,7 +120,7 @@ describe('AccessTokenClaimsValidator', () => {
     });
   });
 
-  describe('enforceTemporaryValidity (time window)', () => {
+  describe('assertTimeValid (time window)', () => {
     const validPayload = {
       sub: 'customer:customer-1',
       actor_type: 'customer' as const,
@@ -132,40 +132,31 @@ describe('AccessTokenClaimsValidator', () => {
 
     it('accepts iat up to 60 seconds in the future', () => {
       expect(() =>
-        validator.enforceTemporaryValidity(
-          { ...validPayload, iat: NOW + 60 },
-          NOW,
-        ),
+        validator.assertTimeValid({ ...validPayload, iat: NOW + 60 }, NOW),
       ).not.toThrow();
     });
 
     it('rejects iat more than 60 seconds in the future', () => {
       expect(() =>
-        validator.enforceTemporaryValidity(
-          { ...validPayload, iat: NOW + 61 },
-          NOW,
-        ),
+        validator.assertTimeValid({ ...validPayload, iat: NOW + 61 }, NOW),
       ).toThrow('Invalid access token.');
     });
 
     it('rejects exp equal to iat', () => {
       expect(() =>
-        validator.enforceTemporaryValidity({ ...validPayload, exp: NOW }, NOW),
+        validator.assertTimeValid({ ...validPayload, exp: NOW }, NOW),
       ).toThrow('Invalid access token.');
     });
 
     it('rejects exp before iat', () => {
       expect(() =>
-        validator.enforceTemporaryValidity(
-          { ...validPayload, exp: NOW - 10 },
-          NOW,
-        ),
+        validator.assertTimeValid({ ...validPayload, exp: NOW - 10 }, NOW),
       ).toThrow('Invalid access token.');
     });
 
     it('rejects an expired token with the dedicated message', () => {
       expect(() =>
-        validator.enforceTemporaryValidity(
+        validator.assertTimeValid(
           { ...validPayload, iat: NOW - 900, exp: NOW - 1 },
           NOW,
         ),
@@ -174,7 +165,7 @@ describe('AccessTokenClaimsValidator', () => {
 
     it('treats exp equal to now as expired', () => {
       expect(() =>
-        validator.enforceTemporaryValidity(
+        validator.assertTimeValid(
           { ...validPayload, iat: NOW - 900, exp: NOW },
           NOW,
         ),
@@ -182,9 +173,7 @@ describe('AccessTokenClaimsValidator', () => {
     });
 
     it('accepts a token that is still valid', () => {
-      expect(() =>
-        validator.enforceTemporaryValidity(validPayload, NOW),
-      ).not.toThrow();
+      expect(() => validator.assertTimeValid(validPayload, NOW)).not.toThrow();
     });
   });
 });

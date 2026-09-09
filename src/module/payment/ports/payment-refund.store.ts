@@ -11,7 +11,7 @@ export class PaymentRefundIdempotencyConflictError extends Error {
   }
 }
 
-export interface CreatePaymentRefundRecord {
+export interface CreateRefundInput {
   paymentId: string;
   idempotencyKey: string | null;
   requestId: string | null;
@@ -52,7 +52,7 @@ export abstract class PaymentRefundStore {
 
   abstract createRefund(
     context: TransactionContext,
-    input: CreatePaymentRefundRecord,
+    input: CreateRefundInput,
   ): Promise<PaymentRefund>;
 
   abstract lockCanonicalSuccessfulPayment(
@@ -77,6 +77,7 @@ export abstract class PaymentRefundStore {
   ): Promise<void>;
 
   abstract recordRefundQueryFailure(
+    context: TransactionContext,
     paymentId: string,
     now: Date,
   ): Promise<void>;

@@ -7,7 +7,7 @@ import {
 } from './booking.errors';
 
 const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
-const VIETNAM_UTC_OFFSET_MILLISECONDS = 7 * 60 * 60 * 1000;
+const VIETNAM_UTC_OFFSET_MS = 7 * 60 * 60 * 1000;
 export const MAX_STAY_NIGHTS = 90;
 
 export interface BookingStayRange {
@@ -17,9 +17,9 @@ export interface BookingStayRange {
 }
 
 export class BookingStayPolicy {
-  constructor(private readonly maxAdvanceBookingDays: number) {}
+  constructor(private readonly maxAdvanceDays: number) {}
 
-  requireStayRange(
+  normalizeStayRange(
     checkInValue: unknown,
     checkOutValue: unknown,
   ): BookingStayRange {
@@ -43,20 +43,31 @@ export class BookingStayPolicy {
       throw new BookingStayTooLongError(MAX_STAY_NIGHTS);
     }
 
-    const currentVietnamDate = this.getCurrentVietnamDate();
+    return { checkInDate, checkOutDate, nights };
+  }
 
-    if (checkInDate < currentVietnamDate) {
+  assertWithinBookingWindow(stayRange: BookingStayRange): void {
+    const currentVietnamDate = this.currentVietnamDate();
+
+    if (stayRange.checkInDate < currentVietnamDate) {
       throw new BookingCheckInInPastError();
     }
 
     if (
-      this.countNights(currentVietnamDate, checkInDate) >
-      this.maxAdvanceBookingDays
+      this.countNights(currentVietnamDate, stayRange.checkInDate) >
+      this.maxAdvanceDays
     ) {
-      throw new BookingCheckInTooFarError(this.maxAdvanceBookingDays);
+      throw new BookingCheckInTooFarError(this.maxAdvanceDays);
     }
+  }
 
-    return { checkInDate, checkOutDate, nights };
+  requireStayRange(
+    checkInValue: unknown,
+    checkOutValue: unknown,
+  ): BookingStayRange {
+    const stayRange = this.normalizeStayRange(checkInValue, checkOutValue);
+    this.assertWithinBookingWindow(stayRange);
+    return stayRange;
   }
 
   countNights(checkInDate: string, checkOutDate: string): number {
@@ -112,8 +123,8 @@ export class BookingStayPolicy {
     return date;
   }
 
-  private getCurrentVietnamDate(now = new Date()): string {
-    return new Date(now.getTime() + VIETNAM_UTC_OFFSET_MILLISECONDS)
+  private currentVietnamDate(now = new Date()): string {
+    return new Date(now.getTime() + VIETNAM_UTC_OFFSET_MS)
       .toISOString()
       .slice(0, 10);
   }

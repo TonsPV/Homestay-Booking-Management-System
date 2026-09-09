@@ -37,8 +37,8 @@ import {
   BedType,
   MAX_BED_QUANTITY,
   MAX_BED_TYPES,
-  sortBedConfigurations,
-  type BedConfiguration,
+  sortBedConfigs,
+  type BedConfig,
 } from './bed-configuration';
 import { RoomType } from './schema/room-type.entity';
 import { RoomTypeBed } from './schema/room-type-bed.entity';
@@ -56,7 +56,7 @@ export interface RoomTypeResponse {
   name: string;
   description: string | null;
   bedType: string | null;
-  beds: BedConfiguration[];
+  beds: BedConfig[];
   maxGuests: number;
   basePrice: string;
   amenities: RoomTypeAmenityResponse[];
@@ -77,22 +77,24 @@ interface RoomTypeListResult<TItem> {
 export class RoomTypeService {
   constructor(
     @InjectRepository(RoomType)
-    private readonly roomTypesRepository: Repository<RoomType>,
+    private readonly roomTypeRepo: Repository<RoomType>,
   ) {}
 
   async listPublic(
     query: ListRoomTypesQueryDto,
   ): Promise<RoomTypeListResult<RoomTypeResponse>> {
-    const result = await this.list(query, false);
+    const listResult = await this.findList(query, false);
 
     return {
-      items: result.items.map((roomType) => this.toPublicResponse(roomType)),
-      meta: result.meta,
+      items: listResult.items.map((roomType) =>
+        this.toPublicResponse(roomType),
+      ),
+      meta: listResult.meta,
     };
   }
 
   async getPublic(id: string): Promise<RoomTypeResponse> {
-    return this.toPublicResponse(await this.getActiveRoomType(id));
+    return this.toPublicResponse(await this.findActive(id));
   }
 
   async listAdmin(
@@ -103,20 +105,20 @@ export class RoomTypeService {
       false,
       'Include deleted khong hop le.',
     );
-    const result = await this.list(query, includeDeleted);
+    const listResult = await this.findList(query, includeDeleted);
 
     return {
-      items: result.items.map((roomType) => this.toAdminResponse(roomType)),
-      meta: result.meta,
+      items: listResult.items.map((roomType) => this.toAdminResponse(roomType)),
+      meta: listResult.meta,
     };
   }
 
   async getAdmin(id: string): Promise<AdminRoomTypeResponse> {
-    return this.toAdminResponse(await this.getRoomTypeWithDeleted(id));
+    return this.toAdminResponse(await this.findWithDeleted(id));
   }
 
   async create(body: CreateRoomTypeDto): Promise<AdminRoomTypeResponse> {
-    this.rejectLegacyAndNormalizedBeds(body.bedType, body.beds);
+    this.rejectMixedBedInputs(body.bedType, body.beds);
     const name = requireTrimmedString(
       body.name,
       'Ten loai phong khong hop le.',
@@ -145,10 +147,10 @@ export class RoomTypeService {
       'Gia co ban khong hop le.',
     );
 
-    await this.ensureNameIsAvailable(name);
+    await this.assertNameAvailable(name);
 
     try {
-      const roomType = await this.roomTypesRepository.manager.transaction(
+      const roomType = await this.roomTypeRepo.manager.transaction(
         async (manager) => {
           const roomType = manager.getRepository(RoomType).create({
             name,
@@ -165,12 +167,12 @@ export class RoomTypeService {
             await this.replaceBeds(manager, savedRoomType.id, beds);
           }
 
-          return this.getRoomTypeForManager(manager, savedRoomType.id, false);
+          return this.findInTransaction(manager, savedRoomType.id, false);
         },
       );
       return this.toAdminResponse(roomType);
     } catch (error) {
-      this.throwRoomTypeDuplicateConflict(error);
+      this.throwDuplicateConflict(error);
     }
   }
 
@@ -178,7 +180,8 @@ export class RoomTypeService {
     id: string,
     body: UpdateRoomTypeDto,
   ): Promise<AdminRoomTypeResponse> {
-    this.rejectLegacyAndNormalizedBeds(body.bedType, body.beds);
+    this.validateId(id);
+    this.rejectMixedBedInputs(body.bedType, body.beds);
     const name = optionalTrimmedString(
       body.name,
       'Ten loai phong khong hop le.',
@@ -220,16 +223,13 @@ export class RoomTypeService {
     }
 
     if (name !== undefined) {
-      await this.ensureNameIsAvailable(name, id);
+      await this.assertNameAvailable(name, id);
     }
 
     try {
-      const roomType = await this.roomTypesRepository.manager.transaction(
+      const roomType = await this.roomTypeRepo.manager.transaction(
         async (manager) => {
-          const roomType = await this.getLockedActiveRoomTypeForMutation(
-            manager,
-            id,
-          );
+          const roomType = await this.lockActiveRoomType(manager, id);
 
           if (name !== undefined) {
             roomType.name = name;
@@ -257,22 +257,19 @@ export class RoomTypeService {
             await this.replaceBeds(manager, roomType.id, beds);
           }
 
-          return this.getRoomTypeForManager(manager, roomType.id, false);
+          return this.findInTransaction(manager, roomType.id, false);
         },
       );
       return this.toAdminResponse(roomType);
     } catch (error) {
-      this.throwRoomTypeDuplicateConflict(error);
+      this.throwDuplicateConflict(error);
     }
   }
 
   async softDelete(id: string): Promise<AdminRoomTypeResponse> {
     this.validateId(id);
-    await this.roomTypesRepository.manager.transaction(async (manager) => {
-      const roomType = await this.getLockedActiveRoomTypeForMutation(
-        manager,
-        id,
-      );
+    await this.roomTypeRepo.manager.transaction(async (manager) => {
+      const roomType = await this.lockActiveRoomType(manager, id);
 
       if (await this.hasActiveRooms(manager, roomType.id)) {
         throw new AppHttpException(
@@ -288,7 +285,7 @@ export class RoomTypeService {
     return this.getAdmin(id);
   }
 
-  private async getLockedActiveRoomTypeForMutation(
+  private async lockActiveRoomType(
     manager: EntityManager,
     id: string,
   ): Promise<RoomType> {
@@ -307,7 +304,7 @@ export class RoomTypeService {
     return roomType;
   }
 
-  private async getLockedActiveAmenities(
+  private async lockActiveAmenities(
     manager: EntityManager,
     amenityIds: string[],
   ): Promise<Amenity[]> {
@@ -347,28 +344,21 @@ export class RoomTypeService {
   async restore(id: string): Promise<AdminRoomTypeResponse> {
     this.validateId(id);
     try {
-      await this.roomTypesRepository.manager.transaction(async (manager) => {
-        const amenityIds = await this.getRoomTypeAmenityIds(manager, id);
-        const amenities = await this.getLockedAmenitiesIncludingDeleted(
+      await this.roomTypeRepo.manager.transaction(async (manager) => {
+        const amenityIds = await this.getAmenityIds(manager, id);
+        const amenities = await this.lockAmenitiesWithDeleted(
           manager,
           amenityIds,
         );
-        const roomType = await this.getLockedDeletedRoomTypeForRestore(
-          manager,
-          id,
-        );
+        const roomType = await this.lockDeleted(manager, id);
 
-        await this.ensureNameIsAvailable(roomType.name, roomType.id, manager);
+        await this.assertNameAvailable(roomType.name, roomType.id, manager);
 
         const staleAmenityIds = amenities
           .filter((amenity) => amenity.deletedAt !== null)
           .map((amenity) => amenity.id);
         if (staleAmenityIds.length > 0) {
-          await this.removeRoomTypeAmenityRelations(
-            manager,
-            roomType.id,
-            staleAmenityIds,
-          );
+          await this.removeAmenityLinks(manager, roomType.id, staleAmenityIds);
         }
 
         await manager.getRepository(RoomType).recover(roomType);
@@ -376,7 +366,7 @@ export class RoomTypeService {
 
       return this.getAdmin(id);
     } catch (error) {
-      this.throwRoomTypeDuplicateConflict(error);
+      this.throwDuplicateConflict(error);
     }
   }
 
@@ -387,15 +377,9 @@ export class RoomTypeService {
     this.validateId(id);
     const amenityIds = this.requireAmenityIds(body.amenityIds);
 
-    await this.roomTypesRepository.manager.transaction(async (manager) => {
-      const amenities = await this.getLockedActiveAmenities(
-        manager,
-        amenityIds,
-      );
-      const roomType = await this.getLockedActiveRoomTypeForMutation(
-        manager,
-        id,
-      );
+    await this.roomTypeRepo.manager.transaction(async (manager) => {
+      const amenities = await this.lockActiveAmenities(manager, amenityIds);
+      const roomType = await this.lockActiveRoomType(manager, id);
 
       roomType.amenities = amenities.sort((left, right) =>
         left.name.localeCompare(right.name),
@@ -406,7 +390,7 @@ export class RoomTypeService {
     return this.getAdmin(id);
   }
 
-  private async list(
+  private async findList(
     query: ListRoomTypesQueryDto,
     includeDeleted: boolean,
   ): Promise<RoomTypeListResult<RoomType>> {
@@ -414,7 +398,7 @@ export class RoomTypeService {
       query as Record<string, unknown>,
     );
     const search = optionalSearch(query.search);
-    const roomTypesQuery = this.roomTypesRepository
+    const roomTypesQuery = this.roomTypeRepo
       .createQueryBuilder('roomType')
       .leftJoinAndSelect(
         'roomType.amenities',
@@ -448,10 +432,10 @@ export class RoomTypeService {
     };
   }
 
-  private async getActiveRoomType(id: string): Promise<RoomType> {
+  private async findActive(id: string): Promise<RoomType> {
     this.validateId(id);
 
-    const roomType = await this.roomTypesRepository
+    const roomType = await this.roomTypeRepo
       .createQueryBuilder('roomType')
       .leftJoinAndSelect(
         'roomType.amenities',
@@ -471,10 +455,10 @@ export class RoomTypeService {
     return roomType;
   }
 
-  private async getRoomTypeWithDeleted(id: string): Promise<RoomType> {
+  private async findWithDeleted(id: string): Promise<RoomType> {
     this.validateId(id);
 
-    const roomType = await this.roomTypesRepository
+    const roomType = await this.roomTypeRepo
       .createQueryBuilder('roomType')
       .withDeleted()
       .leftJoinAndSelect(
@@ -495,7 +479,7 @@ export class RoomTypeService {
     return roomType;
   }
 
-  private async getRoomTypeAmenityIds(
+  private async getAmenityIds(
     manager: EntityManager,
     roomTypeId: string,
   ): Promise<string[]> {
@@ -510,7 +494,7 @@ export class RoomTypeService {
     return this.sortIds(rows.map((row) => String(row.amenityId)));
   }
 
-  private async getLockedAmenitiesIncludingDeleted(
+  private async lockAmenitiesWithDeleted(
     manager: EntityManager,
     amenityIds: string[],
   ): Promise<Amenity[]> {
@@ -537,7 +521,7 @@ export class RoomTypeService {
     return amenities;
   }
 
-  private async getLockedDeletedRoomTypeForRestore(
+  private async lockDeleted(
     manager: EntityManager,
     id: string,
   ): Promise<RoomType> {
@@ -560,7 +544,7 @@ export class RoomTypeService {
     return roomType;
   }
 
-  private async removeRoomTypeAmenityRelations(
+  private async removeAmenityLinks(
     manager: EntityManager,
     roomTypeId: string,
     amenityIds: string[],
@@ -574,41 +558,41 @@ export class RoomTypeService {
       .execute();
   }
 
-  private async ensureNameIsAvailable(
+  private async assertNameAvailable(
     name: string,
     currentRoomTypeId?: string,
-    manager: EntityManager = this.roomTypesRepository.manager,
+    manager: EntityManager = this.roomTypeRepo.manager,
   ): Promise<void> {
-    const roomTypesRepository =
-      manager === this.roomTypesRepository.manager
-        ? this.roomTypesRepository
+    const repository =
+      manager === this.roomTypeRepo.manager
+        ? this.roomTypeRepo
         : manager.getRepository(RoomType);
-    const query = roomTypesRepository
+    const nameQuery = repository
       .createQueryBuilder('roomType')
       .withDeleted()
       .where('roomType.name = :name', { name });
 
     if (currentRoomTypeId !== undefined) {
-      query.andWhere('roomType.id <> :currentRoomTypeId', {
+      nameQuery.andWhere('roomType.id <> :currentRoomTypeId', {
         currentRoomTypeId,
       });
     }
 
-    if ((await query.getOne()) !== null) {
+    if ((await nameQuery.getOne()) !== null) {
       throw new ConflictException(
         'Ten loai phong da ton tai, ke ca trong du lieu da xoa.',
       );
     }
   }
 
-  private async getRoomTypeForManager(
+  private async findInTransaction(
     manager: EntityManager,
     id: string,
     includeDeleted: boolean,
   ): Promise<RoomType> {
     this.validateId(id);
 
-    const query = manager
+    const roomTypeQuery = manager
       .getRepository(RoomType)
       .createQueryBuilder('roomType')
       .leftJoinAndSelect(
@@ -622,12 +606,12 @@ export class RoomTypeService {
       .addOrderBy('bed.bedType', 'ASC');
 
     if (includeDeleted) {
-      query.withDeleted();
+      roomTypeQuery.withDeleted();
     } else {
-      query.andWhere('roomType.deletedAt IS NULL');
+      roomTypeQuery.andWhere('roomType.deletedAt IS NULL');
     }
 
-    const roomType = await query.getOne();
+    const roomType = await roomTypeQuery.getOne();
 
     if (roomType === null) {
       throw new NotFoundException('Khong tim thay loai phong.');
@@ -639,16 +623,16 @@ export class RoomTypeService {
   private async replaceBeds(
     manager: EntityManager,
     roomTypeId: string,
-    beds: BedConfiguration[],
+    beds: BedConfig[],
   ): Promise<void> {
-    const bedsRepository = manager.getRepository(RoomTypeBed);
+    const bedRepo = manager.getRepository(RoomTypeBed);
 
-    await bedsRepository.delete({ roomTypeId });
+    await bedRepo.delete({ roomTypeId });
 
     if (beds.length > 0) {
-      await bedsRepository.save(
+      await bedRepo.save(
         beds.map((bed) =>
-          bedsRepository.create({
+          bedRepo.create({
             roomTypeId,
             bedType: bed.type,
             quantity: bed.quantity,
@@ -658,7 +642,7 @@ export class RoomTypeService {
     }
   }
 
-  private rejectLegacyAndNormalizedBeds(
+  private rejectMixedBedInputs(
     legacyValue: unknown,
     normalizedValue: unknown,
   ): void {
@@ -669,7 +653,7 @@ export class RoomTypeService {
     }
   }
 
-  private normalizeBeds(value: unknown): BedConfiguration[] | undefined {
+  private normalizeBeds(value: unknown): BedConfig[] | undefined {
     if (value === undefined) {
       return undefined;
     }
@@ -681,15 +665,19 @@ export class RoomTypeService {
     }
 
     const seenTypes = new Set<BedType>();
-    const beds: BedConfiguration[] = [];
+    const beds: BedConfig[] = [];
 
-    for (const item of value) {
-      if (item === null || typeof item !== 'object' || Array.isArray(item)) {
+    for (const rawBed of value) {
+      if (
+        rawBed === null ||
+        typeof rawBed !== 'object' ||
+        Array.isArray(rawBed)
+      ) {
         throw new BadRequestException('Cau hinh giuong khong hop le.');
       }
 
-      const record = item as Record<string, unknown>;
-      const unknownKeys = Object.keys(record).filter(
+      const bedRecord = rawBed as Record<string, unknown>;
+      const unknownKeys = Object.keys(bedRecord).filter(
         (key) => key !== 'type' && key !== 'quantity',
       );
 
@@ -697,26 +685,26 @@ export class RoomTypeService {
         throw new BadRequestException('Cau hinh giuong khong hop le.');
       }
 
-      const type = record.type;
-      const quantity = record.quantity;
+      const bedTypeValue = bedRecord.type;
+      const bedQuantity = bedRecord.quantity;
 
       if (
-        typeof type !== 'string' ||
-        !Object.values(BedType).includes(type as BedType)
+        typeof bedTypeValue !== 'string' ||
+        !Object.values(BedType).includes(bedTypeValue as BedType)
       ) {
         throw new BadRequestException('Loai giuong khong hop le.');
       }
 
       if (
-        typeof quantity !== 'number' ||
-        !Number.isSafeInteger(quantity) ||
-        quantity < 1 ||
-        quantity > MAX_BED_QUANTITY
+        typeof bedQuantity !== 'number' ||
+        !Number.isSafeInteger(bedQuantity) ||
+        bedQuantity < 1 ||
+        bedQuantity > MAX_BED_QUANTITY
       ) {
         throw new BadRequestException('So luong giuong khong hop le.');
       }
 
-      const bedType = type as BedType;
+      const bedType = bedTypeValue as BedType;
 
       if (seenTypes.has(bedType)) {
         throw new BadRequestException(
@@ -725,10 +713,10 @@ export class RoomTypeService {
       }
 
       seenTypes.add(bedType);
-      beds.push({ type: bedType, quantity });
+      beds.push({ type: bedType, quantity: bedQuantity });
     }
 
-    return sortBedConfigurations(beds);
+    return sortBedConfigs(beds);
   }
 
   private async hasActiveRooms(
@@ -748,7 +736,7 @@ export class RoomTypeService {
     return room !== null;
   }
 
-  private throwRoomTypeDuplicateConflict(error: unknown): never {
+  private throwDuplicateConflict(error: unknown): never {
     if (getMysqlDuplicateKey(error) === undefined) {
       throw error;
     }
@@ -790,7 +778,7 @@ export class RoomTypeService {
       name: roomType.name,
       description: roomType.description,
       bedType: roomType.bedType,
-      beds: this.toBedConfigurations(roomType),
+      beds: this.toBedConfigs(roomType),
       maxGuests: roomType.maxGuests,
       basePrice: roomType.basePrice,
       amenities: (roomType.amenities ?? []).map((amenity) => ({
@@ -803,8 +791,8 @@ export class RoomTypeService {
     };
   }
 
-  private toBedConfigurations(roomType: RoomType): BedConfiguration[] {
-    return sortBedConfigurations(
+  private toBedConfigs(roomType: RoomType): BedConfig[] {
+    return sortBedConfigs(
       (roomType.beds ?? []).map((bed) => ({
         type: bed.bedType,
         quantity: bed.quantity,

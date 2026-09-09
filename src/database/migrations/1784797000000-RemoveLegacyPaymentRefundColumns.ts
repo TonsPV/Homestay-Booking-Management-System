@@ -10,7 +10,7 @@ export class RemoveLegacyPaymentRefundColumns1784797000000 implements MigrationI
   async up(queryRunner: QueryRunner): Promise<void> {
     await assertNoRows(
       queryRunner,
-      refundDataMismatchQuery(),
+      refundMismatchQuery(),
       'Cannot remove legacy payment refund columns: extracted refund data is incomplete or different.',
     );
 
@@ -81,13 +81,13 @@ export class RemoveLegacyPaymentRefundColumns1784797000000 implements MigrationI
 
     await assertNoRows(
       queryRunner,
-      refundDataMismatchQuery(),
+      refundMismatchQuery(),
       'Cannot rollback legacy payment refund columns: refund data could not be restored.',
     );
   }
 }
 
-function refundDataMismatchQuery(): string {
+function refundMismatchQuery(): string {
   return `
     SELECT p.id AS paymentId
     FROM payments AS p

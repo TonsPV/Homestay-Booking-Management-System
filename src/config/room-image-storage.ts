@@ -9,7 +9,7 @@ export const ROOM_IMAGE_PUBLIC_PATH = '/media/room-images';
 
 const DEFAULT_ROOM_IMAGE_UPLOAD_DIR = '.data/uploads/room-images';
 
-export function resolveRoomImageUploadDirectory(
+export function resolveRoomImageDir(
   configService: Pick<ConfigService, 'get'>,
 ): string {
   const configuredDirectory =

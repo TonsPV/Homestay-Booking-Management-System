@@ -16,34 +16,56 @@ import { User } from '../../../../src/module/user/schema/user.entity';
 import { UserAdminService } from '../../../../src/module/user/user-admin.service';
 
 describe('UserAdminService', () => {
-  let usersRepository: {
+  let userRepo: {
     create: jest.Mock;
     save: jest.Mock;
-    findOneBy: jest.Mock;
+    createQueryBuilder: jest.Mock;
+    manager: {
+      transaction: jest.Mock;
+    };
+  };
+  let txRepo: {
+    findOne: jest.Mock;
+    save: jest.Mock;
     createQueryBuilder: jest.Mock;
   };
-  let passwordHasherService: {
+  let transactionManager: {
+    getRepository: jest.Mock;
+  };
+  let passwordHasher: {
     hash: jest.Mock;
   };
   let auditLogService: { record: jest.Mock };
   let service: UserAdminService;
 
   beforeEach(() => {
-    usersRepository = {
-      create: jest.fn((value: User) => value),
+    txRepo = {
+      findOne: jest.fn(),
       save: jest.fn(),
-      findOneBy: jest.fn(),
       createQueryBuilder: jest.fn(),
     };
-    passwordHasherService = {
+    transactionManager = {
+      getRepository: jest.fn().mockReturnValue(txRepo),
+    };
+    userRepo = {
+      create: jest.fn((value: User) => value),
+      save: jest.fn(),
+      createQueryBuilder: jest.fn(),
+      manager: {
+        transaction: jest.fn((operation: (value: unknown) => unknown) =>
+          operation(transactionManager),
+        ),
+      },
+    };
+    passwordHasher = {
       hash: jest.fn(),
     };
     auditLogService = {
       record: jest.fn().mockResolvedValue(undefined),
     };
     service = new UserAdminService(
-      usersRepository as unknown as Repository<User>,
-      passwordHasherService as unknown as PasswordHasherService,
+      userRepo as unknown as Repository<User>,
+      passwordHasher as unknown as PasswordHasherService,
       auditLogService,
     );
   });
@@ -51,11 +73,11 @@ describe('UserAdminService', () => {
   it('creates only an ACTIVE STAFF account with normalized contact data', async () => {
     const emailQuery = createQueryBuilder();
     const phoneQuery = createQueryBuilder();
-    usersRepository.createQueryBuilder
+    userRepo.createQueryBuilder
       .mockReturnValueOnce(emailQuery)
       .mockReturnValueOnce(phoneQuery);
-    passwordHasherService.hash.mockResolvedValue('password-hash');
-    usersRepository.save.mockImplementation((user: User) =>
+    passwordHasher.hash.mockResolvedValue('password-hash');
+    userRepo.save.mockImplementation((user: User) =>
       Promise.resolve(userFixture(user)),
     );
 
@@ -80,9 +102,7 @@ describe('UserAdminService', () => {
         phones: ['+84901234567', '0901234567', '84901234567'],
       },
     );
-    expect(passwordHasherService.hash).toHaveBeenCalledWith(
-      'StrongPassword123!',
-    );
+    expect(passwordHasher.hash).toHaveBeenCalledWith('StrongPassword123!');
   });
 
   it('rejects issuing ADMIN through create before persistence', async () => {
@@ -94,15 +114,15 @@ describe('UserAdminService', () => {
         role: 'ADMIN',
       }),
     ).rejects.toThrow('API nay chi dung de cap tai khoan STAFF.');
-    expect(usersRepository.createQueryBuilder).not.toHaveBeenCalled();
-    expect(usersRepository.save).not.toHaveBeenCalled();
+    expect(userRepo.createQueryBuilder).not.toHaveBeenCalled();
+    expect(userRepo.save).not.toHaveBeenCalled();
   });
 
   it('lists users with pagination, search, role and status filters', async () => {
     const queryBuilder = createQueryBuilder({
       manyAndCount: [[userFixture()], 21],
     });
-    usersRepository.createQueryBuilder.mockReturnValue(queryBuilder);
+    userRepo.createQueryBuilder.mockReturnValue(queryBuilder);
 
     await expect(
       service.listUsers({
@@ -130,27 +150,27 @@ describe('UserAdminService', () => {
   });
 
   it('rejects promotion to ADMIN through update', async () => {
-    usersRepository.findOneBy.mockResolvedValue(userFixture());
+    txRepo.findOne.mockResolvedValue(userFixture());
 
     await expect(
       service.updateUser('2', { role: 'ADMIN' }, '1'),
     ).rejects.toThrow('API nay chi dung de cap tai khoan STAFF.');
-    expect(usersRepository.save).not.toHaveBeenCalled();
+    expect(txRepo.save).not.toHaveBeenCalled();
+    expect(userRepo.save).not.toHaveBeenCalled();
   });
 
   it('rejects an empty update', async () => {
-    usersRepository.findOneBy.mockResolvedValue(userFixture());
+    txRepo.findOne.mockResolvedValue(userFixture());
 
     await expect(service.updateUser('2', {}, '1')).rejects.toThrow(
       'Khong co thong tin user de cap nhat.',
     );
-    expect(usersRepository.save).not.toHaveBeenCalled();
+    expect(txRepo.save).not.toHaveBeenCalled();
+    expect(userRepo.save).not.toHaveBeenCalled();
   });
 
   it('prevents an ADMIN from demoting itself', async () => {
-    usersRepository.findOneBy.mockResolvedValue(
-      userFixture({ id: '1', role: 'ADMIN' }),
-    );
+    txRepo.findOne.mockResolvedValue(userFixture({ id: '1', role: 'ADMIN' }));
 
     await expect(
       service.updateUser('1', { role: 'STAFF' }, '1'),
@@ -159,11 +179,9 @@ describe('UserAdminService', () => {
 
   it('increments tokenVersion when an admin resets a password', async () => {
     const user = userFixture({ tokenVersion: 4 });
-    usersRepository.findOneBy.mockResolvedValue(user);
-    passwordHasherService.hash.mockResolvedValue('new-password-hash');
-    usersRepository.save.mockImplementation((value: User) =>
-      Promise.resolve(value),
-    );
+    txRepo.findOne.mockResolvedValue(user);
+    passwordHasher.hash.mockResolvedValue('new-password-hash');
+    txRepo.save.mockImplementation((value: User) => Promise.resolve(value));
 
     await service.updateUser('2', { password: 'UpdatedPassword456!' }, '1');
 
@@ -175,13 +193,11 @@ describe('UserAdminService', () => {
     const user = userFixture();
     const emailQuery = createQueryBuilder();
     const phoneQuery = createQueryBuilder();
-    usersRepository.findOneBy.mockResolvedValue(user);
-    usersRepository.createQueryBuilder
+    txRepo.findOne.mockResolvedValue(user);
+    txRepo.createQueryBuilder
       .mockReturnValueOnce(emailQuery)
       .mockReturnValueOnce(phoneQuery);
-    usersRepository.save.mockImplementation((value: User) =>
-      Promise.resolve(value),
-    );
+    txRepo.save.mockImplementation((value: User) => Promise.resolve(value));
 
     await service.updateUser(
       '2',
@@ -205,8 +221,8 @@ describe('UserAdminService', () => {
   });
 
   it('rejects duplicate email and phone values', async () => {
-    usersRepository.findOneBy.mockResolvedValue(userFixture());
-    usersRepository.createQueryBuilder.mockReturnValue(
+    txRepo.findOne.mockResolvedValue(userFixture());
+    txRepo.createQueryBuilder.mockReturnValue(
       createQueryBuilder({ one: userFixture({ id: '3' }) }),
     );
 
@@ -214,7 +230,7 @@ describe('UserAdminService', () => {
       service.updateUser('2', { email: 'other@example.com' }, '1'),
     ).rejects.toBeInstanceOf(ConflictException);
 
-    usersRepository.createQueryBuilder.mockReturnValue(
+    txRepo.createQueryBuilder.mockReturnValue(
       createQueryBuilder({ one: userFixture({ id: '3' }) }),
     );
     await expect(
@@ -224,10 +240,8 @@ describe('UserAdminService', () => {
 
   it('revokes existing tokens whenever account status changes', async () => {
     const user = userFixture({ status: 'ACTIVE', tokenVersion: 8 });
-    usersRepository.findOneBy.mockResolvedValue(user);
-    usersRepository.save.mockImplementation((value: User) =>
-      Promise.resolve(value),
-    );
+    txRepo.findOne.mockResolvedValue(user);
+    txRepo.save.mockImplementation((value: User) => Promise.resolve(value));
 
     await service.updateStatus('2', 'LOCKED', '1', auditContext());
     expect(user).toMatchObject({ status: 'LOCKED', tokenVersion: 9 });
@@ -238,30 +252,19 @@ describe('UserAdminService', () => {
 
   it('does not revoke again for an idempotent status request', async () => {
     const user = userFixture({ status: 'ACTIVE', tokenVersion: 8 });
-    const transactionalRepository = {
-      findOne: jest.fn().mockResolvedValue(user),
-      save: jest.fn((value: User) => Promise.resolve(value)),
-    };
-    const manager = {
-      getRepository: jest.fn().mockReturnValue(transactionalRepository),
-    };
-    const transaction = jest.fn((operation: (value: unknown) => unknown) =>
-      operation(manager),
-    );
-    Object.assign(usersRepository, { manager: { transaction } });
-    service = new UserAdminService(
-      usersRepository as unknown as Repository<User>,
-      passwordHasherService as unknown as PasswordHasherService,
-      auditLogService,
-    );
+    txRepo.findOne.mockResolvedValue(user);
+    txRepo.save.mockImplementation((value: User) => Promise.resolve(value));
 
     await service.updateStatus('2', 'ACTIVE', '1', auditContext());
 
     expect(user.tokenVersion).toBe(8);
-    expect(transactionalRepository.findOne).toHaveBeenCalledWith({
+    expect(userRepo.manager.transaction).toHaveBeenCalledTimes(1);
+    expect(txRepo.findOne).toHaveBeenCalledWith({
       where: { id: '2' },
       lock: { mode: 'pessimistic_write' },
     });
+    expect(txRepo.save).toHaveBeenCalledWith(user);
+    expect(userRepo.save).not.toHaveBeenCalled();
     expect(auditLogService.record).not.toHaveBeenCalled();
   });
 
@@ -280,28 +283,20 @@ describe('UserAdminService', () => {
     'writes $action audit with the status transaction manager',
     async ({ fromStatus, toStatus, action }) => {
       const user = userFixture({ status: fromStatus, tokenVersion: 8 });
-      const transactionalRepository = {
-        findOne: jest.fn().mockResolvedValue(user),
-        save: jest.fn((value: User) => Promise.resolve(value)),
-      };
-      const manager = {
-        getRepository: jest.fn().mockReturnValue(transactionalRepository),
-      };
-      const transaction = jest.fn((operation: (value: unknown) => unknown) =>
-        operation(manager),
-      );
-      Object.assign(usersRepository, { manager: { transaction } });
-      service = new UserAdminService(
-        usersRepository as unknown as Repository<User>,
-        passwordHasherService as unknown as PasswordHasherService,
-        auditLogService,
-      );
+      txRepo.findOne.mockResolvedValue(user);
+      txRepo.save.mockImplementation((value: User) => Promise.resolve(value));
       const context = auditContext();
 
       await service.updateStatus('2', toStatus, '1', context);
 
       expect(user.tokenVersion).toBe(9);
-      expect(auditLogService.record).toHaveBeenCalledWith(manager, {
+      expect(txRepo.findOne).toHaveBeenCalledWith({
+        where: { id: '2' },
+        lock: { mode: 'pessimistic_write' },
+      });
+      expect(txRepo.save).toHaveBeenCalledWith(user);
+      expect(userRepo.save).not.toHaveBeenCalled();
+      expect(auditLogService.record).toHaveBeenCalledWith(transactionManager, {
         ...context,
         action,
         entityType: AuditEntityType.USER,
@@ -313,8 +308,8 @@ describe('UserAdminService', () => {
 
   it('does not write audit when status persistence fails', async () => {
     const user = userFixture({ status: 'ACTIVE', tokenVersion: 8 });
-    usersRepository.findOneBy.mockResolvedValue(user);
-    usersRepository.save.mockImplementation(() =>
+    txRepo.findOne.mockResolvedValue(user);
+    txRepo.save.mockImplementation(() =>
       Promise.reject(new Error('save failed')),
     );
 
@@ -323,26 +318,54 @@ describe('UserAdminService', () => {
     ).rejects.toThrow('save failed');
 
     expect(auditLogService.record).not.toHaveBeenCalled();
+    expect(userRepo.save).not.toHaveBeenCalled();
   });
 
-  it('keeps the existing repository save behavior for same-state requests without a manager', async () => {
+  it('uses the transactional repository for same-state requests', async () => {
     const user = userFixture({ status: 'ACTIVE', tokenVersion: 8 });
-    usersRepository.findOneBy.mockResolvedValue(user);
-    usersRepository.save.mockImplementation((value: User) =>
-      Promise.resolve(value),
-    );
+    txRepo.findOne.mockResolvedValue(user);
+    txRepo.save.mockImplementation((value: User) => Promise.resolve(value));
 
     await service.updateStatus('2', 'ACTIVE', '1', auditContext());
 
     expect(user.tokenVersion).toBe(8);
-    expect(usersRepository.save).toHaveBeenCalledWith(user);
+    expect(userRepo.manager.transaction).toHaveBeenCalledTimes(1);
+    expect(txRepo.save).toHaveBeenCalledWith(user);
+    expect(userRepo.save).not.toHaveBeenCalled();
     expect(auditLogService.record).not.toHaveBeenCalled();
   });
 
-  it('prevents self-lock and rejects invalid or missing ids', async () => {
-    usersRepository.findOneBy.mockResolvedValue(
-      userFixture({ id: '1', role: 'ADMIN' }),
+  it('propagates a transaction failure without falling back to a root write', async () => {
+    userRepo.manager.transaction.mockRejectedValue(
+      new Error('transaction failed'),
     );
+
+    await expect(
+      service.updateStatus('2', 'LOCKED', '1', auditContext()),
+    ).rejects.toThrow('transaction failed');
+
+    expect(txRepo.findOne).not.toHaveBeenCalled();
+    expect(txRepo.save).not.toHaveBeenCalled();
+    expect(userRepo.save).not.toHaveBeenCalled();
+    expect(auditLogService.record).not.toHaveBeenCalled();
+  });
+
+  it('propagates an audit failure without a fallback write', async () => {
+    const user = userFixture({ status: 'ACTIVE', tokenVersion: 8 });
+    txRepo.findOne.mockResolvedValue(user);
+    txRepo.save.mockImplementation((value: User) => Promise.resolve(value));
+    auditLogService.record.mockRejectedValue(new Error('audit failed'));
+
+    await expect(
+      service.updateStatus('2', 'LOCKED', '1', auditContext()),
+    ).rejects.toThrow('audit failed');
+
+    expect(txRepo.save).toHaveBeenCalledWith(user);
+    expect(userRepo.save).not.toHaveBeenCalled();
+  });
+
+  it('prevents self-lock and rejects invalid or missing ids', async () => {
+    txRepo.findOne.mockResolvedValue(userFixture({ id: '1', role: 'ADMIN' }));
 
     await expect(
       service.updateStatus('1', 'LOCKED', '1', auditContext()),
@@ -351,7 +374,7 @@ describe('UserAdminService', () => {
       service.updateStatus('bad-id', 'ACTIVE', '1', auditContext()),
     ).rejects.toBeInstanceOf(BadRequestException);
 
-    usersRepository.findOneBy.mockResolvedValue(null);
+    txRepo.findOne.mockResolvedValue(null);
     await expect(
       service.updateStatus('999', 'ACTIVE', '1', auditContext()),
     ).rejects.toBeInstanceOf(NotFoundException);

@@ -31,46 +31,46 @@ export type {
 @Injectable()
 export class RoomService {
   constructor(
-    private readonly roomQueryService: RoomQueryService,
-    private readonly roomMutationService: RoomMutationService,
+    private readonly roomQuery: RoomQueryService,
+    private readonly roomMutation: RoomMutationService,
   ) {}
 
   list(query: ListRoomsQueryDto): Promise<PublicRoomListResult> {
-    return this.roomQueryService.list(query);
+    return this.roomQuery.list(query);
   }
 
   listManagement(
     query: ListManagementRoomsQueryDto,
   ): Promise<ManagementRoomListResult> {
-    return this.roomQueryService.listManagement(query);
+    return this.roomQuery.listManagement(query);
   }
 
   listAvailable(query: ListAvailableRoomsQueryDto): Promise<RoomListResult> {
-    return this.roomQueryService.listAvailable(query);
+    return this.roomQuery.listAvailable(query);
   }
 
   search(query: SearchRoomsQueryDto): Promise<PublicRoomListResult> {
-    return this.roomQueryService.search(query);
+    return this.roomQuery.search(query);
   }
 
   getById(id: string): Promise<PublicRoomResponse> {
-    return this.roomQueryService.getById(id);
+    return this.roomQuery.getById(id);
   }
 
   getManagement(id: string): Promise<RoomResponse> {
-    return this.roomQueryService.getManagement(id);
+    return this.roomQuery.getManagement(id);
   }
 
   create(body: CreateRoomDto): Promise<RoomResponse> {
-    return this.roomMutationService.create(body);
+    return this.roomMutation.create(body);
   }
 
   update(id: string, body: UpdateRoomDto): Promise<RoomResponse> {
-    return this.roomMutationService.update(id, body);
+    return this.roomMutation.update(id, body);
   }
 
   delete(id: string): Promise<RoomResponse> {
-    return this.roomMutationService.delete(id);
+    return this.roomMutation.delete(id);
   }
 
   updateStatus(
@@ -79,6 +79,6 @@ export class RoomService {
     role: UserRole | undefined,
     auditContext: AuditActorContext,
   ): Promise<RoomResponse> {
-    return this.roomMutationService.updateStatus(id, body, role, auditContext);
+    return this.roomMutation.updateStatus(id, body, role, auditContext);
   }
 }

@@ -4,7 +4,7 @@ import AppDataSource from '../data-source';
 import { Customer } from '../../module/customer/schema/customer.entity';
 import { User } from '../../module/user/schema/user.entity';
 import {
-  createPhoneNormalizationPlan,
+  buildPhonePlan,
   isProductionEnvironment,
   type PhoneNormalizationPlan,
   type PhoneRecord,
@@ -27,7 +27,7 @@ async function main(): Promise<void> {
   await AppDataSource.initialize();
 
   try {
-    const initialPlan = createPhoneNormalizationPlan(
+    const initialPlan = buildPhonePlan(
       await readPhoneRecords(AppDataSource.manager, false),
     );
 
@@ -39,9 +39,7 @@ async function main(): Promise<void> {
     }
 
     const appliedChanges = await AppDataSource.transaction(async (manager) => {
-      const lockedPlan = createPhoneNormalizationPlan(
-        await readPhoneRecords(manager, true),
-      );
+      const lockedPlan = buildPhonePlan(await readPhoneRecords(manager, true));
 
       assertPlanCanBeApplied(lockedPlan);
 

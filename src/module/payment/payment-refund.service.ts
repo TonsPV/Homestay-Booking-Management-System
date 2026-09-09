@@ -50,7 +50,7 @@ import {
 import {
   toVnPayAmount,
   VnPayGatewayService,
-  type VnPayTransactionOperationInput,
+  type VnPayOperationInput,
   type VnPayTransactionResult,
 } from './vnpay-gateway.service';
 import { PaymentRefundCapability } from './domain/payment-refund-capability';
@@ -65,7 +65,7 @@ export class PaymentRefundService {
     private readonly transactions: TransactionRunner,
     private readonly refunds: PaymentRefundStore,
     private readonly lifecycle: BookingPaymentLifecycleService,
-    private readonly paymentQueryService: PaymentQueryService,
+    private readonly paymentQuery: PaymentQueryService,
     private readonly vnPay: VnPayGatewayService,
     private readonly auditLog: TransactionalAuditLog,
   ) {}
@@ -128,7 +128,7 @@ export class PaymentRefundService {
     }
 
     if (paymentSnapshot.method !== PaymentMethod.VNPAY) {
-      throw this.duplicateChargeResolutionNotAllowed(
+      throw this.duplicateDenied(
         'Chi payment VNPay trung moi co the duoc xu ly theo capability nay.',
       );
     }
@@ -167,7 +167,7 @@ export class PaymentRefundService {
       );
     }
 
-    const operationInput = this.getVnPayOperationInput(
+    const operationInput = this.buildVnPayInput(
       payment,
       createVnPayRequestId('Q'),
       clientIp,
@@ -182,10 +182,10 @@ export class PaymentRefundService {
     ) {
       operationInput.transactionId = refund.gatewayTransactionId;
     }
-    let result: VnPayTransactionResult;
+    let gatewayResult: VnPayTransactionResult;
 
     try {
-      result = await this.vnPay.lookupTransaction(operationInput);
+      gatewayResult = await this.vnPay.lookupTransaction(operationInput);
     } catch (error) {
       await this.recordRefundQueryFailure(payment.id);
       this.logger.error(
@@ -199,12 +199,12 @@ export class PaymentRefundService {
 
     await this.applyVnPayReconciliation(
       payment.id,
-      result,
+      gatewayResult,
       reconciledByUserId,
       requestId,
     );
 
-    if (!result.isVerified) {
+    if (!gatewayResult.isVerified) {
       throw new ServiceUnavailableException(
         'Phan hoi doi soat VNPay khong xac minh duoc chu ky.',
       );
@@ -222,7 +222,7 @@ export class PaymentRefundService {
     const paymentId = paymentSnapshot.id;
 
     await this.transactions.run(async (transaction) => {
-      const booking = await this.getLockedBooking(
+      const booking = await this.lockBooking(
         transaction,
         paymentSnapshot.bookingId,
       );
@@ -334,16 +334,16 @@ export class PaymentRefundService {
     if (pendingPayment === null) {
       throw new NotFoundException('Khong tim thay payment.');
     }
-    const operationInput = this.getVnPayOperationInput(
+    const operationInput = this.buildVnPayInput(
       pendingPayment,
       this.requireRefund(pendingPayment).requestId as string,
       clientIp,
       `Hoan tien booking ${pendingPayment.bookingId}: ${reason}`,
     );
-    let result: VnPayTransactionResult;
+    let gatewayResult: VnPayTransactionResult;
 
     try {
-      result = await this.vnPay.requestRefund({
+      gatewayResult = await this.vnPay.requestRefund({
         ...operationInput,
         createdBy: `user-${refundedByUserId}`,
       });
@@ -361,7 +361,7 @@ export class PaymentRefundService {
 
     const outcome = await this.applyVnPayRefundResult(
       pendingPayment.id,
-      result,
+      gatewayResult,
       refundedByUserId,
       requestId,
     );
@@ -372,7 +372,7 @@ export class PaymentRefundService {
 
     if (outcome === 'REJECTED') {
       this.logger.warn(
-        `operation=VNPAY_REFUND_REQUEST paymentId=${pendingPayment.id} bookingId=${pendingPayment.bookingId} errorCode=${ErrorCode.PAYMENT_REFUND_REJECTED} requestId=${requestId ?? 'unknown'} gatewayResponseCode=${result.providerResponseCode}`,
+        `operation=VNPAY_REFUND_REQUEST paymentId=${pendingPayment.id} bookingId=${pendingPayment.bookingId} errorCode=${ErrorCode.PAYMENT_REFUND_REJECTED} requestId=${requestId ?? 'unknown'} gatewayResponseCode=${gatewayResult.providerResponseCode}`,
       );
       throw new AppHttpException(
         HttpStatus.CONFLICT,
@@ -381,7 +381,7 @@ export class PaymentRefundService {
       );
     }
 
-    if (this.isAcceptedVnPayRefund(paymentSnapshot, result)) {
+    if (this.isAcceptedVnPayRefund(paymentSnapshot, gatewayResult)) {
       return this.getManagementPayment(pendingPayment.id);
     }
 
@@ -402,7 +402,7 @@ export class PaymentRefundService {
   ): Promise<'NEW' | 'PENDING_REPLAY' | 'REJECTED_REPLAY' | 'REFUNDED'> {
     try {
       return await this.transactions.run(async (transaction) => {
-        const booking = await this.getLockedBooking(
+        const booking = await this.lockBooking(
           transaction,
           paymentSnapshot.bookingId,
         );
@@ -416,11 +416,7 @@ export class PaymentRefundService {
         }
 
         if (capability === PaymentRefundCapability.DUPLICATE_CHARGE_REFUND) {
-          await this.getLockedDuplicateChargeCanonicalPayment(
-            transaction,
-            booking,
-            payment,
-          );
+          await this.lockCanonicalPayment(transaction, booking, payment);
         }
 
         const paymentUsingKey = await this.refunds.findByRefundIdempotencyKey(
@@ -500,7 +496,7 @@ export class PaymentRefundService {
           entityType: AuditEntityType.PAYMENT,
           entityId: payment.id,
           requestId,
-          metadata: this.getRefundAuditMetadata(booking, payment),
+          metadata: this.buildRefundAuditMetadata(booking, payment),
         });
         return 'NEW';
       });
@@ -556,12 +552,12 @@ export class PaymentRefundService {
     }
   }
 
-  private getVnPayOperationInput(
+  private buildVnPayInput(
     payment: Payment,
     requestId: string,
     clientIp: string | undefined,
     orderInfo: string,
-  ): VnPayTransactionOperationInput {
+  ): VnPayOperationInput {
     if (
       payment.gatewayReference === null ||
       payment.gatewayTransactionId === null
@@ -620,7 +616,7 @@ export class PaymentRefundService {
         throw new NotFoundException('Khong tim thay payment.');
       }
 
-      const booking = await this.getLockedBooking(
+      const booking = await this.lockBooking(
         transaction,
         paymentSnapshot.bookingId,
       );
@@ -693,7 +689,7 @@ export class PaymentRefundService {
         throw new NotFoundException('Khong tim thay payment.');
       }
 
-      const booking = await this.getLockedBooking(
+      const booking = await this.lockBooking(
         transaction,
         paymentSnapshot.bookingId,
       );
@@ -773,7 +769,7 @@ export class PaymentRefundService {
       result.providerTransactionType === '02' &&
       result.providerTransactionId !== null &&
       result.providerTransactionId.length > 0 &&
-      isMatchingVnPayOperationAmount(payment.amount, result.gatewayAmount)
+      matchesVnPayAmount(payment.amount, result.gatewayAmount)
     );
   }
 
@@ -806,19 +802,25 @@ export class PaymentRefundService {
       (result.providerTransactionStatus === '05' ||
         result.providerTransactionStatus === '06') &&
       result.providerTransactionType === '02' &&
-      isMatchingVnPayOperationAmount(payment.amount, result.gatewayAmount)
+      matchesVnPayAmount(payment.amount, result.gatewayAmount)
     );
   }
 
   private async recordRefundQueryFailure(paymentId: string): Promise<void> {
-    await this.refunds.recordRefundQueryFailure(paymentId, new Date());
+    await this.transactions.run(async (transaction) => {
+      await this.refunds.recordRefundQueryFailure(
+        transaction,
+        paymentId,
+        new Date(),
+      );
+    });
   }
 
   private async getManagementPayment(id: string): Promise<PaymentResponse> {
-    return this.paymentQueryService.getManagementPayment(id);
+    return this.paymentQuery.getManagementPayment(id);
   }
 
-  private async getLockedBooking(
+  private async lockBooking(
     context: TransactionContext,
     id: string,
   ): Promise<Booking> {
@@ -831,12 +833,12 @@ export class PaymentRefundService {
     return booking;
   }
 
-  private async getLockedDuplicateChargeCanonicalPayment(
+  private async lockCanonicalPayment(
     context: TransactionContext,
     booking: Booking,
     payment: Payment,
   ): Promise<Payment> {
-    const isEligibleTargetState =
+    const isEligibleState =
       payment.status === PaymentStatus.REQUIRES_REVIEW ||
       ((payment.status === PaymentStatus.REFUND_PENDING ||
         payment.status === PaymentStatus.REFUNDED) &&
@@ -844,7 +846,7 @@ export class PaymentRefundService {
           PaymentStatus.REQUIRES_REVIEW);
 
     if (
-      !isEligibleTargetState ||
+      !isEligibleState ||
       payment.method !== PaymentMethod.VNPAY ||
       payment.reviewReason !== PaymentReviewReason.ANOTHER_SUCCESSFUL_PAYMENT ||
       payment.reviewCanonicalPaymentId === null ||
@@ -852,7 +854,7 @@ export class PaymentRefundService {
       payment.gatewayReference === null ||
       payment.gatewayTransactionId === null
     ) {
-      throw this.duplicateChargeResolutionNotAllowed(
+      throw this.duplicateDenied(
         'Payment khong phai giao dich VNPay trung can xu ly.',
       );
     }
@@ -864,7 +866,7 @@ export class PaymentRefundService {
     );
 
     if (canonicalPayment === null) {
-      throw this.duplicateChargeResolutionNotAllowed(
+      throw this.duplicateDenied(
         'Khong con payment SUCCESS chinh cho booking nay.',
       );
     }
@@ -881,7 +883,7 @@ export class PaymentRefundService {
     );
   }
 
-  private getRefundAuditMetadata(
+  private buildRefundAuditMetadata(
     booking: Booking,
     payment: Payment,
   ): Record<string, string> {
@@ -903,9 +905,7 @@ export class PaymentRefundService {
     };
   }
 
-  private duplicateChargeResolutionNotAllowed(
-    message: string,
-  ): AppHttpException {
+  private duplicateDenied(message: string): AppHttpException {
     return new AppHttpException(
       HttpStatus.CONFLICT,
       ErrorCode.PAYMENT_REFUND_NOT_ALLOWED,
@@ -956,7 +956,7 @@ function createVnPayRequestId(prefix: 'Q' | 'R'): string {
   return `${prefix}${randomUUID().replaceAll('-', '').slice(0, 31)}`;
 }
 
-function isMatchingVnPayOperationAmount(
+function matchesVnPayAmount(
   paymentAmount: string,
   gatewayAmount: string | null,
 ): boolean {

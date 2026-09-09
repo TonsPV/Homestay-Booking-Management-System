@@ -14,7 +14,7 @@ import {
 import type { BookingTransitionCapability } from './domain/booking-transition.policy';
 import type { BookingStatus } from './domain/booking-state';
 
-const BOOKING_TRANSITION_ERROR_CODE_BY_REASON = {
+const TRANSITION_ERROR_CODES = {
   [BookingTransitionDenialReason.REFUND_PENDING]:
     ErrorCode.BOOKING_REFUND_PENDING,
   [BookingTransitionDenialReason.TRANSITION_NOT_ALLOWED]:
@@ -34,13 +34,13 @@ const BOOKING_TRANSITION_ERROR_CODE_BY_REASON = {
 } as const satisfies Record<BookingTransitionDenialReason, ErrorCode>;
 
 export const BOOKING_TRANSITION_REASON_CODES = Object.values(
-  BOOKING_TRANSITION_ERROR_CODE_BY_REASON,
+  TRANSITION_ERROR_CODES,
 );
 
 export type BookingTransitionReasonCode =
-  (typeof BOOKING_TRANSITION_ERROR_CODE_BY_REASON)[BookingTransitionDenialReason];
+  (typeof TRANSITION_ERROR_CODES)[BookingTransitionDenialReason];
 
-export interface BookingTransitionCapabilityResponse {
+export interface TransitionCapabilityResponse {
   targetStatus: BookingStatus;
   allowed: boolean;
   reasonCode: BookingTransitionReasonCode | null;
@@ -65,7 +65,7 @@ export function throwMappedBookingDomainError(
   }
 
   if (error instanceof InvalidBookingDateRangeError) {
-    throw bookingStayValidationException(
+    throw stayValidationError(
       ErrorCode.BOOKING_DATE_RANGE_INVALID,
       error.message,
       fieldNames.checkOut,
@@ -73,7 +73,7 @@ export function throwMappedBookingDomainError(
   }
 
   if (error instanceof BookingStayTooLongError) {
-    throw bookingStayValidationException(
+    throw stayValidationError(
       ErrorCode.BOOKING_STAY_TOO_LONG,
       error.message,
       fieldNames.checkOut,
@@ -82,7 +82,7 @@ export function throwMappedBookingDomainError(
   }
 
   if (error instanceof BookingCheckInInPastError) {
-    throw bookingStayValidationException(
+    throw stayValidationError(
       ErrorCode.BOOKING_CHECKIN_IN_PAST,
       error.message,
       fieldNames.checkIn,
@@ -90,7 +90,7 @@ export function throwMappedBookingDomainError(
   }
 
   if (error instanceof BookingCheckInTooFarError) {
-    throw bookingStayValidationException(
+    throw stayValidationError(
       ErrorCode.BOOKING_CHECKIN_TOO_FAR,
       error.message,
       fieldNames.checkIn,
@@ -102,7 +102,7 @@ export function throwMappedBookingDomainError(
   if (error instanceof BookingTransitionNotAllowedError) {
     throw new AppHttpException(
       HttpStatus.CONFLICT,
-      mapBookingTransitionReason(error.reason),
+      mapTransitionReason(error.reason),
       error.message,
     );
   }
@@ -110,26 +110,26 @@ export function throwMappedBookingDomainError(
   throw error;
 }
 
-export function toBookingTransitionCapabilityResponse(
+export function toTransitionCapability(
   capability: BookingTransitionCapability,
-): BookingTransitionCapabilityResponse {
+): TransitionCapabilityResponse {
   return {
     targetStatus: capability.targetStatus,
     allowed: capability.allowed,
     reasonCode:
       capability.reason === null
         ? null
-        : mapBookingTransitionReason(capability.reason),
+        : mapTransitionReason(capability.reason),
   };
 }
 
-function mapBookingTransitionReason(
+function mapTransitionReason(
   reason: BookingTransitionDenialReason,
 ): BookingTransitionReasonCode {
-  return BOOKING_TRANSITION_ERROR_CODE_BY_REASON[reason];
+  return TRANSITION_ERROR_CODES[reason];
 }
 
-function bookingStayValidationException(
+function stayValidationError(
   errorCode: ErrorCode,
   message: string,
   field: string,

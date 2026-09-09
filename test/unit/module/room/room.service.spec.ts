@@ -28,7 +28,7 @@ import { RoomStatusTransitionPolicy } from '../../../../src/module/room/domain/r
 import { RoomTodayAvailabilityStatus } from '../../../../src/module/room/room.types';
 
 describe('RoomService', () => {
-  let roomsRepository: {
+  let roomRepo: {
     createQueryBuilder: jest.Mock;
     findOneBy: jest.Mock;
     create: jest.Mock;
@@ -40,17 +40,18 @@ describe('RoomService', () => {
       getRepository: jest.Mock;
     };
   };
-  let roomTypesRepository: {
+  let roomTypeRepo: {
     createQueryBuilder: jest.Mock;
     findOneBy: jest.Mock;
   };
-  let roomCalendarsRepository: { createQueryBuilder: jest.Mock };
-  let bookingsRepository: { createQueryBuilder: jest.Mock };
+  let calendarRepo: { createQueryBuilder: jest.Mock };
+  let bookingRepo: { createQueryBuilder: jest.Mock };
   let auditLogService: { record: jest.Mock };
+  let queryService: RoomQueryService;
   let service: RoomService;
 
   beforeEach(() => {
-    roomsRepository = {
+    roomRepo = {
       createQueryBuilder: jest.fn(),
       findOneBy: jest.fn(),
       create: jest.fn((value: Room) => value),
@@ -62,29 +63,27 @@ describe('RoomService', () => {
         getRepository: jest.fn(),
       },
     };
-    bookingsRepository = {
+    bookingRepo = {
       createQueryBuilder: jest
         .fn()
         .mockReturnValue(createBookingLockQueryBuilder()),
     };
-    roomTypesRepository = {
+    roomTypeRepo = {
       createQueryBuilder: jest.fn(),
       findOneBy: jest.fn(),
     };
-    roomsRepository.manager.getRepository.mockImplementation(
-      (entity: unknown) => {
-        if (entity === Booking) {
-          return bookingsRepository;
-        }
+    roomRepo.manager.getRepository.mockImplementation((entity: unknown) => {
+      if (entity === Booking) {
+        return bookingRepo;
+      }
 
-        if (entity === RoomType) {
-          return roomTypesRepository;
-        }
+      if (entity === RoomType) {
+        return roomTypeRepo;
+      }
 
-        return roomsRepository;
-      },
-    );
-    roomsRepository.manager.transaction.mockImplementation(
+      return roomRepo;
+    });
+    roomRepo.manager.transaction.mockImplementation(
       (
         isolationOrOperation: string | ((manager: unknown) => unknown),
         transactionOperation?: (manager: unknown) => unknown,
@@ -94,10 +93,10 @@ describe('RoomService', () => {
             ? isolationOrOperation
             : transactionOperation;
 
-        return operation?.(roomsRepository.manager);
+        return operation?.(roomRepo.manager);
       },
     );
-    roomCalendarsRepository = {
+    calendarRepo = {
       createQueryBuilder: jest
         .fn()
         .mockReturnValue(createCalendarQueryBuilder()),
@@ -105,27 +104,27 @@ describe('RoomService', () => {
     auditLogService = {
       record: jest.fn().mockResolvedValue(undefined),
     };
-    const roomQueryService = new RoomQueryService(
-      roomsRepository as unknown as Repository<Room>,
-      roomCalendarsRepository as unknown as Repository<RoomCalendar>,
+    queryService = new RoomQueryService(
+      roomRepo as unknown as Repository<Room>,
+      calendarRepo as unknown as Repository<RoomCalendar>,
       new BookingStayPolicy(10_000),
     );
     const roomMutationService = new RoomMutationService(
-      roomsRepository as unknown as Repository<Room>,
-      roomTypesRepository as unknown as Repository<RoomType>,
+      roomRepo as unknown as Repository<Room>,
+      roomTypeRepo as unknown as Repository<RoomType>,
       { deleteManaged: jest.fn() } as unknown as RoomImageStorageService,
-      roomQueryService,
+      queryService,
       new RoomStatusTransitionPolicy(),
       auditLogService,
     );
-    service = new RoomService(roomQueryService, roomMutationService);
+    service = new RoomService(queryService, roomMutationService);
   });
 
   it('keeps HIDDEN and MAINTENANCE inventory out of public list queries', async () => {
     const queryBuilder = createRoomQueryBuilder({
       manyAndCount: [[roomFixture()], 1],
     });
-    roomsRepository.createQueryBuilder.mockReturnValue(queryBuilder);
+    roomRepo.createQueryBuilder.mockReturnValue(queryBuilder);
 
     await expect(
       service.list({ page: 1, limit: 10, search: 'Deluxe' }),
@@ -153,11 +152,54 @@ describe('RoomService', () => {
     expect(result.items[0]).not.toHaveProperty('updatedAt');
   });
 
+  it('keeps price descending as the primary search order', async () => {
+    const queryBuilder = createRoomQueryBuilder({
+      manyAndCount: [[roomFixture()], 1],
+    });
+    roomRepo.createQueryBuilder.mockReturnValue(queryBuilder);
+
+    await queryService.search({
+      checkIn: '2030-02-01',
+      checkOut: '2030-02-02',
+      guests: 1,
+      sort: 'PRICE_DESC',
+    });
+
+    expect(queryBuilder.orderBy).toHaveBeenCalledWith(
+      'roomType.basePrice',
+      'DESC',
+    );
+    expect(queryBuilder.addOrderBy).not.toHaveBeenCalledWith(
+      'roomType.basePrice',
+      'ASC',
+    );
+  });
+
+  it('orders popularity through a selected alias', async () => {
+    const queryBuilder = createRoomQueryBuilder({
+      manyAndCount: [[roomFixture()], 1],
+    });
+    roomRepo.createQueryBuilder.mockReturnValue(queryBuilder);
+
+    await queryService.search({
+      checkIn: '2030-02-01',
+      checkOut: '2030-02-02',
+      guests: 1,
+      sort: 'POPULARITY',
+    });
+
+    expect(queryBuilder.addSelect).toHaveBeenCalledWith(
+      expect.stringContaining('COUNT(*)'),
+      'roomPopularity',
+    );
+    expect(queryBuilder.orderBy).toHaveBeenCalledWith('roomPopularity', 'DESC');
+  });
+
   it('retains physical room and operational status in management responses', async () => {
     const queryBuilder = createRoomQueryBuilder({
       manyAndCount: [[roomFixture({ status: RoomStatus.OCCUPIED })], 1],
     });
-    roomsRepository.createQueryBuilder.mockReturnValue(queryBuilder);
+    roomRepo.createQueryBuilder.mockReturnValue(queryBuilder);
 
     await expect(service.listManagement({})).resolves.toMatchObject({
       items: [
@@ -181,10 +223,8 @@ describe('RoomService', () => {
         status: RoomCalendarStatus.RESERVED,
       }),
     ]);
-    roomsRepository.createQueryBuilder.mockReturnValue(queryBuilder);
-    roomCalendarsRepository.createQueryBuilder.mockReturnValue(
-      calendarQueryBuilder,
-    );
+    roomRepo.createQueryBuilder.mockReturnValue(queryBuilder);
+    calendarRepo.createQueryBuilder.mockReturnValue(calendarQueryBuilder);
 
     try {
       await expect(service.listManagement({})).resolves.toMatchObject({
@@ -218,7 +258,7 @@ describe('RoomService', () => {
     const queryBuilder = createRoomQueryBuilder({
       manyAndCount: [[roomFixture()], 1],
     });
-    roomsRepository.createQueryBuilder.mockReturnValue(queryBuilder);
+    roomRepo.createQueryBuilder.mockReturnValue(queryBuilder);
 
     await expect(
       service.listAvailable({
@@ -276,7 +316,7 @@ describe('RoomService', () => {
         guests: 0,
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
-    expect(roomsRepository.createQueryBuilder).not.toHaveBeenCalled();
+    expect(roomRepo.createQueryBuilder).not.toHaveBeenCalled();
   });
 
   it('validates search dates, price order and Amenity ids before querying', async () => {
@@ -311,12 +351,12 @@ describe('RoomService', () => {
         amenityIds: ['0'],
       }),
     ).rejects.toThrow('Danh sach tien nghi');
-    expect(roomsRepository.createQueryBuilder).not.toHaveBeenCalled();
+    expect(roomRepo.createQueryBuilder).not.toHaveBeenCalled();
   });
 
   it('builds availability search for every selected active Amenity', async () => {
     const queryBuilder = createRoomQueryBuilder();
-    roomsRepository.createQueryBuilder.mockReturnValue(queryBuilder);
+    roomRepo.createQueryBuilder.mockReturnValue(queryBuilder);
 
     await service.search({
       checkIn: '2030-01-01',
@@ -337,7 +377,7 @@ describe('RoomService', () => {
 
   it('applies the requested room search order', async () => {
     const queryBuilder = createRoomQueryBuilder();
-    roomsRepository.createQueryBuilder.mockReturnValue(queryBuilder);
+    roomRepo.createQueryBuilder.mockReturnValue(queryBuilder);
 
     await service.search({
       checkIn: '2030-01-01',
@@ -346,16 +386,17 @@ describe('RoomService', () => {
       sort: 'POPULARITY',
     });
 
-    expect(queryBuilder.orderBy).toHaveBeenCalledWith(
+    expect(queryBuilder.addSelect).toHaveBeenCalledWith(
       expect.stringContaining('SELECT COUNT(*) FROM bookings'),
-      'DESC',
+      'roomPopularity',
     );
+    expect(queryBuilder.orderBy).toHaveBeenCalledWith('roomPopularity', 'DESC');
   });
 
   it('creates a normalized READY room against an active RoomType', async () => {
-    const roomTypeLockQuery = createRoomTypeLockQueryBuilder(roomTypeFixture());
-    roomTypesRepository.createQueryBuilder.mockReturnValue(roomTypeLockQuery);
-    roomsRepository.createQueryBuilder
+    const roomTypeLockQuery = createRoomTypeLockQuery(roomTypeFixture());
+    roomTypeRepo.createQueryBuilder.mockReturnValue(roomTypeLockQuery);
+    roomRepo.createQueryBuilder
       .mockReturnValueOnce(createRoomQueryBuilder())
       .mockReturnValueOnce(createRoomQueryBuilder({ one: roomFixture() }));
 
@@ -372,24 +413,24 @@ describe('RoomService', () => {
       description: 'Sea view',
       status: RoomStatus.READY,
     });
-    expect(roomsRepository.manager.transaction).toHaveBeenCalledTimes(1);
+    expect(roomRepo.manager.transaction).toHaveBeenCalledTimes(1);
     expect(roomTypeLockQuery.withDeleted).toHaveBeenCalledTimes(1);
     expect(roomTypeLockQuery.setLock).toHaveBeenCalledWith('pessimistic_write');
-    expect(roomsRepository.create).toHaveBeenCalledWith(
+    expect(roomRepo.create).toHaveBeenCalledWith(
       expect.objectContaining({
         roomTypeId: '1',
         roomNumber: 'A-101',
         name: 'Deluxe 101',
       }),
     );
-    expect(roomsRepository.save).toHaveBeenCalledTimes(1);
+    expect(roomRepo.save).toHaveBeenCalledTimes(1);
   });
 
   it('rejects creating a Room with a soft-deleted RoomType under the row lock', async () => {
-    const roomTypeLockQuery = createRoomTypeLockQueryBuilder(
+    const roomTypeLockQuery = createRoomTypeLockQuery(
       roomTypeFixture({ deletedAt: new Date('2026-02-01') }),
     );
-    roomTypesRepository.createQueryBuilder.mockReturnValue(roomTypeLockQuery);
+    roomTypeRepo.createQueryBuilder.mockReturnValue(roomTypeLockQuery);
 
     await expect(
       service.create({
@@ -399,12 +440,12 @@ describe('RoomService', () => {
       }),
     ).rejects.toBeInstanceOf(NotFoundException);
 
-    expect(roomsRepository.manager.transaction).toHaveBeenCalledTimes(1);
+    expect(roomRepo.manager.transaction).toHaveBeenCalledTimes(1);
     expect(roomTypeLockQuery.withDeleted).toHaveBeenCalledTimes(1);
     expect(roomTypeLockQuery.setLock).toHaveBeenCalledWith('pessimistic_write');
-    expect(roomsRepository.createQueryBuilder).not.toHaveBeenCalled();
-    expect(roomsRepository.create).not.toHaveBeenCalled();
-    expect(roomsRepository.save).not.toHaveBeenCalled();
+    expect(roomRepo.createQueryBuilder).not.toHaveBeenCalled();
+    expect(roomRepo.create).not.toHaveBeenCalled();
+    expect(roomRepo.save).not.toHaveBeenCalled();
   });
 
   it('does not create an OCCUPIED Room without a checked-in Booking', async () => {
@@ -417,22 +458,22 @@ describe('RoomService', () => {
       }),
     ).rejects.toBeInstanceOf(ConflictException);
 
-    expect(roomsRepository.manager.transaction).not.toHaveBeenCalled();
-    expect(roomTypesRepository.createQueryBuilder).not.toHaveBeenCalled();
-    expect(roomsRepository.save).not.toHaveBeenCalled();
+    expect(roomRepo.manager.transaction).not.toHaveBeenCalled();
+    expect(roomTypeRepo.createQueryBuilder).not.toHaveBeenCalled();
+    expect(roomRepo.save).not.toHaveBeenCalled();
   });
 
   it('rejects an empty room update', async () => {
-    roomsRepository.findOneBy.mockResolvedValue(roomFixture());
+    roomRepo.findOneBy.mockResolvedValue(roomFixture());
 
     await expect(service.update('1', {})).rejects.toBeInstanceOf(
       BadRequestException,
     );
-    expect(roomsRepository.save).not.toHaveBeenCalled();
+    expect(roomRepo.save).not.toHaveBeenCalled();
   });
 
   it('updates roomTypeId under target RoomType then Room row locks', async () => {
-    const targetRoomTypeQuery = createRoomTypeLockQueryBuilder(
+    const targetRoomTypeQuery = createRoomTypeLockQuery(
       roomTypeFixture({ id: '2', name: 'Suite' }),
     );
     const roomQuery = createRoomQueryBuilder({
@@ -441,8 +482,8 @@ describe('RoomService', () => {
     const responseQuery = createRoomQueryBuilder({
       one: roomFixture({ roomTypeId: '2' }),
     });
-    roomTypesRepository.createQueryBuilder.mockReturnValue(targetRoomTypeQuery);
-    roomsRepository.createQueryBuilder
+    roomTypeRepo.createQueryBuilder.mockReturnValue(targetRoomTypeQuery);
+    roomRepo.createQueryBuilder
       .mockReturnValueOnce(roomQuery)
       .mockReturnValueOnce(responseQuery);
 
@@ -450,7 +491,7 @@ describe('RoomService', () => {
       service.update('1', { roomTypeId: '2' }),
     ).resolves.toMatchObject({ roomTypeId: '2' });
 
-    expect(roomsRepository.manager.transaction).toHaveBeenCalledTimes(1);
+    expect(roomRepo.manager.transaction).toHaveBeenCalledTimes(1);
     expect(targetRoomTypeQuery.withDeleted).toHaveBeenCalled();
     expect(targetRoomTypeQuery.setLock).toHaveBeenCalledWith(
       'pessimistic_write',
@@ -460,30 +501,28 @@ describe('RoomService', () => {
     expect(targetRoomTypeQuery.getOne.mock.invocationCallOrder[0]).toBeLessThan(
       roomQuery.getOne.mock.invocationCallOrder[0],
     );
-    expect(roomsRepository.update).toHaveBeenCalledWith(
+    expect(roomRepo.update).toHaveBeenCalledWith(
       { id: '1', deletedAt: IsNull() },
       { roomTypeId: '2' },
     );
   });
 
   it('rejects updating a Room to a soft-deleted RoomType before Room mutation', async () => {
-    const deletedRoomTypeQuery = createRoomTypeLockQueryBuilder(
+    const deletedRoomTypeQuery = createRoomTypeLockQuery(
       roomTypeFixture({ id: '2', deletedAt: new Date('2026-02-01') }),
     );
-    roomTypesRepository.createQueryBuilder.mockReturnValue(
-      deletedRoomTypeQuery,
-    );
+    roomTypeRepo.createQueryBuilder.mockReturnValue(deletedRoomTypeQuery);
 
     await expect(
       service.update('1', { roomTypeId: '2' }),
     ).rejects.toBeInstanceOf(NotFoundException);
 
-    expect(roomsRepository.manager.transaction).toHaveBeenCalledTimes(1);
+    expect(roomRepo.manager.transaction).toHaveBeenCalledTimes(1);
     expect(deletedRoomTypeQuery.setLock).toHaveBeenCalledWith(
       'pessimistic_write',
     );
-    expect(roomsRepository.createQueryBuilder).not.toHaveBeenCalled();
-    expect(roomsRepository.update).not.toHaveBeenCalled();
+    expect(roomRepo.createQueryBuilder).not.toHaveBeenCalled();
+    expect(roomRepo.update).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -505,20 +544,20 @@ describe('RoomService', () => {
   ])(
     'rejects unauthorized status transition $current -> $next for $role',
     async ({ current, next, role }) => {
-      roomsRepository.createQueryBuilder.mockReturnValue(
+      roomRepo.createQueryBuilder.mockReturnValue(
         createRoomQueryBuilder({ one: roomFixture({ status: current }) }),
       );
 
       await expect(
         service.updateStatus('1', { status: next }, role, auditContext()),
       ).rejects.toBeInstanceOf(ForbiddenException);
-      expect(roomsRepository.update).not.toHaveBeenCalled();
+      expect(roomRepo.update).not.toHaveBeenCalled();
     },
   );
 
   it('allows STAFF operational transitions and ADMIN HIDDEN transitions', async () => {
     const room = roomFixture();
-    roomsRepository.createQueryBuilder.mockReturnValue(
+    roomRepo.createQueryBuilder.mockReturnValue(
       createRoomQueryBuilder({ one: room }),
     );
 
@@ -528,7 +567,7 @@ describe('RoomService', () => {
       'STAFF',
       auditContext(),
     );
-    expect(roomsRepository.update).toHaveBeenNthCalledWith(
+    expect(roomRepo.update).toHaveBeenNthCalledWith(
       1,
       expect.objectContaining({
         id: '1',
@@ -543,7 +582,7 @@ describe('RoomService', () => {
       'ADMIN',
       auditContext(),
     );
-    expect(roomsRepository.update).toHaveBeenNthCalledWith(
+    expect(roomRepo.update).toHaveBeenNthCalledWith(
       2,
       expect.objectContaining({
         id: '1',
@@ -554,7 +593,7 @@ describe('RoomService', () => {
   });
 
   it('does not audit an idempotent same-state Room status request', async () => {
-    roomsRepository.createQueryBuilder.mockReturnValue(
+    roomRepo.createQueryBuilder.mockReturnValue(
       createRoomQueryBuilder({
         one: roomFixture({ status: RoomStatus.READY }),
       }),
@@ -569,12 +608,12 @@ describe('RoomService', () => {
       ),
     ).resolves.toMatchObject({ id: '1', status: RoomStatus.READY });
 
-    expect(roomsRepository.update).not.toHaveBeenCalled();
+    expect(roomRepo.update).not.toHaveBeenCalled();
     expect(auditLogService.record).not.toHaveBeenCalled();
   });
 
   it('audits a real Room status transition with the transaction manager', async () => {
-    roomsRepository.createQueryBuilder.mockReturnValue(
+    roomRepo.createQueryBuilder.mockReturnValue(
       createRoomQueryBuilder({
         one: roomFixture({ status: RoomStatus.READY }),
       }),
@@ -589,27 +628,24 @@ describe('RoomService', () => {
     );
 
     expect(auditLogService.record).toHaveBeenCalledTimes(1);
-    expect(auditLogService.record).toHaveBeenCalledWith(
-      roomsRepository.manager,
-      {
-        ...context,
-        action: AuditAction.ROOM_STATUS_CHANGED,
-        entityType: AuditEntityType.ROOM,
-        entityId: '1',
-        metadata: {
-          fromStatus: RoomStatus.READY,
-          toStatus: RoomStatus.CLEANING,
-        },
+    expect(auditLogService.record).toHaveBeenCalledWith(roomRepo.manager, {
+      ...context,
+      action: AuditAction.ROOM_STATUS_CHANGED,
+      entityType: AuditEntityType.ROOM,
+      entityId: '1',
+      metadata: {
+        fromStatus: RoomStatus.READY,
+        toStatus: RoomStatus.CLEANING,
       },
-    );
+    });
   });
 
   it('returns Conflict when another status transition wins the race', async () => {
     const room = roomFixture();
-    roomsRepository.createQueryBuilder.mockReturnValue(
+    roomRepo.createQueryBuilder.mockReturnValue(
       createRoomQueryBuilder({ one: room }),
     );
-    roomsRepository.update.mockResolvedValue({ affected: 0 });
+    roomRepo.update.mockResolvedValue({ affected: 0 });
 
     await expect(
       service.updateStatus(
@@ -619,7 +655,7 @@ describe('RoomService', () => {
         auditContext(),
       ),
     ).rejects.toBeInstanceOf(ConflictException);
-    expect(roomsRepository.update).toHaveBeenCalledWith(
+    expect(roomRepo.update).toHaveBeenCalledWith(
       expect.objectContaining({
         id: '1',
         status: RoomStatus.READY,
@@ -646,8 +682,8 @@ describe('RoomService', () => {
       lockOrder.push('room');
       return roomQuery;
     });
-    bookingsRepository.createQueryBuilder.mockReturnValue(bookingQuery);
-    roomsRepository.createQueryBuilder.mockReturnValue(roomQuery);
+    bookingRepo.createQueryBuilder.mockReturnValue(bookingQuery);
+    roomRepo.createQueryBuilder.mockReturnValue(roomQuery);
 
     await expect(
       service.updateStatus(
@@ -659,7 +695,7 @@ describe('RoomService', () => {
     ).rejects.toBeInstanceOf(ConflictException);
 
     expect(lockOrder).toEqual(['booking', 'room']);
-    expect(roomsRepository.manager.transaction).toHaveBeenCalledWith(
+    expect(roomRepo.manager.transaction).toHaveBeenCalledWith(
       'READ COMMITTED',
       expect.any(Function),
     );
@@ -669,17 +705,17 @@ describe('RoomService', () => {
         statuses: [BookingStatus.CONFIRMED, BookingStatus.CHECKED_IN],
       },
     );
-    expect(roomsRepository.update).not.toHaveBeenCalled();
+    expect(roomRepo.update).not.toHaveBeenCalled();
   });
 
   it('allows an explicit repair from READY to OCCUPIED for a checked-in Booking', async () => {
     const room = roomFixture({ status: RoomStatus.READY });
-    bookingsRepository.createQueryBuilder.mockReturnValue(
+    bookingRepo.createQueryBuilder.mockReturnValue(
       createBookingLockQueryBuilder([
         { id: '100', status: BookingStatus.CHECKED_IN } as Booking,
       ]),
     );
-    roomsRepository.createQueryBuilder.mockReturnValue(
+    roomRepo.createQueryBuilder.mockReturnValue(
       createRoomQueryBuilder({ one: room }),
     );
 
@@ -691,7 +727,7 @@ describe('RoomService', () => {
         auditContext(),
       ),
     ).resolves.toMatchObject({ id: '1' });
-    expect(roomsRepository.update).toHaveBeenCalledWith(
+    expect(roomRepo.update).toHaveBeenCalledWith(
       expect.objectContaining({ id: '1', status: RoomStatus.READY }),
       { status: RoomStatus.OCCUPIED },
     );
@@ -707,6 +743,7 @@ function createRoomQueryBuilder(result: RoomQueryResult = {}) {
   const queryBuilder = {
     innerJoinAndSelect: jest.fn(),
     leftJoinAndSelect: jest.fn(),
+    addSelect: jest.fn(),
     where: jest.fn(),
     andWhere: jest.fn(),
     orderBy: jest.fn(),
@@ -724,6 +761,7 @@ function createRoomQueryBuilder(result: RoomQueryResult = {}) {
   for (const method of [
     queryBuilder.innerJoinAndSelect,
     queryBuilder.leftJoinAndSelect,
+    queryBuilder.addSelect,
     queryBuilder.where,
     queryBuilder.andWhere,
     queryBuilder.orderBy,
@@ -739,7 +777,7 @@ function createRoomQueryBuilder(result: RoomQueryResult = {}) {
   return queryBuilder;
 }
 
-function createRoomTypeLockQueryBuilder(roomType: RoomType | null) {
+function createRoomTypeLockQuery(roomType: RoomType | null) {
   const queryBuilder = {
     withDeleted: jest.fn(),
     where: jest.fn(),

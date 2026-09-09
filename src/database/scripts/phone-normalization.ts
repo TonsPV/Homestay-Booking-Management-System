@@ -31,9 +31,7 @@ export function isProductionEnvironment(value: string | undefined): boolean {
   return value?.trim().toLowerCase() === 'production';
 }
 
-export function createPhoneNormalizationPlan(
-  records: PhoneRecord[],
-): PhoneNormalizationPlan {
+export function buildPhonePlan(records: PhoneRecord[]): PhoneNormalizationPlan {
   const changes: PhoneChange[] = [];
   const invalidRecords: PhoneRecord[] = [];
   const normalizedGroups = new Map<string, PhoneRecord[]>();

@@ -24,9 +24,7 @@ import { HealthResponseDto } from './health-response.dto';
 export class HealthController {
   private readonly logger = new Logger(HealthController.name);
 
-  constructor(
-    private readonly healthDatabaseProbeService: HealthDatabaseProbeService,
-  ) {}
+  constructor(private readonly dbProbe: HealthDatabaseProbeService) {}
 
   @Get('live')
   @ApiOkEnvelope(HealthResponseDto)
@@ -44,7 +42,7 @@ export class HealthController {
     @ReqContext() context?: RequestContext,
   ): Promise<HealthResponseDto> {
     try {
-      await this.healthDatabaseProbeService.check();
+      await this.dbProbe.check();
     } catch (error) {
       this.logger.warn(
         `operation=health_readiness errorCode=DATABASE_UNAVAILABLE requestId=${context?.requestId ?? 'unavailable'} cause=${error instanceof Error ? error.name : 'UnknownError'}`,

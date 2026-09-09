@@ -7,13 +7,20 @@ import {
 import type { DataSource, EntityManager } from 'typeorm';
 
 import { ErrorCode } from '../../../../src/common/error-codes';
+import { AuditLogService } from '../../../../src/module/audit/audit-log.service';
+import { AuditActorType } from '../../../../src/module/audit/domain/audit-log';
 import { AppHttpException } from '../../../../src/common/http/app-http-exception';
 import type { PasswordHasherService } from '../../../../src/module/auth/password-hasher.service';
-import type { CustomerCredentialPolicy } from '../../../../src/module/customer/customer-credential.policy';
 import { CustomerCredentialService } from '../../../../src/module/customer/customer-credential.service';
 import { Customer } from '../../../../src/module/customer/schema/customer.entity';
 
 describe('CustomerCredentialService', () => {
+  const actor = {
+    actorType: AuditActorType.USER,
+    actorId: '7',
+    requestId: 'credential-test',
+  };
+  let audit: AuditLogService;
   let customer: Customer | null;
   let save: jest.Mock;
   let queryBuilder: ReturnType<typeof createLockedQueryBuilder>;
@@ -30,6 +37,8 @@ describe('CustomerCredentialService', () => {
   let service: CustomerCredentialService;
 
   beforeEach(() => {
+    audit = new AuditLogService();
+    jest.spyOn(audit, 'record').mockResolvedValue(undefined);
     customer = customerFixture();
     save = jest.fn((value: Customer) => Promise.resolve(value));
     queryBuilder = createLockedQueryBuilder(() => customer);
@@ -60,7 +69,8 @@ describe('CustomerCredentialService', () => {
     service = new CustomerCredentialService(
       dataSource as unknown as DataSource,
       passwordHasher as unknown as PasswordHasherService,
-      credentialPolicy as unknown as CustomerCredentialPolicy,
+      credentialPolicy,
+      audit,
     );
   });
 
@@ -141,9 +151,13 @@ describe('CustomerCredentialService', () => {
     passwordHasher.hash.mockResolvedValue('initial-password-hash');
 
     await expect(
-      service.setInitialPassword('10', {
-        password: 'InitialPassword123!',
-      }),
+      service.setInitialPassword(
+        '10',
+        {
+          password: 'InitialPassword123!',
+        },
+        actor,
+      ),
     ).resolves.toEqual({ passwordConfigured: true });
     expect(queryBuilder.setLock).toHaveBeenCalledWith('pessimistic_write');
     expect(customer).toMatchObject({
@@ -155,16 +169,24 @@ describe('CustomerCredentialService', () => {
   it('rejects initial password when customer is missing or already configured', async () => {
     customer = null;
     await expect(
-      service.setInitialPassword('10', {
-        password: 'InitialPassword123!',
-      }),
+      service.setInitialPassword(
+        '10',
+        {
+          password: 'InitialPassword123!',
+        },
+        actor,
+      ),
     ).rejects.toBeInstanceOf(NotFoundException);
 
     customer = customerFixture();
     await expect(
-      service.setInitialPassword('10', {
-        password: 'InitialPassword123!',
-      }),
+      service.setInitialPassword(
+        '10',
+        {
+          password: 'InitialPassword123!',
+        },
+        actor,
+      ),
     ).rejects.toHaveProperty(
       'response.errorCode',
       ErrorCode.CUSTOMER_INITIAL_PASSWORD_ALREADY_CONFIGURED,
@@ -173,9 +195,13 @@ describe('CustomerCredentialService', () => {
 
   it('validates management customer id before opening a transaction', async () => {
     await expect(
-      service.setInitialPassword('bad-id', {
-        password: 'InitialPassword123!',
-      }),
+      service.setInitialPassword(
+        'bad-id',
+        {
+          password: 'InitialPassword123!',
+        },
+        actor,
+      ),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(dataSource.transaction).not.toHaveBeenCalled();
   });

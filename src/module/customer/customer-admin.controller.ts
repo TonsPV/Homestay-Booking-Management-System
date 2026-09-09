@@ -38,14 +38,14 @@ import { ListCustomersQueryDto } from './dto/list-customers-query.dto';
 @ApiBearerAuth()
 @ApiCommonAuthErrors()
 export class CustomerAdminController {
-  constructor(private readonly customerAdminService: CustomerAdminService) {}
+  constructor(private readonly adminService: CustomerAdminService) {}
 
   @Get()
   @ApiOkEnvelope(AdminCustomerDto, { isArray: true, paginated: true })
   listCustomers(
     @Query() query: ListCustomersQueryDto,
   ): Promise<ApiResponsePayload<AdminCustomerResponse[]>> {
-    return this.customerAdminService
+    return this.adminService
       .listCustomers(query)
       .then((result) =>
         ApiResponse.ok(
@@ -65,7 +65,7 @@ export class CustomerAdminController {
     @ReqContext() context: RequestContext,
     @Body() body: UpdateAccountStatusDto,
   ): Promise<ApiResponsePayload<AdminCustomerResponse>> {
-    return this.customerAdminService
+    return this.adminService
       .updateStatus(id, body.status, {
         actorType: AuditActorType.USER,
         actorId: auth.user_id ?? null,

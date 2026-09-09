@@ -8,7 +8,7 @@ import type { NextFunction, Response } from 'express';
 
 import {
   ROOM_IMAGE_PUBLIC_PATH,
-  resolveRoomImageUploadDirectory,
+  resolveRoomImageDir,
 } from '../config/room-image-storage';
 import { ApiResponseInterceptor } from '../common/http/api-response.interceptor';
 import type { AppRequest } from '../common/http/request.types';
@@ -53,7 +53,7 @@ export function configureApp(app: INestApplication): void {
     });
   }
 
-  expressApp.useStaticAssets(resolveRoomImageUploadDirectory(configService), {
+  expressApp.useStaticAssets(resolveRoomImageDir(configService), {
     dotfiles: 'deny',
     // RoomImageStorageService writes a fresh UUID filename for every upload
     // and never overwrites an existing object, so long-lived immutable caching

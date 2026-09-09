@@ -1,7 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 
 import {
-  getVietnamesePhoneLookupVariants,
+  getPhoneLookupVariants,
   normalizePhone,
   optionalAccountStatus,
   parseBoolean,
@@ -79,7 +79,7 @@ describe('input normalizer', () => {
   });
 
   it('provides canonical and legacy lookup variants', () => {
-    expect(getVietnamesePhoneLookupVariants('+84705840355')).toEqual([
+    expect(getPhoneLookupVariants('+84705840355')).toEqual([
       '+84705840355',
       '0705840355',
       '84705840355',

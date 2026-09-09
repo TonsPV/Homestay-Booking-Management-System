@@ -34,8 +34,8 @@ interface LoginData {
 describe('Auth workflow (e2e)', () => {
   let app: INestApplication<App>;
   let e2eHarness: E2eHarness | undefined;
-  let customersRepository: Repository<Customer>;
-  let usersRepository: Repository<User>;
+  let customerRepo: Repository<Customer>;
+  let userRepo: Repository<User>;
   let passwordHasher: PasswordHasherService;
   let accessTokenService: AccessTokenService;
   const createdCustomerIds: string[] = [];
@@ -56,18 +56,18 @@ describe('Auth workflow (e2e)', () => {
     await app.init();
 
     const dataSource = app.get(DataSource);
-    customersRepository = dataSource.getRepository(Customer);
-    usersRepository = dataSource.getRepository(User);
+    customerRepo = dataSource.getRepository(Customer);
+    userRepo = dataSource.getRepository(User);
     passwordHasher = app.get(PasswordHasherService);
     accessTokenService = app.get(AccessTokenService);
 
     e2eHarness.registerCleanup(async () => {
       if (createdCustomerIds.length > 0) {
-        await customersRepository.delete(createdCustomerIds);
+        await customerRepo.delete(createdCustomerIds);
       }
 
       if (createdUserIds.length > 0) {
-        await usersRepository.delete(createdUserIds);
+        await userRepo.delete(createdUserIds);
       }
     });
   });
@@ -105,7 +105,7 @@ describe('Auth workflow (e2e)', () => {
       data: { accepted: true },
     });
 
-    const customer = await customersRepository.findOneByOrFail({ email });
+    const customer = await customerRepo.findOneByOrFail({ email });
     createdCustomerIds.push(customer.id);
     expect(customer.fullName).toBe('Auth E2E Customer');
     expect(customer.phone).toBe(toCanonicalPhone(localPhone));
@@ -144,7 +144,7 @@ describe('Auth workflow (e2e)', () => {
     });
     expect(meBody.data.customer).not.toHaveProperty('passwordHash');
 
-    await customersRepository.update(customer.id, {
+    await customerRepo.update(customer.id, {
       tokenVersion: customer.tokenVersion + 1,
     });
     await request(app.getHttpServer())
@@ -190,8 +190,8 @@ describe('Auth workflow (e2e)', () => {
       error: 'Conflict',
     });
 
-    const baseCustomers = await customersRepository.findBy({ email });
-    const raceCustomers = await customersRepository.findBy({
+    const baseCustomers = await customerRepo.findBy({ email });
+    const raceCustomers = await customerRepo.findBy({
       email: raceEmail,
     });
     expect(baseCustomers).toHaveLength(1);
@@ -201,9 +201,7 @@ describe('Auth workflow (e2e)', () => {
       .post('/api/v1/auth/customers/login')
       .send({ identifier: raceEmail, password: PASSWORD })
       .expect(200);
-    expect(
-      await customersRepository.countBy({ email: duplicatePhoneEmail }),
-    ).toBe(0);
+    expect(await customerRepo.countBy({ email: duplicatePhoneEmail })).toBe(0);
   });
 
   it('uses one public login failure for missing, wrong, locked, passwordless, and malformed accounts', async () => {
@@ -260,7 +258,7 @@ describe('Auth workflow (e2e)', () => {
     await expectAuthMeFailure('Bearer ' + token + ' trailing-data', 401);
     await expectAuthMeFailure('Bearer ' + tamperToken(token), 401);
 
-    await usersRepository.update(user.id, { role: 'ADMIN' });
+    await userRepo.update(user.id, { role: 'ADMIN' });
     const roleResponse = await request(app.getHttpServer())
       .get('/api/v1/auth/me')
       .set('Authorization', 'Bearer ' + token)
@@ -271,7 +269,7 @@ describe('Auth workflow (e2e)', () => {
     }>;
     expect(roleBody.data.user.role).toBe('ADMIN');
 
-    await usersRepository.update(user.id, {
+    await userRepo.update(user.id, {
       tokenVersion: user.tokenVersion + 1,
     });
     await expectAuthMeFailure('Bearer ' + token, 401);
@@ -341,8 +339,8 @@ describe('Auth workflow (e2e)', () => {
     )
       ? overrides.passwordHash
       : await passwordHasher.hash(PASSWORD);
-    const customer = await customersRepository.save(
-      customersRepository.create({
+    const customer = await customerRepo.save(
+      customerRepo.create({
         fullName: 'Auth E2E Fixture ' + sequence,
         email: nextEmail('fixture-' + sequence),
         phone: toCanonicalPhone(nextLocalPhone()),
@@ -364,8 +362,8 @@ describe('Auth workflow (e2e)', () => {
     )
       ? overrides.passwordHash
       : await passwordHasher.hash(PASSWORD);
-    const user = await usersRepository.save(
-      usersRepository.create({
+    const user = await userRepo.save(
+      userRepo.create({
         fullName: 'Auth E2E User ' + sequence,
         email: nextEmail('user-' + sequence),
         phone: null,

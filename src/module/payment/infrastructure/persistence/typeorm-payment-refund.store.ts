@@ -9,7 +9,7 @@ import { PaymentStatus } from '../../domain/payment-state';
 import {
   PaymentRefundIdempotencyConflictError,
   PaymentRefundStore,
-  type CreatePaymentRefundRecord,
+  type CreateRefundInput,
 } from '../../ports/payment-refund.store';
 import { Payment } from '../../schema/payment.entity';
 import { PaymentRefund } from '../../schema/payment-refund.entity';
@@ -82,7 +82,7 @@ export class TypeOrmPaymentRefundStore extends PaymentRefundStore {
 
   async createRefund(
     context: TransactionContext,
-    input: CreatePaymentRefundRecord,
+    input: CreateRefundInput,
   ): Promise<PaymentRefund> {
     const repository = this.transactions
       .managerFor(context)
@@ -151,18 +151,48 @@ export class TypeOrmPaymentRefundStore extends PaymentRefundStore {
       .save(booking);
   }
 
-  async recordRefundQueryFailure(paymentId: string, now: Date): Promise<void> {
-    const payment = await this.dataSource.getRepository(Payment).findOne({
-      where: { id: paymentId, status: PaymentStatus.REFUND_PENDING },
-      relations: { refund: true },
-    });
+  async recordRefundQueryFailure(
+    context: TransactionContext,
+    paymentId: string,
+    now: Date,
+  ): Promise<void> {
+    const paymentSnapshot = await this.findPayment(context, paymentId);
 
-    if (payment?.refund === null || payment?.refund === undefined) {
+    if (paymentSnapshot === null) {
       return;
     }
 
-    payment.refund.lastQueriedAt = now;
-    payment.refund.message = 'Khong the ket noi VNPay de doi soat.';
-    await this.dataSource.getRepository(PaymentRefund).save(payment.refund);
+    // Match the reconciliation writer's booking -> payment lock order. The
+    // diagnostic write must not race a completion that has already committed
+    // gateway evidence and changed the payment status.
+    const booking = await this.lockBooking(context, paymentSnapshot.bookingId);
+
+    if (booking === null) {
+      return;
+    }
+
+    const payment = await this.lockPayment(context, paymentId);
+
+    if (
+      payment === null ||
+      payment.status !== PaymentStatus.REFUND_PENDING ||
+      payment.refund === null ||
+      payment.refund === undefined
+    ) {
+      return;
+    }
+
+    // Update only the diagnostic fields. Saving the pre-lock entity would be
+    // able to overwrite completion evidence from a concurrent transaction.
+    await this.transactions
+      .managerFor(context)
+      .getRepository(PaymentRefund)
+      .update(
+        { id: payment.refund.id, paymentId },
+        {
+          lastQueriedAt: now,
+          message: 'Khong the ket noi VNPay de doi soat.',
+        },
+      );
   }
 }

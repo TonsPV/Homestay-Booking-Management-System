@@ -15,13 +15,11 @@ export interface RoomStatusTransitionContext {
 
 export class RoomStatusTransitionPolicy {
   assertAllowed(context: RoomStatusTransitionContext): void {
-    this.assertActorMayChangeHiddenStatus(context);
-    this.assertOccupancyMatchesCheckedInBooking(context);
+    this.assertHiddenAccess(context);
+    this.assertOccupancy(context);
   }
 
-  private assertActorMayChangeHiddenStatus(
-    context: RoomStatusTransitionContext,
-  ): void {
+  private assertHiddenAccess(context: RoomStatusTransitionContext): void {
     if (context.role === 'ADMIN') {
       return;
     }
@@ -35,9 +33,7 @@ export class RoomStatusTransitionPolicy {
     }
   }
 
-  private assertOccupancyMatchesCheckedInBooking(
-    context: RoomStatusTransitionContext,
-  ): void {
+  private assertOccupancy(context: RoomStatusTransitionContext): void {
     if (
       context.hasCheckedInBooking &&
       context.nextStatus !== RoomStatus.OCCUPIED

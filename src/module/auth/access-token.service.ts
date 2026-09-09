@@ -99,7 +99,7 @@ export class AccessTokenService {
 
     const accessTokenPayload = this.claimsValidator.validate(decoded.payload);
 
-    this.claimsValidator.enforceTemporaryValidity(
+    this.claimsValidator.assertTimeValid(
       accessTokenPayload,
       Math.floor(Date.now() / 1000),
     );

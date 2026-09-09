@@ -12,12 +12,17 @@ import { ErrorCode } from '../../common/error-codes';
 import { AppHttpException } from '../../common/http/app-http-exception';
 import { requireLoginPassword, requirePassword } from '../../common/validation';
 import { PasswordHasherService } from '../auth/password-hasher.service';
+import {
+  AuditLogService,
+  type AuditActorContext,
+} from '../audit/audit-log.service';
+import { AuditAction, AuditEntityType } from '../audit/domain/audit-log';
 import { CustomerCredentialPolicy } from './customer-credential.policy';
 import { ChangeCustomerPasswordDto } from './dto/change-customer-password.dto';
 import { SetInitialCustomerPasswordDto } from './dto/set-initial-customer-password.dto';
 import { Customer } from './schema/customer.entity';
 
-export interface CustomerCredentialResult {
+export interface CredentialResult {
   passwordConfigured: true;
 }
 
@@ -25,15 +30,16 @@ export interface CustomerCredentialResult {
 export class CustomerCredentialService {
   constructor(
     private readonly dataSource: DataSource,
-    private readonly passwordHasherService: PasswordHasherService,
-    private readonly customerCredentialPolicy: CustomerCredentialPolicy,
+    private readonly passwordHasher: PasswordHasherService,
+    private readonly credentialPolicy: CustomerCredentialPolicy,
+    private readonly auditLog: AuditLogService,
   ) {}
 
   //change customer password
   async changeOwnPassword(
     customerId: string | undefined,
     body: ChangeCustomerPasswordDto,
-  ): Promise<CustomerCredentialResult> {
+  ): Promise<CredentialResult> {
     if (customerId === undefined || customerId.length === 0) {
       throw new UnauthorizedException('Access token is invalid.');
     }
@@ -42,7 +48,7 @@ export class CustomerCredentialService {
     const newPassword = requirePassword(body.newPassword);
 
     return this.dataSource.transaction(async (manager) => {
-      const customer = await this.getCustomerWithPassword(manager, customerId);
+      const customer = await this.findWithPassword(manager, customerId);
 
       if (customer === null) {
         throw new UnauthorizedException('Access token is invalid.');
@@ -53,7 +59,7 @@ export class CustomerCredentialService {
       }
 
       if (
-        !(await this.passwordHasherService.verify(
+        !(await this.passwordHasher.verify(
           currentPassword,
           customer.passwordHash,
         ))
@@ -76,10 +82,7 @@ export class CustomerCredentialService {
       }
 
       if (
-        await this.passwordHasherService.verify(
-          newPassword,
-          customer.passwordHash,
-        )
+        await this.passwordHasher.verify(newPassword, customer.passwordHash)
       ) {
         throw new AppHttpException(
           HttpStatus.BAD_REQUEST,
@@ -98,8 +101,7 @@ export class CustomerCredentialService {
         );
       }
 
-      customer.passwordHash =
-        await this.passwordHasherService.hash(newPassword);
+      customer.passwordHash = await this.passwordHasher.hash(newPassword);
       customer.tokenVersion += 1;
       await manager.getRepository(Customer).save(customer);
 
@@ -111,18 +113,19 @@ export class CustomerCredentialService {
   async setInitialPassword(
     customerId: string,
     body: SetInitialCustomerPasswordDto,
-  ): Promise<CustomerCredentialResult> {
+    actor: AuditActorContext,
+  ): Promise<CredentialResult> {
     this.validateCustomerId(customerId);
     const password = this.requireInitialPassword(body.password);
 
     return this.dataSource.transaction(async (manager) => {
-      const customer = await this.getCustomerWithPassword(manager, customerId);
+      const customer = await this.findWithPassword(manager, customerId);
 
       if (customer === null) {
         throw new NotFoundException('Khong tim thay customer.');
       }
 
-      const capability = this.customerCredentialPolicy.evaluate(customer);
+      const capability = this.credentialPolicy.evaluate(customer);
 
       if (!capability.canSetInitialPassword) {
         throw new AppHttpException(
@@ -132,16 +135,27 @@ export class CustomerCredentialService {
         );
       }
 
-      customer.passwordHash = await this.passwordHasherService.hash(password);
+      customer.passwordHash = await this.passwordHasher.hash(password);
       customer.tokenVersion += 1;
       await manager.getRepository(Customer).save(customer);
+      await this.auditLog.record(manager, {
+        ...actor,
+        action: AuditAction.CUSTOMER_INITIAL_PASSWORD_SET,
+        entityType: AuditEntityType.CUSTOMER,
+        entityId: customer.id,
+        metadata: {
+          schemaVersion: 1,
+          passwordConfiguredBefore: false,
+          passwordConfiguredAfter: true,
+        },
+      });
 
       return { passwordConfigured: true };
     });
   }
 
   //get customer with password hash for update
-  private getCustomerWithPassword(
+  private findWithPassword(
     manager: EntityManager,
     customerId: string,
   ): Promise<Customer | null> {

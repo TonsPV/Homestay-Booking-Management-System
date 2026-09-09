@@ -1,11 +1,11 @@
 import {
-  createPhoneNormalizationPlan,
+  buildPhonePlan,
   isProductionEnvironment,
 } from '../../../../src/database/scripts/phone-normalization';
 
-describe('createPhoneNormalizationPlan', () => {
+describe('buildPhonePlan', () => {
   it('plans canonical updates without changing null phones', () => {
-    const plan = createPhoneNormalizationPlan([
+    const plan = buildPhonePlan([
       { source: 'users', id: '1', phone: '0705 840 355' },
       { source: 'users', id: '2', phone: null },
       { source: 'customers', id: '3', phone: '+84858501102' },
@@ -26,7 +26,7 @@ describe('createPhoneNormalizationPlan', () => {
   });
 
   it('detects invalid values and canonical collisions before writing', () => {
-    const plan = createPhoneNormalizationPlan([
+    const plan = buildPhonePlan([
       { source: 'customers', id: '1', phone: '0705840355' },
       { source: 'customers', id: '2', phone: '+84705840355' },
       { source: 'users', id: '3', phone: 'not-a-phone' },

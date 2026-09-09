@@ -9,22 +9,22 @@ import { AuthService } from '../../../../src/module/auth/auth.service';
 import type { PasswordHasherService } from '../../../../src/module/auth/password-hasher.service';
 
 describe('AuthService', () => {
-  let customersRepository: {
+  let customerRepo: {
     findOneBy: jest.Mock;
     createQueryBuilder: jest.Mock;
     create: jest.Mock;
     save: jest.Mock;
   };
-  let usersRepository: {
+  let userRepo: {
     findOneBy: jest.Mock;
     createQueryBuilder: jest.Mock;
   };
-  let passwordHasherService: {
+  let passwordHasher: {
     hash: jest.Mock;
     verify: jest.Mock;
     verifyOrDummy: jest.Mock;
   };
-  let accessTokenService: {
+  let tokenService: {
     sign: jest.Mock;
     getExpiresInSeconds: jest.Mock;
   };
@@ -32,46 +32,44 @@ describe('AuthService', () => {
 
   beforeEach(() => {
     jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
-    customersRepository = {
+    customerRepo = {
       findOneBy: jest.fn(),
       createQueryBuilder: jest.fn(),
       create: jest.fn((value: Customer) => value),
       save: jest.fn(),
     };
-    usersRepository = {
+    userRepo = {
       findOneBy: jest.fn(),
       createQueryBuilder: jest.fn(),
     };
-    passwordHasherService = {
+    passwordHasher = {
       hash: jest.fn(),
       verify: jest.fn(),
       verifyOrDummy: jest.fn(),
     };
-    accessTokenService = {
+    tokenService = {
       sign: jest.fn(),
       getExpiresInSeconds: jest.fn().mockReturnValue(900),
     };
     service = new AuthService(
-      customersRepository as unknown as Repository<Customer>,
-      usersRepository as unknown as Repository<User>,
-      passwordHasherService as unknown as PasswordHasherService,
-      accessTokenService as unknown as AccessTokenService,
+      customerRepo as unknown as Repository<Customer>,
+      userRepo as unknown as Repository<User>,
+      passwordHasher as unknown as PasswordHasherService,
+      tokenService as unknown as AccessTokenService,
     );
   });
 
   it('normalizes customer registration before uniqueness checks and persistence', async () => {
-    customersRepository.findOneBy.mockResolvedValue(null);
-    customersRepository.createQueryBuilder.mockReturnValue(
-      createQueryBuilder(null),
-    );
-    passwordHasherService.hash.mockResolvedValue('password-hash');
+    customerRepo.findOneBy.mockResolvedValue(null);
+    customerRepo.createQueryBuilder.mockReturnValue(createQueryBuilder(null));
+    passwordHasher.hash.mockResolvedValue('password-hash');
     const saved = customerFixture({
       fullName: 'Nguyen Van A',
       email: 'customer@example.com',
       phone: '+84705840355',
       passwordHash: 'password-hash',
     });
-    customersRepository.save.mockResolvedValue(saved);
+    customerRepo.save.mockResolvedValue(saved);
 
     await expect(
       service.registerCustomer({
@@ -82,13 +80,11 @@ describe('AuthService', () => {
       }),
     ).resolves.toEqual({ accepted: true });
 
-    expect(customersRepository.findOneBy).toHaveBeenCalledWith({
+    expect(customerRepo.findOneBy).toHaveBeenCalledWith({
       email: 'customer@example.com',
     });
-    expect(passwordHasherService.hash).toHaveBeenCalledWith(
-      'StrongPassword123!',
-    );
-    expect(customersRepository.create).toHaveBeenCalledWith(
+    expect(passwordHasher.hash).toHaveBeenCalledWith('StrongPassword123!');
+    expect(customerRepo.create).toHaveBeenCalledWith(
       expect.objectContaining({
         fullName: 'Nguyen Van A',
         email: 'customer@example.com',
@@ -99,11 +95,9 @@ describe('AuthService', () => {
   });
 
   it('rejects a duplicate registration after performing password hashing', async () => {
-    customersRepository.findOneBy.mockResolvedValue(customerFixture());
-    customersRepository.createQueryBuilder.mockReturnValue(
-      createQueryBuilder(null),
-    );
-    passwordHasherService.hash.mockResolvedValue('unused-password-hash');
+    customerRepo.findOneBy.mockResolvedValue(customerFixture());
+    customerRepo.createQueryBuilder.mockReturnValue(createQueryBuilder(null));
+    passwordHasher.hash.mockResolvedValue('unused-password-hash');
 
     await expect(
       service.registerCustomer({
@@ -119,19 +113,15 @@ describe('AuthService', () => {
         message: 'Khong the dang ky bang email hoac so dien thoai nay.',
       },
     });
-    expect(passwordHasherService.hash).toHaveBeenCalledWith(
-      'StrongPassword123!',
-    );
-    expect(customersRepository.save).not.toHaveBeenCalled();
+    expect(passwordHasher.hash).toHaveBeenCalledWith('StrongPassword123!');
+    expect(customerRepo.save).not.toHaveBeenCalled();
   });
 
   it('normalizes a duplicate-key registration race to a conflict response', async () => {
-    customersRepository.findOneBy.mockResolvedValue(null);
-    customersRepository.createQueryBuilder.mockReturnValue(
-      createQueryBuilder(null),
-    );
-    passwordHasherService.hash.mockResolvedValue('password-hash');
-    customersRepository.save.mockRejectedValue(
+    customerRepo.findOneBy.mockResolvedValue(null);
+    customerRepo.createQueryBuilder.mockReturnValue(createQueryBuilder(null));
+    passwordHasher.hash.mockResolvedValue('password-hash');
+    customerRepo.save.mockRejectedValue(
       new QueryFailedError('INSERT', [], {
         code: 'ER_DUP_ENTRY',
         message: "Duplicate entry for key 'customers.UQ_customers_phone'",
@@ -155,11 +145,11 @@ describe('AuthService', () => {
   });
 
   it('rejects registration for an existing passwordless Customer', async () => {
-    customersRepository.findOneBy.mockResolvedValue(null);
-    customersRepository.createQueryBuilder.mockReturnValue(
+    customerRepo.findOneBy.mockResolvedValue(null);
+    customerRepo.createQueryBuilder.mockReturnValue(
       createQueryBuilder(customerFixture({ passwordHash: null })),
     );
-    passwordHasherService.hash.mockResolvedValue('new-password-hash');
+    passwordHasher.hash.mockResolvedValue('new-password-hash');
 
     await expect(
       service.registerCustomer({
@@ -169,16 +159,16 @@ describe('AuthService', () => {
         password: 'StrongPassword123!',
       }),
     ).rejects.toMatchObject({ status: 409 });
-    expect(customersRepository.save).not.toHaveBeenCalled();
+    expect(customerRepo.save).not.toHaveBeenCalled();
   });
 
   it('logs a customer in by normalized phone and signs the DB tokenVersion', async () => {
     const queryBuilder = createQueryBuilder(
       customerFixture({ tokenVersion: 5 }),
     );
-    customersRepository.createQueryBuilder.mockReturnValue(queryBuilder);
-    passwordHasherService.verifyOrDummy.mockResolvedValue(true);
-    accessTokenService.sign.mockReturnValue('customer-token');
+    customerRepo.createQueryBuilder.mockReturnValue(queryBuilder);
+    passwordHasher.verifyOrDummy.mockResolvedValue(true);
+    tokenService.sign.mockReturnValue('customer-token');
 
     await expect(
       service.loginCustomer({
@@ -200,7 +190,7 @@ describe('AuthService', () => {
         phones: ['+84705840355', '0705840355', '84705840355'],
       },
     );
-    expect(accessTokenService.sign).toHaveBeenCalledWith({
+    expect(tokenService.sign).toHaveBeenCalledWith({
       actorType: 'customer',
       customerId: 'customer-1',
       tokenVersion: 5,
@@ -235,10 +225,10 @@ describe('AuthService', () => {
   ])(
     'uses the same customer login failure for $name after password verification',
     async ({ customer, passwordMatches, expectedHash }) => {
-      customersRepository.createQueryBuilder.mockReturnValue(
+      customerRepo.createQueryBuilder.mockReturnValue(
         createQueryBuilder(customer),
       );
-      passwordHasherService.verifyOrDummy.mockResolvedValue(passwordMatches);
+      passwordHasher.verifyOrDummy.mockResolvedValue(passwordMatches);
 
       await expect(
         service.loginCustomer({
@@ -252,20 +242,20 @@ describe('AuthService', () => {
           message: 'Thong tin dang nhap khong hop le.',
         },
       });
-      expect(passwordHasherService.verifyOrDummy).toHaveBeenCalledWith(
+      expect(passwordHasher.verifyOrDummy).toHaveBeenCalledWith(
         'StrongPassword123!',
         expectedHash,
       );
-      expect(accessTokenService.sign).not.toHaveBeenCalled();
+      expect(tokenService.sign).not.toHaveBeenCalled();
     },
   );
 
   it('logs a user in with the current role and tokenVersion from DB', async () => {
-    usersRepository.createQueryBuilder.mockReturnValue(
+    userRepo.createQueryBuilder.mockReturnValue(
       createQueryBuilder(userFixture({ role: 'ADMIN', tokenVersion: 7 })),
     );
-    passwordHasherService.verifyOrDummy.mockResolvedValue(true);
-    accessTokenService.sign.mockReturnValue('user-token');
+    passwordHasher.verifyOrDummy.mockResolvedValue(true);
+    tokenService.sign.mockReturnValue('user-token');
 
     await expect(
       service.loginUser({
@@ -277,7 +267,7 @@ describe('AuthService', () => {
       actorType: 'user',
       user: { id: 'user-1', role: 'ADMIN' },
     });
-    expect(accessTokenService.sign).toHaveBeenCalledWith({
+    expect(tokenService.sign).toHaveBeenCalledWith({
       actorType: 'user',
       userId: 'user-1',
       role: 'ADMIN',
@@ -307,10 +297,8 @@ describe('AuthService', () => {
   ])(
     'uses the same user login failure for $name after password verification',
     async ({ user, passwordMatches, expectedHash }) => {
-      usersRepository.createQueryBuilder.mockReturnValue(
-        createQueryBuilder(user),
-      );
-      passwordHasherService.verifyOrDummy.mockResolvedValue(passwordMatches);
+      userRepo.createQueryBuilder.mockReturnValue(createQueryBuilder(user));
+      passwordHasher.verifyOrDummy.mockResolvedValue(passwordMatches);
 
       await expect(
         service.loginUser({
@@ -324,16 +312,16 @@ describe('AuthService', () => {
           message: 'Thong tin dang nhap khong hop le.',
         },
       });
-      expect(passwordHasherService.verifyOrDummy).toHaveBeenCalledWith(
+      expect(passwordHasher.verifyOrDummy).toHaveBeenCalledWith(
         'WrongPassword123!',
         expectedHash,
       );
-      expect(accessTokenService.sign).not.toHaveBeenCalled();
+      expect(tokenService.sign).not.toHaveBeenCalled();
     },
   );
 
   it('reads the current account for /auth/me and rejects a locked account', async () => {
-    customersRepository.findOneBy.mockResolvedValue(
+    customerRepo.findOneBy.mockResolvedValue(
       customerFixture({ status: 'LOCKED' }),
     );
 

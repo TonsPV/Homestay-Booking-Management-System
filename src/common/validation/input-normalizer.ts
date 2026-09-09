@@ -362,9 +362,7 @@ export function normalizePhone(value: string): string | null {
   return `+84${subscriberNumber}`;
 }
 
-export function getVietnamesePhoneLookupVariants(
-  normalizedPhone: string,
-): string[] {
+export function getPhoneLookupVariants(normalizedPhone: string): string[] {
   if (!/^\+84[35789][0-9]{8}$/.test(normalizedPhone)) {
     return [normalizedPhone];
   }

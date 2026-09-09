@@ -9,8 +9,17 @@ import { Customer } from '../../../../src/module/customer/schema/customer.entity
 describe('CustomerAdminService', () => {
   let repository: {
     createQueryBuilder: jest.Mock;
-    findOneBy: jest.Mock;
     save: jest.Mock;
+    manager: {
+      transaction: jest.Mock;
+    };
+  };
+  let txRepo: {
+    findOne: jest.Mock;
+    save: jest.Mock;
+  };
+  let transactionManager: {
+    getRepository: jest.Mock;
   };
   let service: CustomerAdminService;
   const auditLogService = { record: jest.fn() };
@@ -24,18 +33,31 @@ describe('CustomerAdminService', () => {
             ? null
             : ErrorCode.CUSTOMER_INITIAL_PASSWORD_ALREADY_CONFIGURED,
     })),
-    evaluateByCustomerId: jest.fn(),
+  };
+  const credentialLookup = {
+    getCapabilitiesByCustomerId: jest.fn(),
   };
 
   beforeEach(() => {
-    repository = {
-      createQueryBuilder: jest.fn(),
-      findOneBy: jest.fn(),
+    txRepo = {
+      findOne: jest.fn(),
       save: jest.fn((value: Customer) => Promise.resolve(value)),
     };
+    transactionManager = {
+      getRepository: jest.fn().mockReturnValue(txRepo),
+    };
+    repository = {
+      createQueryBuilder: jest.fn(),
+      save: jest.fn((value: Customer) => Promise.resolve(value)),
+      manager: {
+        transaction: jest.fn((operation: (value: unknown) => unknown) =>
+          operation(transactionManager),
+        ),
+      },
+    };
     credentialPolicy.evaluate.mockClear();
-    credentialPolicy.evaluateByCustomerId.mockReset();
-    credentialPolicy.evaluateByCustomerId.mockResolvedValue({
+    credentialLookup.getCapabilitiesByCustomerId.mockReset();
+    credentialLookup.getCapabilitiesByCustomerId.mockResolvedValue({
       canSetInitialPassword: false,
       reasonCode: ErrorCode.CUSTOMER_INITIAL_PASSWORD_ALREADY_CONFIGURED,
     });
@@ -43,7 +65,8 @@ describe('CustomerAdminService', () => {
     auditLogService.record.mockResolvedValue(undefined);
     service = new CustomerAdminService(
       repository as unknown as Repository<Customer>,
-      credentialPolicy as never,
+      credentialPolicy,
+      credentialLookup as never,
       auditLogService,
     );
   });
@@ -87,7 +110,7 @@ describe('CustomerAdminService', () => {
 
   it('increments tokenVersion on each real status transition', async () => {
     const customer = customerFixture({ tokenVersion: 2 });
-    repository.findOneBy.mockResolvedValue(customer);
+    txRepo.findOne.mockResolvedValue(customer);
 
     await service.updateStatus('10', 'LOCKED');
     expect(customer).toMatchObject({ status: 'LOCKED', tokenVersion: 3 });
@@ -98,32 +121,23 @@ describe('CustomerAdminService', () => {
 
   it('keeps tokenVersion for an idempotent status request', async () => {
     const customer = customerFixture({ tokenVersion: 2 });
-    repository.findOneBy.mockResolvedValue(customer);
+    txRepo.findOne.mockResolvedValue(customer);
 
     await service.updateStatus('10', 'ACTIVE');
 
     expect(customer.tokenVersion).toBe(2);
+    expect(txRepo.findOne).toHaveBeenCalledWith({
+      where: { id: '10' },
+      lock: { mode: 'pessimistic_write' },
+    });
+    expect(txRepo.save).toHaveBeenCalledWith(customer);
+    expect(repository.save).not.toHaveBeenCalled();
     expect(auditLogService.record).not.toHaveBeenCalled();
   });
 
   it('writes account audit in the same transaction on a real transition', async () => {
     const customer = customerFixture({ tokenVersion: 2 });
-    const transactionalRepository = {
-      findOneBy: jest.fn().mockResolvedValue(customer),
-      save: jest.fn((value: Customer) => Promise.resolve(value)),
-    };
-    const manager = {
-      getRepository: jest.fn().mockReturnValue(transactionalRepository),
-    };
-    const transaction = jest.fn((operation: (value: unknown) => unknown) =>
-      operation(manager),
-    );
-    Object.assign(repository, { manager: { transaction } });
-    service = new CustomerAdminService(
-      repository as unknown as Repository<Customer>,
-      credentialPolicy as never,
-      auditLogService,
-    );
+    txRepo.findOne.mockResolvedValue(customer);
 
     await service.updateStatus('10', 'LOCKED', {
       actorType: AuditActorType.USER,
@@ -131,8 +145,15 @@ describe('CustomerAdminService', () => {
       requestId: 'req-lock',
     });
 
+    expect(repository.manager.transaction).toHaveBeenCalledTimes(1);
+    expect(txRepo.findOne).toHaveBeenCalledWith({
+      where: { id: '10' },
+      lock: { mode: 'pessimistic_write' },
+    });
+    expect(txRepo.save).toHaveBeenCalledWith(customer);
+    expect(repository.save).not.toHaveBeenCalled();
     expect(auditLogService.record).toHaveBeenCalledWith(
-      manager,
+      transactionManager,
       expect.objectContaining({
         actorId: '7',
         entityId: '10',
@@ -142,12 +163,54 @@ describe('CustomerAdminService', () => {
     );
   });
 
+  it('preserves the optional audit context behavior for a real transition', async () => {
+    const customer = customerFixture({ tokenVersion: 2 });
+    txRepo.findOne.mockResolvedValue(customer);
+
+    await service.updateStatus('10', 'LOCKED');
+
+    expect(txRepo.save).toHaveBeenCalledWith(customer);
+    expect(auditLogService.record).not.toHaveBeenCalled();
+  });
+
+  it('propagates a transaction failure without falling back to a root write', async () => {
+    repository.manager.transaction.mockRejectedValue(
+      new Error('transaction failed'),
+    );
+
+    await expect(service.updateStatus('10', 'LOCKED')).rejects.toThrow(
+      'transaction failed',
+    );
+
+    expect(txRepo.findOne).not.toHaveBeenCalled();
+    expect(txRepo.save).not.toHaveBeenCalled();
+    expect(repository.save).not.toHaveBeenCalled();
+    expect(auditLogService.record).not.toHaveBeenCalled();
+  });
+
+  it('propagates an audit failure without a fallback write', async () => {
+    const customer = customerFixture({ tokenVersion: 2 });
+    txRepo.findOne.mockResolvedValue(customer);
+    auditLogService.record.mockRejectedValue(new Error('audit failed'));
+
+    await expect(
+      service.updateStatus('10', 'LOCKED', {
+        actorType: AuditActorType.USER,
+        actorId: '7',
+        requestId: 'req-lock',
+      }),
+    ).rejects.toThrow('audit failed');
+
+    expect(txRepo.save).toHaveBeenCalledWith(customer);
+    expect(repository.save).not.toHaveBeenCalled();
+  });
+
   it('rejects invalid and missing customer ids', async () => {
     await expect(
       service.updateStatus('bad-id', 'ACTIVE'),
     ).rejects.toBeInstanceOf(BadRequestException);
 
-    repository.findOneBy.mockResolvedValue(null);
+    txRepo.findOne.mockResolvedValue(null);
     await expect(service.updateStatus('999', 'ACTIVE')).rejects.toBeInstanceOf(
       NotFoundException,
     );

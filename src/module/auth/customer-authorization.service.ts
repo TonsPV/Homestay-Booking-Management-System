@@ -12,13 +12,13 @@ import { Customer } from '../customer/schema/customer.entity';
 export class CustomerAuthorizationService extends CustomerAuthorizationReader {
   constructor(
     @InjectRepository(Customer)
-    private readonly customersRepository: Repository<Customer>,
+    private readonly customerRepo: Repository<Customer>,
   ) {
     super();
   }
 
   async findById(id: string): Promise<CustomerAuthorizationState | null> {
-    const customer = await this.customersRepository.findOneBy({ id });
+    const customer = await this.customerRepo.findOneBy({ id });
 
     if (customer === null) {
       return null;

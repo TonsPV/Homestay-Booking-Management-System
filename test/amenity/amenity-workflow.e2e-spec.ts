@@ -43,10 +43,10 @@ describe('Amenity workflow (e2e)', () => {
   let app: INestApplication<App>;
   let e2eHarness: E2eHarness | undefined;
   let dataSource: DataSource;
-  let amenitiesRepository: Repository<Amenity>;
-  let roomTypesRepository: Repository<RoomType>;
-  let usersRepository: Repository<User>;
-  let customersRepository: Repository<Customer>;
+  let amenityRepo: Repository<Amenity>;
+  let roomTypeRepo: Repository<RoomType>;
+  let userRepo: Repository<User>;
+  let customerRepo: Repository<Customer>;
   let passwordHasher: PasswordHasherService;
   let accessTokenService: AccessTokenService;
   let admin: User;
@@ -72,10 +72,10 @@ describe('Amenity workflow (e2e)', () => {
     await app.init();
 
     dataSource = app.get(DataSource);
-    amenitiesRepository = dataSource.getRepository(Amenity);
-    roomTypesRepository = dataSource.getRepository(RoomType);
-    usersRepository = dataSource.getRepository(User);
-    customersRepository = dataSource.getRepository(Customer);
+    amenityRepo = dataSource.getRepository(Amenity);
+    roomTypeRepo = dataSource.getRepository(RoomType);
+    userRepo = dataSource.getRepository(User);
+    customerRepo = dataSource.getRepository(Customer);
     passwordHasher = app.get(PasswordHasherService);
     accessTokenService = app.get(AccessTokenService);
     admin = await createUser('ADMIN');
@@ -87,16 +87,16 @@ describe('Amenity workflow (e2e)', () => {
 
     e2eHarness.registerCleanup(async () => {
       if (createdRoomTypeIds.length > 0) {
-        await roomTypesRepository.delete([...new Set(createdRoomTypeIds)]);
+        await roomTypeRepo.delete([...new Set(createdRoomTypeIds)]);
       }
       if (createdAmenityIds.length > 0) {
-        await amenitiesRepository.delete([...new Set(createdAmenityIds)]);
+        await amenityRepo.delete([...new Set(createdAmenityIds)]);
       }
       if (createdCustomerIds.length > 0) {
-        await customersRepository.delete([...new Set(createdCustomerIds)]);
+        await customerRepo.delete([...new Set(createdCustomerIds)]);
       }
       if (createdUserIds.length > 0) {
-        await usersRepository.delete([...new Set(createdUserIds)]);
+        await userRepo.delete([...new Set(createdUserIds)]);
       }
     });
   });
@@ -213,8 +213,8 @@ describe('Amenity workflow (e2e)', () => {
       .expect(400);
 
     const assigned = await createAmenity(nextName('assigned'));
-    const roomType = await roomTypesRepository.save(
-      roomTypesRepository.create({
+    const roomType = await roomTypeRepo.save(
+      roomTypeRepo.create({
         name: nextName('room-type'),
         description: null,
         maxGuests: 2,
@@ -265,26 +265,23 @@ describe('Amenity workflow (e2e)', () => {
     const roomTypeService = app.get(RoomTypeService);
     const amenityService = app.get(AmenityService);
     const roomTypeInternals = roomTypeService as unknown as {
-      getLockedActiveAmenities(
+      lockActiveAmenities(
         manager: EntityManager,
         amenityIds: string[],
       ): Promise<Amenity[]>;
     };
     const amenityInternals = amenityService as unknown as {
-      getLockedActiveAmenity(
-        manager: EntityManager,
-        id: string,
-      ): Promise<Amenity>;
+      lockActiveAmenity(manager: EntityManager, id: string): Promise<Amenity>;
     };
     const originalAssignmentLock =
-      roomTypeInternals.getLockedActiveAmenities.bind(roomTypeInternals);
+      roomTypeInternals.lockActiveAmenities.bind(roomTypeInternals);
     const originalDeleteLock =
-      amenityInternals.getLockedActiveAmenity.bind(amenityInternals);
+      amenityInternals.lockActiveAmenity.bind(amenityInternals);
     const assignmentHasLock = createDeferred<void>();
     const deleteAttemptedLock = createDeferred<void>();
     const releaseAssignment = createDeferred<void>();
     const assignmentLockSpy = jest
-      .spyOn(roomTypeInternals, 'getLockedActiveAmenities')
+      .spyOn(roomTypeInternals, 'lockActiveAmenities')
       .mockImplementation(async (manager, amenityIds) => {
         const locked = await originalAssignmentLock(manager, amenityIds);
         if (amenityIds.includes(amenity.id)) {
@@ -294,7 +291,7 @@ describe('Amenity workflow (e2e)', () => {
         return locked;
       });
     const deleteLockSpy = jest
-      .spyOn(amenityInternals, 'getLockedActiveAmenity')
+      .spyOn(amenityInternals, 'lockActiveAmenity')
       .mockImplementation(async (manager, id) => {
         if (id === amenity.id) {
           deleteAttemptedLock.resolve();
@@ -336,12 +333,12 @@ describe('Amenity workflow (e2e)', () => {
         'AMENITY_IN_USE',
       );
 
-      const persistedAmenity = await amenitiesRepository
+      const persistedAmenity = await amenityRepo
         .createQueryBuilder('amenity')
         .withDeleted()
         .where('amenity.id = :id', { id: amenity.id })
         .getOneOrFail();
-      const persistedRoomType = await roomTypesRepository
+      const persistedRoomType = await roomTypeRepo
         .createQueryBuilder('roomType')
         .withDeleted()
         .where('roomType.id = :id', { id: roomType.id })
@@ -368,6 +365,86 @@ describe('Amenity workflow (e2e)', () => {
     }
   });
 
+  it('does not resurrect an amenity when update races with soft-delete', async () => {
+    const amenity = await createAmenity(nextName('update-delete-race'));
+    const amenityService = app.get(AmenityService);
+    const amenityInternals = amenityService as unknown as {
+      getActiveAmenity(id: string): Promise<Amenity>;
+      lockActiveAmenity(manager: EntityManager, id: string): Promise<Amenity>;
+    };
+    const originalActiveLookup =
+      amenityInternals.getActiveAmenity.bind(amenityInternals);
+    const originalLockedLookup =
+      amenityInternals.lockActiveAmenity.bind(amenityInternals);
+    const updateReachedRead = createDeferred<void>();
+    const releaseUpdate = createDeferred<void>();
+    let readSignalled = false;
+    const activeLookupSpy = jest
+      .spyOn(amenityInternals, 'getActiveAmenity')
+      .mockImplementation(async (id) => {
+        const result = await originalActiveLookup(id);
+        if (id === amenity.id && !readSignalled) {
+          readSignalled = true;
+          updateReachedRead.resolve();
+          await releaseUpdate.promise;
+        }
+        return result;
+      });
+    const lockedLookupSpy = jest
+      .spyOn(amenityInternals, 'lockActiveAmenity')
+      .mockImplementation(async (manager, id) => {
+        const result = await originalLockedLookup(manager, id);
+        if (id === amenity.id && !readSignalled) {
+          readSignalled = true;
+          updateReachedRead.resolve();
+          await releaseUpdate.promise;
+        }
+        return result;
+      });
+    let updatePromise: Promise<request.Response> | undefined;
+    let deletePromise: Promise<request.Response> | undefined;
+
+    try {
+      updatePromise = request(app.getHttpServer())
+        .patch('/api/v1/admin/amenities/' + amenity.id)
+        .set('Authorization', 'Bearer ' + adminToken)
+        .send({ description: 'updated after the race' })
+        .then((response) => response);
+      await waitForSignal(updateReachedRead.promise, 'Amenity update read');
+
+      deletePromise = request(app.getHttpServer())
+        .delete('/api/v1/admin/amenities/' + amenity.id)
+        .set('Authorization', 'Bearer ' + adminToken)
+        .then((response) => response);
+      releaseUpdate.resolve();
+
+      const [updateResponse, deleteResponse] = await Promise.all([
+        updatePromise,
+        deletePromise,
+      ]);
+      expect(updateResponse.status).toBe(200);
+      expect(deleteResponse.status).toBe(200);
+
+      const persisted = await amenityRepo
+        .createQueryBuilder('amenity')
+        .withDeleted()
+        .where('amenity.id = :id', { id: amenity.id })
+        .getOneOrFail();
+      expect(persisted.description).toBe('updated after the race');
+      expect(persisted.deletedAt).not.toBeNull();
+    } finally {
+      releaseUpdate.resolve();
+      await Promise.allSettled(
+        [updatePromise, deletePromise].filter(
+          (promise): promise is Promise<request.Response> =>
+            promise !== undefined,
+        ),
+      );
+      activeLookupSpy.mockRestore();
+      lockedLookupSpy.mockRestore();
+    }
+  });
+
   it('normalizes duplicate-key races and preserves admin update behavior', async () => {
     const raceName = nextName('race');
     const responses = await Promise.all([
@@ -377,7 +454,7 @@ describe('Amenity workflow (e2e)', () => {
     expect(responses.map((response) => response.status).sort()).toEqual([
       201, 409,
     ]);
-    const rows = await amenitiesRepository.findBy({ name: raceName });
+    const rows = await amenityRepo.findBy({ name: raceName });
     expect(rows).toHaveLength(1);
     createdAmenityIds.push(rows[0].id);
 
@@ -401,7 +478,7 @@ describe('Amenity workflow (e2e)', () => {
     }
     const id = (response.body as ResponseEnvelope<AmenityPayload>).data.id;
     createdAmenityIds.push(id);
-    return amenitiesRepository.findOneByOrFail({ id });
+    return amenityRepo.findOneByOrFail({ id });
   }
 
   async function createAmenityRequest(name: string): Promise<request.Response> {
@@ -412,8 +489,8 @@ describe('Amenity workflow (e2e)', () => {
   }
 
   async function createRoomType(name: string): Promise<RoomType> {
-    const roomType = await roomTypesRepository.save(
-      roomTypesRepository.create({
+    const roomType = await roomTypeRepo.save(
+      roomTypeRepo.create({
         name,
         description: null,
         maxGuests: 2,
@@ -440,8 +517,8 @@ describe('Amenity workflow (e2e)', () => {
   }
 
   async function createUser(role: 'ADMIN' | 'STAFF'): Promise<User> {
-    const user = await usersRepository.save(
-      usersRepository.create({
+    const user = await userRepo.save(
+      userRepo.create({
         fullName: 'Amenity E2E ' + role,
         email: nextEmail('user-' + role),
         phone: null,
@@ -456,8 +533,8 @@ describe('Amenity workflow (e2e)', () => {
   }
 
   async function createCustomer(): Promise<Customer> {
-    const customer = await customersRepository.save(
-      customersRepository.create({
+    const customer = await customerRepo.save(
+      customerRepo.create({
         fullName: 'Amenity E2E Customer',
         email: nextEmail('customer'),
         phone: '+84' + nextLocalPhone().slice(1),

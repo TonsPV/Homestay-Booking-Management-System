@@ -66,10 +66,7 @@ export class AccessTokenClaimsValidator {
     };
   }
 
-  enforceTemporaryValidity(
-    payload: AccessTokenPayload,
-    nowSeconds: number,
-  ): void {
+  assertTimeValid(payload: AccessTokenPayload, nowSeconds: number): void {
     const now = nowSeconds ?? Math.floor(Date.now() / 1000);
 
     if (payload.iat > now + this.maxClockSkewSeconds) {

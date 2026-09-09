@@ -22,7 +22,7 @@ interface SeedAdminInput {
 }
 
 async function main(): Promise<void> {
-  assertSeedAdminEnvironment(
+  assertSeedEnv(
     process.env.NODE_ENV,
     process.argv.includes('--allow-production'),
   );
@@ -42,8 +42,8 @@ async function main(): Promise<void> {
   await dataSource.initialize();
 
   try {
-    const usersRepository = dataSource.getRepository(User);
-    const existingUser = await usersRepository.findOneBy({
+    const userRepo = dataSource.getRepository(User);
+    const existingUser = await userRepo.findOneBy({
       email: input.email,
     });
 
@@ -60,16 +60,16 @@ async function main(): Promise<void> {
       return;
     }
 
-    const passwordHasherService = new PasswordHasherService();
-    const admin = usersRepository.create({
+    const passwordHasher = new PasswordHasherService();
+    const admin = userRepo.create({
       fullName: input.fullName,
       email: input.email,
       phone: input.phone,
-      passwordHash: await passwordHasherService.hash(input.password),
+      passwordHash: await passwordHasher.hash(input.password),
       role: 'ADMIN',
       status: 'ACTIVE',
     });
-    const savedAdmin = await usersRepository.save(admin);
+    const savedAdmin = await userRepo.save(admin);
 
     console.log(
       `Seeded admin user: id=${savedAdmin.id}, email=${savedAdmin.email}.`,
@@ -79,7 +79,7 @@ async function main(): Promise<void> {
   }
 }
 
-export function assertSeedAdminEnvironment(
+export function assertSeedEnv(
   nodeEnvironment: string | undefined,
   allowProduction: boolean,
 ): void {
