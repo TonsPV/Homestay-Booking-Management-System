@@ -15,9 +15,13 @@ async function bootstrap(): Promise<void> {
 
   configureOpenApiIfEnabled(app, configService);
 
-  const port = Number(configService.get<string>('APP_PORT') ?? 3000);
+  // Ưu tiên PORT của cloud provider (Render), sau đó mới tới APP_PORT của local env
+  const port = Number(
+    process.env.PORT ?? configService.get<string>('PORT') ?? configService.get<string>('APP_PORT') ?? 3000
+  );
 
-  await app.listen(port);
+  // Bắt buộc phải có '0.0.0.0' để container mở cổng ra môi trường bên ngoài
+  await app.listen(port, '0.0.0.0');
 
   new Logger('Bootstrap').log(`Application listening on port ${port}.`);
 }
