@@ -4,7 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import {
   type TransactionContext,
   TransactionRunner,
-} from '../../common/application/transaction';
+} from '../../common/database/transaction';
 import { ErrorCode } from '../../common/error-codes';
 import { AppHttpException } from '../../common/http/app-http-exception';
 import {
@@ -17,9 +17,10 @@ import {
   PaymentReviewReason,
   PaymentStatus,
 } from '../payment/domain/payment-state';
+import { detectDuplicateChargeRefund } from '../payment/domain/duplicate-charge.detector';
+import { buildRefundAuditMetadata } from '../payment/mappers/payment-refund.mapper';
 import { PaymentAcceptanceStore } from '../payment/ports/payment-acceptance.store';
 import { PaymentRefundStore } from '../payment/ports/payment-refund.store';
-import { PaymentRefundCapability } from '../payment/domain/payment-refund-capability';
 import { Payment } from '../payment/schema/payment.entity';
 import { BookingTransitionPolicy } from './domain/booking-transition.policy';
 import { BookingPaymentStatus, BookingStatus } from './domain/booking-state';
@@ -49,20 +50,20 @@ import { Booking } from './schema/booking.entity';
  */
 @Injectable()
 export class BookingPaymentLifecycleService {
-  private readonly paymentTimeoutMilliseconds: number;
+  private readonly paymentTimeoutMs: number;
 
   constructor(
     private readonly transactions: TransactionRunner,
     configService: ConfigService,
-    private readonly bookingTransitionPolicy: BookingTransitionPolicy,
+    private readonly transitionPolicy: BookingTransitionPolicy,
     private readonly bookings: BookingLifecycleStore,
-    private readonly bookingPayments: BookingPaymentStateStore,
+    private readonly payments: BookingPaymentStateStore,
     private readonly roomCalendar: RoomCalendarStore,
     private readonly auditLog: TransactionalAuditLog,
     private readonly paymentAcceptance: PaymentAcceptanceStore,
     private readonly paymentRefunds: PaymentRefundStore,
   ) {
-    this.paymentTimeoutMilliseconds =
+    this.paymentTimeoutMs =
       configService.getOrThrow<number>('BOOKING_PAYMENT_TIMEOUT_MINUTES') *
       60 *
       1000;
@@ -72,11 +73,9 @@ export class BookingPaymentLifecycleService {
    * Expires every unpaid booking whose payment deadline has passed.
    * Owns its transaction: one batch = one transaction.
    */
-  async expirePendingPayments(now = new Date()): Promise<number> {
+  async expireUnpaidBookings(now = new Date()): Promise<number> {
     return this.transactions.run(async (transaction) => {
-      const legacyCutoff = new Date(
-        now.getTime() - this.paymentTimeoutMilliseconds,
-      );
+      const legacyCutoff = new Date(now.getTime() - this.paymentTimeoutMs);
       const expiredBookings = await this.bookings.findExpiredForUpdate(
         transaction,
         now,
@@ -98,7 +97,7 @@ export class BookingPaymentLifecycleService {
       }
 
       await this.bookings.saveState(transaction, expiredBookings);
-      await this.bookingPayments.failPendingOnlinePayments(
+      await this.payments.failPendingOnlinePayments(
         transaction,
         bookingIds,
         'EXPIRED',
@@ -160,8 +159,7 @@ export class BookingPaymentLifecycleService {
 
     if (
       !customerRequested &&
-      !this.bookingTransitionPolicy.evaluate(booking, BookingStatus.CANCELLED)
-        .allowed
+      !this.transitionPolicy.evaluate(booking, BookingStatus.CANCELLED).allowed
     ) {
       throw new AppHttpException(
         HttpStatus.CONFLICT,
@@ -176,7 +174,7 @@ export class BookingPaymentLifecycleService {
     booking.cancellationReason = reason;
 
     await this.bookings.saveState(context, booking);
-    await this.bookingPayments.failPendingOnlinePayments(
+    await this.payments.failPendingOnlinePayments(
       context,
       [booking.id],
       'CANCELLED',
@@ -373,7 +371,7 @@ export class BookingPaymentLifecycleService {
       );
     }
 
-    if (this.isDuplicateChargeRefund(payment)) {
+    if (detectDuplicateChargeRefund(payment, booking.id).isDuplicateCharge) {
       payment.status = PaymentStatus.REFUNDED;
       refund.refundedAt = now;
       await this.paymentRefunds.saveRefundState(context, refund);
@@ -385,7 +383,7 @@ export class BookingPaymentLifecycleService {
         entityType: AuditEntityType.PAYMENT,
         entityId: payment.id,
         requestId,
-        metadata: this.getRefundAuditMetadata(booking, payment),
+        metadata: buildRefundAuditMetadata(booking, payment),
       });
       return;
     }
@@ -414,7 +412,7 @@ export class BookingPaymentLifecycleService {
       entityType: AuditEntityType.PAYMENT,
       entityId: payment.id,
       requestId,
-      metadata: this.getRefundAuditMetadata(booking, payment),
+      metadata: buildRefundAuditMetadata(booking, payment),
     });
     if (bookingFromStatus !== booking.status) {
       await this.auditLog.record(context, {
@@ -431,37 +429,6 @@ export class BookingPaymentLifecycleService {
         },
       });
     }
-  }
-
-  private isDuplicateChargeRefund(payment: Payment): boolean {
-    return (
-      payment.refund?.previousPaymentStatus === PaymentStatus.REQUIRES_REVIEW &&
-      payment.reviewReason === PaymentReviewReason.ANOTHER_SUCCESSFUL_PAYMENT &&
-      payment.reviewCanonicalPaymentId !== null &&
-      payment.reviewCanonicalPaymentId !== payment.id
-    );
-  }
-
-  private getRefundAuditMetadata(
-    booking: Booking,
-    payment: Payment,
-  ): Record<string, string> {
-    if (this.isDuplicateChargeRefund(payment)) {
-      return {
-        bookingId: booking.id,
-        canonicalPaymentId: payment.reviewCanonicalPaymentId as string,
-        duplicatePaymentId: payment.id,
-        reason: PaymentReviewReason.ANOTHER_SUCCESSFUL_PAYMENT,
-        refundRequestId: payment.refund?.requestId as string,
-        capability: PaymentRefundCapability.DUPLICATE_CHARGE_REFUND,
-        method: payment.method,
-      };
-    }
-
-    return {
-      bookingId: booking.id,
-      method: payment.method,
-    };
   }
 
   private async recordStatusAudit(

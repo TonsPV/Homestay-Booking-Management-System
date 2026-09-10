@@ -1,4 +1,4 @@
-import type { TransactionContext } from '../../../common/application/transaction';
+import type { TransactionContext } from '../../../common/database/transaction';
 import type { Booking } from '../../booking/schema/booking.entity';
 import { PaymentStatus } from '../domain/payment-state';
 import type { Payment } from '../schema/payment.entity';
@@ -11,7 +11,7 @@ export class PaymentRefundIdempotencyConflictError extends Error {
   }
 }
 
-export interface CreatePaymentRefundRecord {
+export interface CreateRefundInput {
   paymentId: string;
   idempotencyKey: string | null;
   requestId: string | null;
@@ -52,7 +52,7 @@ export abstract class PaymentRefundStore {
 
   abstract createRefund(
     context: TransactionContext,
-    input: CreatePaymentRefundRecord,
+    input: CreateRefundInput,
   ): Promise<PaymentRefund>;
 
   abstract lockCanonicalSuccessfulPayment(
@@ -77,6 +77,7 @@ export abstract class PaymentRefundStore {
   ): Promise<void>;
 
   abstract recordRefundQueryFailure(
+    context: TransactionContext,
     paymentId: string,
     now: Date,
   ): Promise<void>;

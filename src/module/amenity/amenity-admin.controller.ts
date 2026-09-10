@@ -20,7 +20,7 @@ import {
   ApiCreatedEnvelope,
   ApiOkEnvelope,
 } from '../../openapi/api-response.decorators';
-import { AccessTokenGuard } from '../auth/access-token.guard';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { AmenityService, type AdminAmenityResponse } from './amenity.service';
@@ -30,7 +30,7 @@ import { AdminListAmenitiesQueryDto } from './dto/list-amenities-query.dto';
 import { UpdateAmenityDto } from './dto/update-amenity.dto';
 
 @Controller('v1/admin/amenities')
-@UseGuards(AccessTokenGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('ADMIN')
 @ApiTags('Admin Amenities')
 @ApiBearerAuth()

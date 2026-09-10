@@ -1,4 +1,3 @@
-import type { AuditMetadata } from './schema/audit-log.entity';
 import {
   AuditAction,
   AuditActorType,
@@ -11,9 +10,11 @@ export interface AuditActorContext {
   requestId?: string;
 }
 
-export interface RecordAuditLogInput extends AuditActorContext {
+export interface AuditLogInput extends AuditActorContext {
   action: AuditAction;
   entityType: AuditEntityType;
   entityId: string;
   metadata?: AuditMetadata;
 }
+
+export type AuditMetadata = Record<string, boolean | number | string | null>;

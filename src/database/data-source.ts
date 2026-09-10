@@ -40,6 +40,7 @@ import { RetireCustomerPhoneClaim1784794000000 } from './migrations/178479400000
 import { CreatePaymentRefundsAndBackfill1784795000000 } from './migrations/1784795000000-CreatePaymentRefundsAndBackfill';
 import { HardenAcceptedPaymentOwnership1784796000000 } from './migrations/1784796000000-HardenAcceptedPaymentOwnership';
 import { RemoveLegacyPaymentRefundColumns1784797000000 } from './migrations/1784797000000-RemoveLegacyPaymentRefundColumns';
+import { AddCredentialCalendarAuditActions1784798000000 } from './migrations/1784798000000-AddCredentialCalendarAuditActions';
 import { AlignRoomMetadata1784772000000 } from './migrations/1784772000000-AlignRoomMetadata';
 import { AddUserTokenVersion1784773000000 } from './migrations/1784773000000-AddUserTokenVersion';
 import { AlignEntityMetadata1784771000000 } from './migrations/1784771000000-AlignEntityMetadata';
@@ -114,6 +115,7 @@ const AppDataSource = new DataSource({
     CreatePaymentRefundsAndBackfill1784795000000,
     HardenAcceptedPaymentOwnership1784796000000,
     RemoveLegacyPaymentRefundColumns1784797000000,
+    AddCredentialCalendarAuditActions1784798000000,
   ],
   migrationsTableName: 'typeorm_migrations',
   synchronize: false,

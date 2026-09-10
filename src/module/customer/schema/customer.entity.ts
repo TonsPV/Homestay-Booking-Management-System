@@ -8,8 +8,10 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 
-import { AccountStatusEnum } from '../../../common/domain/account.enums';
-import type { AccountStatus } from '../../../common/domain/account.enums';
+import {
+  AccountStatusEnum,
+  type AccountStatus,
+} from '../../../common/account/account.enums';
 
 export type CustomerStatus = AccountStatus;
 

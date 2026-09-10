@@ -1,6 +1,122 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, UnauthorizedException } from '@nestjs/common';
 
-import { AccountStatusEnum, type AccountStatus } from '../domain/account.enums';
+import {
+  AccountStatusEnum,
+  type AccountStatus,
+} from '../account/account.enums';
+
+const POSITIVE_ID_PATTERN = /^[1-9][0-9]*$/;
+const ISO_DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
+const VIETNAM_UTC_OFFSET_MS = 7 * 60 * 60 * 1000;
+
+type StringEnum = Readonly<Record<string, string>>;
+
+export function requireId(value: unknown, fieldName: string): string {
+  const message =
+    fieldName.length === 0
+      ? 'Id khong hop le.'
+      : `${fieldName} id khong hop le.`;
+
+  if (typeof value !== 'string' && typeof value !== 'number') {
+    throw new BadRequestException(message);
+  }
+
+  const id = String(value);
+
+  if (!POSITIVE_ID_PATTERN.test(id)) {
+    throw new BadRequestException(message);
+  }
+
+  return id;
+}
+
+export function optionalId(
+  value: unknown,
+  fieldName: string,
+): string | undefined {
+  if (value === undefined || value === null || value === '') {
+    return undefined;
+  }
+
+  return requireId(value, fieldName);
+}
+
+export function requireActorId(value: string | undefined): string {
+  if (value === undefined || !POSITIVE_ID_PATTERN.test(value)) {
+    throw new UnauthorizedException('Access token is invalid.');
+  }
+
+  return value;
+}
+
+export function parseIsoDate(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const date = value.trim();
+  const match = ISO_DATE_PATTERN.exec(date);
+
+  if (match === null) {
+    return null;
+  }
+
+  const parsed = new Date(`${date}T00:00:00.000Z`);
+
+  if (
+    Number.isNaN(parsed.getTime()) ||
+    parsed.getUTCFullYear() !== Number(match[1]) ||
+    parsed.getUTCMonth() + 1 !== Number(match[2]) ||
+    parsed.getUTCDate() !== Number(match[3])
+  ) {
+    return null;
+  }
+
+  return date;
+}
+
+export function currentVietnamDate(now: Date): string {
+  return new Date(now.getTime() + VIETNAM_UTC_OFFSET_MS)
+    .toISOString()
+    .slice(0, 10);
+}
+
+export function isEnumValue<TEnum extends StringEnum>(
+  enumType: TEnum,
+  value: unknown,
+): value is TEnum[keyof TEnum] {
+  return typeof value === 'string' && Object.values(enumType).includes(value);
+}
+
+export function optionalEnumValue<TEnum extends StringEnum>(
+  value: unknown,
+  enumType: TEnum,
+  message: string,
+): TEnum[keyof TEnum] | undefined {
+  if (value === undefined || value === null || value === '') {
+    return undefined;
+  }
+
+  if (!isEnumValue(enumType, value)) {
+    throw new BadRequestException(message);
+  }
+
+  return value;
+}
+
+export function requireEnumValue<TEnum extends StringEnum>(
+  value: unknown,
+  enumType: TEnum,
+  message: string,
+): TEnum[keyof TEnum] {
+  const enumValue = optionalEnumValue(value, enumType, message);
+
+  if (enumValue === undefined) {
+    throw new BadRequestException(message);
+  }
+
+  return enumValue;
+}
 
 export function requireTrimmedString(
   value: unknown,
@@ -309,14 +425,11 @@ export function optionalAccountStatus(
     return undefined;
   }
 
-  if (
-    typeof value !== 'string' ||
-    !Object.values(AccountStatusEnum).includes(value as AccountStatusEnum)
-  ) {
+  if (!isEnumValue(AccountStatusEnum, value)) {
     throw new BadRequestException(message);
   }
 
-  return value as AccountStatus;
+  return value;
 }
 
 export function requireAccountStatus(
@@ -362,9 +475,7 @@ export function normalizePhone(value: string): string | null {
   return `+84${subscriberNumber}`;
 }
 
-export function getVietnamesePhoneLookupVariants(
-  normalizedPhone: string,
-): string[] {
+export function getPhoneLookupVariants(normalizedPhone: string): string[] {
   if (!/^\+84[35789][0-9]{8}$/.test(normalizedPhone)) {
     return [normalizedPhone];
   }

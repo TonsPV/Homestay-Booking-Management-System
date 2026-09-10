@@ -122,7 +122,10 @@ describe('VNPay collection/Return/IPN workflow (e2e)', () => {
       '00',
       'normal-tx-' + suffix,
     );
-    const invalidAmount = { ...valid, vnp_Amount: '1' };
+    const invalidAmount: Record<string, string> = {
+      ...valid,
+      vnp_Amount: '1',
+    };
     invalidAmount.vnp_SecureHash = createVnPaySignature(
       invalidAmount,
       secret(),

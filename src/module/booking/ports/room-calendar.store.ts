@@ -1,4 +1,4 @@
-import type { TransactionContext } from '../../../common/application/transaction';
+import type { TransactionContext } from '../../../common/database/transaction';
 
 export class RoomCalendarReservationConflictError extends Error {
   constructor() {

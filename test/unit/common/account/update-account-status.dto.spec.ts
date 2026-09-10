@@ -3,7 +3,7 @@ import { ValidationPipe } from '@nestjs/common';
 import {
   AccountStatusEnum,
   type AccountStatus,
-} from '../../../../src/common/domain/account.enums';
+} from '../../../../src/common/account/account.enums';
 import { UpdateAccountStatusDto } from '../../../../src/common/account/update-account-status.dto';
 
 describe('UpdateAccountStatusDto', () => {

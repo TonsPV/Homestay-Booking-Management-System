@@ -285,20 +285,24 @@ describe('Room mutation/state workflow (e2e)', () => {
     const room = await createRoom(roomType, RoomStatus.READY);
     const roomMutationService = app.get(RoomMutationService);
     const internals = roomMutationService as unknown as {
-      getLockedRoomForMutation(
+      lockActiveRoomForMutation(
         manager: EntityManager,
         id: string,
       ): Promise<Room>;
-      getLockedRoomForStatus(manager: EntityManager, id: string): Promise<Room>;
+      lockRoomForStatusChange(
+        manager: EntityManager,
+        id: string,
+      ): Promise<Room>;
     };
     const originalMutationLock =
-      internals.getLockedRoomForMutation.bind(internals);
-    const originalStatusLock = internals.getLockedRoomForStatus.bind(internals);
+      internals.lockActiveRoomForMutation.bind(internals);
+    const originalStatusLock =
+      internals.lockRoomForStatusChange.bind(internals);
     const mutationHasLock = createDeferred<void>();
     const statusAttemptedLock = createDeferred<void>();
     const releaseMutation = createDeferred<void>();
     const mutationLockSpy = jest
-      .spyOn(internals, 'getLockedRoomForMutation')
+      .spyOn(internals, 'lockActiveRoomForMutation')
       .mockImplementation(async (manager, id) => {
         const locked = await originalMutationLock(manager, id);
         if (id === room.id) {
@@ -308,7 +312,7 @@ describe('Room mutation/state workflow (e2e)', () => {
         return locked;
       });
     const statusLockSpy = jest
-      .spyOn(internals, 'getLockedRoomForStatus')
+      .spyOn(internals, 'lockRoomForStatusChange')
       .mockImplementation(async (manager, id) => {
         if (id === room.id) {
           statusAttemptedLock.resolve();

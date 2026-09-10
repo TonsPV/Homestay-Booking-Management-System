@@ -13,7 +13,7 @@ export interface BookingPaymentState {
 
 export function assertBookingCanAcceptPayment(
   booking: BookingPaymentState,
-  paymentTimeoutMilliseconds: number,
+  paymentTimeoutMs: number,
   now = Date.now(),
 ): void {
   if (booking.paymentStatus === BookingPaymentStatus.PAID) {
@@ -42,7 +42,7 @@ export function assertBookingCanAcceptPayment(
 
   const paymentExpiresAt =
     booking.paymentExpiresAt ??
-    new Date(booking.createdAt.getTime() + paymentTimeoutMilliseconds);
+    new Date(booking.createdAt.getTime() + paymentTimeoutMs);
 
   if (
     booking.status === BookingStatus.PENDING_PAYMENT &&

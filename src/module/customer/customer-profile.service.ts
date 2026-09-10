@@ -1,3 +1,4 @@
+import type { ProfileResponse } from './customer.types';
 import {
   BadRequestException,
   ConflictException,
@@ -13,45 +14,33 @@ import { getMysqlDuplicateKey } from '../../common/database';
 import { ErrorCode } from '../../common/error-codes';
 import { AppHttpException } from '../../common/http/app-http-exception';
 import {
-  getVietnamesePhoneLookupVariants,
+  getPhoneLookupVariants,
   optionalNullableEmail,
   optionalTrimmedString,
   requiredPhone,
 } from '../../common/validation';
 import { UpdateCustomerProfileDto } from './dto/update-customer-profile.dto';
-import { Customer, type CustomerStatus } from './schema/customer.entity';
-
-export interface CustomerProfileResponse {
-  id: string;
-  fullName: string;
-  email: string | null;
-  phone: string;
-  status: CustomerStatus;
-  createdAt: Date;
-  updatedAt: Date;
-}
+import { Customer } from './schema/customer.entity';
 
 @Injectable()
 export class CustomerProfileService {
   constructor(
     @InjectRepository(Customer)
-    private readonly customersRepository: Repository<Customer>,
+    private readonly customerRepo: Repository<Customer>,
   ) {}
 
   //lay customer profile by id
-  async getMe(
-    customerId: string | undefined,
-  ): Promise<CustomerProfileResponse> {
+  async getMe(customerId: string | undefined): Promise<ProfileResponse> {
     const customer = await this.getActiveCustomer(customerId);
 
-    return this.toCustomerProfileResponse(customer);
+    return this.toProfileResponse(customer);
   }
 
   //update customer profile
   async updateMe(
     customerId: string | undefined,
     body: UpdateCustomerProfileDto,
-  ): Promise<CustomerProfileResponse> {
+  ): Promise<ProfileResponse> {
     const customer = await this.getActiveCustomer(customerId);
     const fullName = optionalTrimmedString(
       body.fullName,
@@ -69,7 +58,7 @@ export class CustomerProfileService {
     const profileChanges: QueryDeepPartialEntity<Customer> = {};
 
     if (email !== undefined && email !== null) {
-      await this.ensureEmailIsAvailable(email, customer.id);
+      await this.assertEmailAvailable(email, customer.id);
       profileChanges.email = email;
     }
 
@@ -78,7 +67,7 @@ export class CustomerProfileService {
     }
 
     if (phone !== undefined) {
-      await this.ensurePhoneIsAvailable(phone, customer.id);
+      await this.assertPhoneAvailable(phone, customer.id);
       profileChanges.phone = phone;
     }
 
@@ -87,7 +76,7 @@ export class CustomerProfileService {
     }
 
     try {
-      const result = await this.customersRepository.update(
+      const updateResult = await this.customerRepo.update(
         {
           id: customer.id,
           status: 'ACTIVE',
@@ -97,18 +86,16 @@ export class CustomerProfileService {
         profileChanges,
       );
 
-      if (result.affected !== 1) {
+      if (updateResult.affected !== 1) {
         throw new ConflictException(
           'Thong tin tai khoan da thay doi. Vui long tai lai va thu lai.',
         );
       }
     } catch (error) {
-      this.throwCustomerDuplicateConflict(error);
+      this.throwDuplicateConflict(error);
     }
 
-    return this.toCustomerProfileResponse(
-      await this.getActiveCustomer(customer.id),
-    );
+    return this.toProfileResponse(await this.getActiveCustomer(customer.id));
   }
 
   //lay customer active by id
@@ -119,7 +106,7 @@ export class CustomerProfileService {
       throw new UnauthorizedException('Access token is invalid.');
     }
 
-    const customer = await this.customersRepository.findOneBy({
+    const customer = await this.customerRepo.findOneBy({
       id: customerId,
     });
 
@@ -135,11 +122,11 @@ export class CustomerProfileService {
   }
 
   //check email is available for update
-  private async ensureEmailIsAvailable(
+  private async assertEmailAvailable(
     email: string,
     currentCustomerId: string,
   ): Promise<void> {
-    const existingCustomer = await this.customersRepository
+    const existingCustomer = await this.customerRepo
       .createQueryBuilder('customer')
       .where('customer.deletedAt IS NULL')
       .andWhere('customer.id <> :currentCustomerId', { currentCustomerId })
@@ -156,16 +143,16 @@ export class CustomerProfileService {
   }
 
   //check phone is available for update
-  private async ensurePhoneIsAvailable(
+  private async assertPhoneAvailable(
     phone: string,
     currentCustomerId: string,
   ): Promise<void> {
-    const existingCustomer = await this.customersRepository
+    const existingCustomer = await this.customerRepo
       .createQueryBuilder('customer')
       .where('customer.deletedAt IS NULL')
       .andWhere('customer.id <> :currentCustomerId', { currentCustomerId })
       .andWhere('customer.phone IN (:...phones)', {
-        phones: getVietnamesePhoneLookupVariants(phone),
+        phones: getPhoneLookupVariants(phone),
       })
       .getOne();
 
@@ -179,7 +166,7 @@ export class CustomerProfileService {
   }
 
   //handle duplicate key error when update customer profile
-  private throwCustomerDuplicateConflict(error: unknown): never {
+  private throwDuplicateConflict(error: unknown): never {
     const duplicateKey = getMysqlDuplicateKey(error);
 
     if (duplicateKey === undefined) {
@@ -220,9 +207,7 @@ export class CustomerProfileService {
     });
   }
 
-  private toCustomerProfileResponse(
-    customer: Customer,
-  ): CustomerProfileResponse {
+  private toProfileResponse(customer: Customer): ProfileResponse {
     return {
       id: customer.id,
       fullName: customer.fullName,

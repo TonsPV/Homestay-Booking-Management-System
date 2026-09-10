@@ -9,9 +9,13 @@ import { Repository } from 'typeorm';
 
 import { createPaginationMeta } from '../../common/pagination/pagination.types';
 import {
+  currentVietnamDate,
+  optionalEnumValue,
   optionalDecimalAmount,
+  optionalId,
   optionalSearch,
   parsePagination,
+  requireId,
   requirePositiveInt,
 } from '../../common/validation';
 import type { ListAvailableRoomsQueryDto } from './dto/list-available-rooms-query.dto';
@@ -38,22 +42,17 @@ import type {
   RoomResponse,
 } from './room.types';
 import { RoomTodayAvailabilityStatus } from './room.types';
-import {
-  sortBedConfigurations,
-  type BedConfiguration,
-} from '../room-type/bed-configuration';
+import { sortBedConfigs, type BedConfig } from '../room-type/bed-configuration';
 import type { RoomTypeBed } from '../room-type/schema/room-type-bed.entity';
-
-const VIETNAM_UTC_OFFSET_MILLISECONDS = 7 * 60 * 60 * 1000;
 
 @Injectable()
 export class RoomQueryService {
   constructor(
     @InjectRepository(Room)
-    private readonly roomsRepository: Repository<Room>,
+    private readonly roomRepo: Repository<Room>,
     @InjectRepository(RoomCalendar)
-    private readonly roomCalendarsRepository: Repository<RoomCalendar>,
-    private readonly bookingStayPolicy: BookingStayPolicy,
+    private readonly calendarRepo: Repository<RoomCalendar>,
+    private readonly stayPolicy: BookingStayPolicy,
   ) {}
 
   async list(query: ListRoomsQueryDto): Promise<PublicRoomListResult> {
@@ -61,10 +60,7 @@ export class RoomQueryService {
       query as Record<string, unknown>,
     );
     const search = optionalSearch(query.search);
-    const roomTypeId = this.optionalId(
-      query.roomTypeId,
-      'Room type id khong hop le.',
-    );
+    const roomTypeId = optionalId(query.roomTypeId, 'Room type');
     const roomsQuery = this.createPublicQuery()
       .orderBy('room.roomNumber', 'ASC')
       .addOrderBy('image.isCover', 'DESC')
@@ -84,7 +80,7 @@ export class RoomQueryService {
       roomsQuery.andWhere('room.roomTypeId = :roomTypeId', { roomTypeId });
     }
 
-    return this.toListResult(roomsQuery, page, limit, (room) =>
+    return this.fetchListResult(roomsQuery, page, limit, (room) =>
       this.toPublicResponse(room),
     );
   }
@@ -96,11 +92,12 @@ export class RoomQueryService {
       query as Record<string, unknown>,
     );
     const search = optionalSearch(query.search);
-    const roomTypeId = this.optionalId(
-      query.roomTypeId,
-      'Room type id khong hop le.',
+    const roomTypeId = optionalId(query.roomTypeId, 'Room type');
+    const status = optionalEnumValue(
+      query.status,
+      RoomStatus,
+      'Trang thai phong khong hop le.',
     );
-    const status = this.optionalStatus(query.status);
     const roomsQuery = this.createManagementQuery()
       .orderBy('room.roomNumber', 'ASC')
       .addOrderBy('image.isCover', 'DESC')
@@ -129,7 +126,7 @@ export class RoomQueryService {
 
     return {
       items: rooms.map((room) => ({
-        ...this.toResponse(room),
+        ...this.toManagementResponse(room),
         calendarSummary:
           calendarSummaries.get(room.id) ?? this.emptyCalendarSummary(),
       })),
@@ -146,10 +143,7 @@ export class RoomQueryService {
       query.guests,
       'So luong khach khong hop le.',
     );
-    const roomTypeId = this.optionalId(
-      query.roomTypeId,
-      'Room type id khong hop le.',
-    );
+    const roomTypeId = optionalId(query.roomTypeId, 'Room type');
     const { page, limit, skip } = parsePagination(
       query as Record<string, unknown>,
     );
@@ -173,8 +167,8 @@ export class RoomQueryService {
       roomsQuery.andWhere('room.roomTypeId = :roomTypeId', { roomTypeId });
     }
 
-    return this.toListResult(roomsQuery, page, limit, (room) =>
-      this.toResponse(room),
+    return this.fetchListResult(roomsQuery, page, limit, (room) =>
+      this.toManagementResponse(room),
     );
   }
 
@@ -185,10 +179,7 @@ export class RoomQueryService {
       query.guests,
       'So luong khach khong hop le.',
     );
-    const roomTypeId = this.optionalId(
-      query.roomTypeId,
-      'Room type id khong hop le.',
-    );
+    const roomTypeId = optionalId(query.roomTypeId, 'Room type');
     const minPrice = optionalDecimalAmount(
       query.minPrice,
       'Gia toi thieu khong hop le.',
@@ -201,7 +192,7 @@ export class RoomQueryService {
       query.amenityIds,
       'Danh sach tien nghi khong hop le.',
     );
-    const sort = this.optionalRoomSearchSort(query.sort);
+    const sort = this.parseSort(query.sort);
     const { page, limit, skip } = parsePagination(
       query as Record<string, unknown>,
     );
@@ -222,9 +213,20 @@ export class RoomQueryService {
       }),
       stayRange.checkInDate,
       stayRange.checkOutDate,
-    )
-      .orderBy(this.roomSearchOrder(sort), this.roomSearchDirection(sort))
-      .addOrderBy('roomType.basePrice', 'ASC')
+    );
+    const primarySortColumn = this.sortColumn(sort);
+
+    if (sort === RoomSearchSort.POPULARITY) {
+      roomsQuery.addSelect(this.popularityExpression(), primarySortColumn);
+    }
+
+    roomsQuery.orderBy(primarySortColumn, this.sortDirection(sort));
+
+    if (primarySortColumn !== 'roomType.basePrice') {
+      roomsQuery.addOrderBy('roomType.basePrice', 'ASC');
+    }
+
+    roomsQuery
       .addOrderBy('room.roomNumber', 'ASC')
       .addOrderBy('image.isCover', 'DESC')
       .addOrderBy('image.sortOrder', 'ASC')
@@ -263,27 +265,19 @@ export class RoomQueryService {
       );
     }
 
-    return this.toListResult(roomsQuery, page, limit, (room) =>
+    return this.fetchListResult(roomsQuery, page, limit, (room) =>
       this.toPublicResponse(room),
     );
   }
 
-  private optionalRoomSearchSort(value: unknown): RoomSearchSort {
-    if (value === undefined || value === null || value === '') {
-      return RoomSearchSort.RECOMMENDED;
-    }
-
-    if (
-      typeof value !== 'string' ||
-      !Object.values(RoomSearchSort).includes(value as RoomSearchSort)
-    ) {
-      throw new BadRequestException('Sap xep phong khong hop le.');
-    }
-
-    return value as RoomSearchSort;
+  private parseSort(value: unknown): RoomSearchSort {
+    return (
+      optionalEnumValue(value, RoomSearchSort, 'Sap xep phong khong hop le.') ??
+      RoomSearchSort.RECOMMENDED
+    );
   }
 
-  private roomSearchOrder(sort: RoomSearchSort): string {
+  private sortColumn(sort: RoomSearchSort): string {
     switch (sort) {
       case RoomSearchSort.PRICE_DESC:
       case RoomSearchSort.PRICE_ASC:
@@ -291,13 +285,17 @@ export class RoomQueryService {
       case RoomSearchSort.NEWEST:
         return 'room.createdAt';
       case RoomSearchSort.POPULARITY:
-        return `(SELECT COUNT(*) FROM bookings popularityBooking WHERE popularityBooking.room_id = room.id AND popularityBooking.status <> 'CANCELLED')`;
+        return 'roomPopularity';
       default:
         return 'roomType.basePrice';
     }
   }
 
-  private roomSearchDirection(sort: RoomSearchSort): 'ASC' | 'DESC' {
+  private popularityExpression(): string {
+    return `(SELECT COUNT(*) FROM bookings popularityBooking WHERE popularityBooking.room_id = room.id AND popularityBooking.status <> 'CANCELLED')`;
+  }
+
+  private sortDirection(sort: RoomSearchSort): 'ASC' | 'DESC' {
     return sort === RoomSearchSort.PRICE_DESC ||
       sort === RoomSearchSort.NEWEST ||
       sort === RoomSearchSort.POPULARITY
@@ -306,7 +304,7 @@ export class RoomQueryService {
   }
 
   async getById(id: string): Promise<PublicRoomResponse> {
-    this.validateId(id);
+    requireId(id, '');
 
     const room = await this.createPublicQuery()
       .andWhere('room.id = :id', { id })
@@ -323,7 +321,7 @@ export class RoomQueryService {
   }
 
   async getManagement(id: string): Promise<RoomResponse> {
-    this.validateId(id);
+    requireId(id, '');
 
     const room = await this.createManagementQuery()
       .andWhere('room.id = :id', { id })
@@ -336,14 +334,14 @@ export class RoomQueryService {
       throw new NotFoundException('Khong tim thay phong.');
     }
 
-    return this.toResponse(room);
+    return this.toManagementResponse(room);
   }
 
   async getAdminRoom(id: string): Promise<RoomResponse> {
-    return this.toResponse(await this.getAdminRoomEntity(id));
+    return this.toManagementResponse(await this.findAdminRoom(id));
   }
 
-  toResponse(room: Room): RoomResponse {
+  toManagementResponse(room: Room): RoomResponse {
     return {
       id: room.id,
       roomTypeId: room.roomTypeId,
@@ -351,20 +349,7 @@ export class RoomQueryService {
       name: room.name,
       description: room.description,
       status: room.status,
-      roomType: {
-        id: room.roomType.id,
-        name: room.roomType.name,
-        description: room.roomType.description,
-        bedType: room.roomType.bedType,
-        beds: this.toBedConfigurations(room.roomType.beds),
-        maxGuests: room.roomType.maxGuests,
-        basePrice: room.roomType.basePrice,
-        amenities: (room.roomType.amenities ?? []).map((amenity) => ({
-          id: amenity.id,
-          name: amenity.name,
-          description: amenity.description,
-        })),
-      },
+      roomType: this.toRoomTypeResponse(room.roomType),
       images: (room.images ?? []).map((image) => this.toImageResponse(image)),
       createdAt: room.createdAt,
       updatedAt: room.updatedAt,
@@ -377,35 +362,13 @@ export class RoomQueryService {
       roomTypeId: room.roomTypeId,
       name: room.name,
       description: room.description,
-      roomType: {
-        id: room.roomType.id,
-        name: room.roomType.name,
-        description: room.roomType.description,
-        bedType: room.roomType.bedType,
-        beds: this.toBedConfigurations(room.roomType.beds),
-        maxGuests: room.roomType.maxGuests,
-        basePrice: room.roomType.basePrice,
-        amenities: (room.roomType.amenities ?? []).map((amenity) => ({
-          id: amenity.id,
-          name: amenity.name,
-          description: amenity.description,
-        })),
-      },
+      roomType: this.toRoomTypeResponse(room.roomType),
       images: (room.images ?? []).map((image) => this.toImageResponse(image)),
     };
   }
 
   private createPublicQuery(): SelectQueryBuilder<Room> {
-    return this.roomsRepository
-      .createQueryBuilder('room')
-      .innerJoinAndSelect('room.roomType', 'roomType')
-      .leftJoinAndSelect(
-        'roomType.amenities',
-        'amenity',
-        'amenity.deletedAt IS NULL',
-      )
-      .leftJoinAndSelect('roomType.beds', 'bed')
-      .leftJoinAndSelect('room.images', 'image')
+    return this.createBaseQuery()
       .where('room.deletedAt IS NULL')
       .andWhere('roomType.deletedAt IS NULL')
       .andWhere('room.status NOT IN (:...hiddenStatuses)', {
@@ -414,7 +377,13 @@ export class RoomQueryService {
   }
 
   private createManagementQuery(): SelectQueryBuilder<Room> {
-    return this.roomsRepository
+    return this.createBaseQuery()
+      .where('room.deletedAt IS NULL')
+      .andWhere('roomType.deletedAt IS NULL');
+  }
+
+  private createBaseQuery(): SelectQueryBuilder<Room> {
+    return this.roomRepo
       .createQueryBuilder('room')
       .innerJoinAndSelect('room.roomType', 'roomType')
       .leftJoinAndSelect(
@@ -423,22 +392,20 @@ export class RoomQueryService {
         'amenity.deletedAt IS NULL',
       )
       .leftJoinAndSelect('roomType.beds', 'bed')
-      .leftJoinAndSelect('room.images', 'image')
-      .where('room.deletedAt IS NULL')
-      .andWhere('roomType.deletedAt IS NULL');
+      .leftJoinAndSelect('room.images', 'image');
   }
 
   private async getCalendarSummaries(
     rooms: Room[],
   ): Promise<Map<string, ManagementRoomCalendarSummary>> {
-    const asOfDate = this.getCurrentVietnamDate();
+    const asOfDate = currentVietnamDate(new Date());
 
     if (rooms.length === 0) {
       return new Map();
     }
 
     const roomIds = rooms.map((room) => room.id);
-    const nextEvents = await this.roomCalendarsRepository
+    const nextEvents = await this.calendarRepo
       .createQueryBuilder('calendar')
       .leftJoinAndSelect('calendar.booking', 'booking')
       .where('calendar.roomId IN (:...roomIds)', { roomIds })
@@ -496,22 +463,16 @@ export class RoomQueryService {
 
   private emptyCalendarSummary(): ManagementRoomCalendarSummary {
     return {
-      asOfDate: this.getCurrentVietnamDate(),
+      asOfDate: currentVietnamDate(new Date()),
       todayStatus: RoomTodayAvailabilityStatus.AVAILABLE,
       nextEvent: null,
     };
   }
 
-  private getCurrentVietnamDate(now = new Date()): string {
-    return new Date(now.getTime() + VIETNAM_UTC_OFFSET_MILLISECONDS)
-      .toISOString()
-      .slice(0, 10);
-  }
+  private async findAdminRoom(id: string): Promise<Room> {
+    requireId(id, '');
 
-  private async getAdminRoomEntity(id: string): Promise<Room> {
-    this.validateId(id);
-
-    const room = await this.roomsRepository
+    const room = await this.roomRepo
       .createQueryBuilder('room')
       .innerJoinAndSelect('room.roomType', 'roomType')
       .leftJoinAndSelect(
@@ -535,7 +496,7 @@ export class RoomQueryService {
     return room;
   }
 
-  private async toListResult<TItem>(
+  private async fetchListResult<TItem>(
     query: SelectQueryBuilder<Room>,
     page: number,
     limit: number,
@@ -558,10 +519,27 @@ export class RoomQueryService {
     };
   }
 
-  private toBedConfigurations(
-    beds: RoomTypeBed[] | undefined,
-  ): BedConfiguration[] {
-    return sortBedConfigurations(
+  private toRoomTypeResponse(
+    roomType: Room['roomType'],
+  ): RoomResponse['roomType'] {
+    return {
+      id: roomType.id,
+      name: roomType.name,
+      description: roomType.description,
+      bedType: roomType.bedType,
+      beds: this.toBedConfigs(roomType.beds),
+      maxGuests: roomType.maxGuests,
+      basePrice: roomType.basePrice,
+      amenities: (roomType.amenities ?? []).map((amenity) => ({
+        id: amenity.id,
+        name: amenity.name,
+        description: amenity.description,
+      })),
+    };
+  }
+
+  private toBedConfigs(beds: RoomTypeBed[] | undefined): BedConfig[] {
+    return sortBedConfigs(
       (beds ?? []).map((bed) => ({
         type: bed.bedType,
         quantity: bed.quantity,
@@ -588,35 +566,13 @@ export class RoomQueryService {
 
   private requireStayRange(checkIn: unknown, checkOut: unknown) {
     try {
-      return this.bookingStayPolicy.requireStayRange(checkIn, checkOut);
+      return this.stayPolicy.requireStayRange(checkIn, checkOut);
     } catch (error) {
       throwMappedBookingDomainError(error, {
         checkIn: 'checkIn',
         checkOut: 'checkOut',
       });
     }
-  }
-
-  private requireId(value: unknown, message: string): string {
-    if (typeof value !== 'string' && typeof value !== 'number') {
-      throw new BadRequestException(message);
-    }
-
-    const id = String(value);
-
-    if (!/^[1-9][0-9]*$/.test(id)) {
-      throw new BadRequestException(message);
-    }
-
-    return id;
-  }
-
-  private optionalId(value: unknown, message: string): string | undefined {
-    if (value === undefined || value === null || value === '') {
-      return undefined;
-    }
-
-    return this.requireId(value, message);
   }
 
   private optionalIdList(value: unknown, message: string): string[] {
@@ -638,24 +594,5 @@ export class RoomQueryService {
     }
 
     return [...new Set(ids)];
-  }
-
-  private validateId(id: string): void {
-    this.requireId(id, 'Id khong hop le.');
-  }
-
-  private optionalStatus(value: unknown): RoomStatus | undefined {
-    if (value === undefined || value === null || value === '') {
-      return undefined;
-    }
-
-    if (
-      typeof value !== 'string' ||
-      !Object.values(RoomStatus).includes(value as RoomStatus)
-    ) {
-      throw new BadRequestException('Trang thai phong khong hop le.');
-    }
-
-    return value as RoomStatus;
   }
 }

@@ -58,10 +58,10 @@ describe('RoomType workflow (e2e)', () => {
   let app: INestApplication<App>;
   let e2eHarness: E2eHarness | undefined;
   let dataSource: DataSource;
-  let roomTypesRepository: Repository<RoomType>;
-  let amenitiesRepository: Repository<Amenity>;
-  let roomsRepository: Repository<Room>;
-  let usersRepository: Repository<User>;
+  let roomTypeRepo: Repository<RoomType>;
+  let amenityRepo: Repository<Amenity>;
+  let roomRepo: Repository<Room>;
+  let userRepo: Repository<User>;
   let passwordHasher: PasswordHasherService;
   let accessTokenService: AccessTokenService;
   let admin: User;
@@ -84,10 +84,10 @@ describe('RoomType workflow (e2e)', () => {
     await app.init();
 
     dataSource = app.get(DataSource);
-    roomTypesRepository = dataSource.getRepository(RoomType);
-    amenitiesRepository = dataSource.getRepository(Amenity);
-    roomsRepository = dataSource.getRepository(Room);
-    usersRepository = dataSource.getRepository(User);
+    roomTypeRepo = dataSource.getRepository(RoomType);
+    amenityRepo = dataSource.getRepository(Amenity);
+    roomRepo = dataSource.getRepository(Room);
+    userRepo = dataSource.getRepository(User);
     passwordHasher = app.get(PasswordHasherService);
     accessTokenService = app.get(AccessTokenService);
     admin = await createAdmin();
@@ -95,16 +95,16 @@ describe('RoomType workflow (e2e)', () => {
 
     e2eHarness.registerCleanup(async () => {
       if (createdRoomIds.length > 0) {
-        await roomsRepository.delete([...new Set(createdRoomIds)]);
+        await roomRepo.delete([...new Set(createdRoomIds)]);
       }
       if (createdRoomTypeIds.length > 0) {
-        await roomTypesRepository.delete([...new Set(createdRoomTypeIds)]);
+        await roomTypeRepo.delete([...new Set(createdRoomTypeIds)]);
       }
       if (createdAmenityIds.length > 0) {
-        await amenitiesRepository.delete([...new Set(createdAmenityIds)]);
+        await amenityRepo.delete([...new Set(createdAmenityIds)]);
       }
       if (createdUserIds.length > 0) {
-        await usersRepository.delete([...new Set(createdUserIds)]);
+        await userRepo.delete([...new Set(createdUserIds)]);
       }
     });
   });
@@ -144,6 +144,19 @@ describe('RoomType workflow (e2e)', () => {
       amenities: [],
       beds: [],
     });
+
+    await request(app.getHttpServer())
+      .patch('/api/v1/admin/room-types/' + body.data.id + 'abc')
+      .set('Authorization', 'Bearer ' + adminToken)
+      .send({ basePrice: '999.99' })
+      .expect(400);
+    const unchanged = await request(app.getHttpServer())
+      .get('/api/v1/admin/room-types/' + body.data.id)
+      .set('Authorization', 'Bearer ' + adminToken)
+      .expect(200);
+    expect(
+      (unchanged.body as ResponseEnvelope<RoomTypePayload>).data.basePrice,
+    ).toBe('125.50');
 
     const publicResponse = await request(app.getHttpServer())
       .get('/api/v1/room-types/' + body.data.id)
@@ -295,8 +308,8 @@ describe('RoomType workflow (e2e)', () => {
 
   it('soft-deletes/restores names and blocks deletion while an active Room exists', async () => {
     const roomType = await createRoomType(nextName('room-protection'));
-    const room = await roomsRepository.save(
-      roomsRepository.create({
+    const room = await roomRepo.save(
+      roomRepo.create({
         roomTypeId: roomType.id,
         roomNumber: 'RT-' + uniqueSuffix,
         name: 'RoomType protection room',
@@ -313,7 +326,7 @@ describe('RoomType workflow (e2e)', () => {
     expect((inUseResponse.body as ErrorEnvelope).errorCode).toBe(
       ErrorCode.ROOM_TYPE_IN_USE,
     );
-    await roomsRepository.softDelete(room.id);
+    await roomRepo.softDelete(room.id);
     await request(app.getHttpServer())
       .delete('/api/v1/admin/room-types/' + roomType.id)
       .set('Authorization', 'Bearer ' + adminToken)
@@ -350,15 +363,15 @@ describe('RoomType workflow (e2e)', () => {
       .expect(404);
 
     await expect(
-      roomsRepository.count({ where: { roomTypeId: roomType.id } }),
+      roomRepo.count({ where: { roomTypeId: roomType.id } }),
     ).resolves.toBe(0);
   });
 
   it('updates a Room to an active RoomType and rejects a deleted target', async () => {
     const sourceRoomType = await createRoomType(nextName('patch-source'));
     const activeTarget = await createRoomType(nextName('patch-active-target'));
-    const room = await roomsRepository.save(
-      roomsRepository.create({
+    const room = await roomRepo.save(
+      roomRepo.create({
         roomTypeId: sourceRoomType.id,
         roomNumber: 'RT-PATCH-' + uniqueSuffix,
         name: 'Patch target room',
@@ -391,7 +404,7 @@ describe('RoomType workflow (e2e)', () => {
       .send({ roomTypeId: deletedTarget.id })
       .expect(404);
 
-    const persistedRoom = await roomsRepository.findOneByOrFail({
+    const persistedRoom = await roomRepo.findOneByOrFail({
       id: room.id,
     });
     expect(persistedRoom.roomTypeId).toBe(activeTarget.id);
@@ -400,8 +413,8 @@ describe('RoomType workflow (e2e)', () => {
   it('serializes Room PATCH against RoomType soft-delete in MySQL', async () => {
     const sourceRoomType = await createRoomType(nextName('patch-race-source'));
     const targetRoomType = await createRoomType(nextName('patch-race-target'));
-    const room = await roomsRepository.save(
-      roomsRepository.create({
+    const room = await roomRepo.save(
+      roomRepo.create({
         roomTypeId: sourceRoomType.id,
         roomNumber: 'RT-PATCH-RACE-' + uniqueSuffix,
         name: 'Patch race room',
@@ -414,28 +427,21 @@ describe('RoomType workflow (e2e)', () => {
     const roomMutationService = app.get(RoomMutationService);
     const roomTypeService = app.get(RoomTypeService);
     const roomMutationInternals = roomMutationService as unknown as {
-      getLockedActiveRoomType(
-        manager: EntityManager,
-        id: string,
-      ): Promise<RoomType>;
+      lockActiveRoomType(manager: EntityManager, id: string): Promise<RoomType>;
     };
     const roomTypeInternals = roomTypeService as unknown as {
-      getLockedActiveRoomTypeForMutation(
-        manager: EntityManager,
-        id: string,
-      ): Promise<RoomType>;
+      lockActiveRoomType(manager: EntityManager, id: string): Promise<RoomType>;
     };
-    const originalPatchLock =
-      roomMutationInternals.getLockedActiveRoomType.bind(roomMutationInternals);
+    const originalPatchLock = roomMutationInternals.lockActiveRoomType.bind(
+      roomMutationInternals,
+    );
     const originalDeleteLock =
-      roomTypeInternals.getLockedActiveRoomTypeForMutation.bind(
-        roomTypeInternals,
-      );
+      roomTypeInternals.lockActiveRoomType.bind(roomTypeInternals);
     const patchHasLock = createDeferred<void>();
     const deleteAttemptedLock = createDeferred<void>();
     const releasePatch = createDeferred<void>();
     const patchLockSpy = jest
-      .spyOn(roomMutationInternals, 'getLockedActiveRoomType')
+      .spyOn(roomMutationInternals, 'lockActiveRoomType')
       .mockImplementation(async (manager, id) => {
         const locked = await originalPatchLock(manager, id);
         if (id === targetRoomType.id) {
@@ -445,7 +451,7 @@ describe('RoomType workflow (e2e)', () => {
         return locked;
       });
     const deleteLockSpy = jest
-      .spyOn(roomTypeInternals, 'getLockedActiveRoomTypeForMutation')
+      .spyOn(roomTypeInternals, 'lockActiveRoomType')
       .mockImplementation(async (manager, id) => {
         if (id === targetRoomType.id) {
           deleteAttemptedLock.resolve();
@@ -482,10 +488,10 @@ describe('RoomType workflow (e2e)', () => {
         ErrorCode.ROOM_TYPE_IN_USE,
       );
 
-      const persistedRoom = await roomsRepository.findOneByOrFail({
+      const persistedRoom = await roomRepo.findOneByOrFail({
         id: room.id,
       });
-      const persistedTarget = await roomTypesRepository
+      const persistedTarget = await roomTypeRepo
         .createQueryBuilder('roomType')
         .withDeleted()
         .where('roomType.id = :id', { id: targetRoomType.id })
@@ -539,7 +545,7 @@ describe('RoomType workflow (e2e)', () => {
     expect(await countAmenityRelation(roomType.id, staleAmenity.id)).toBe(0);
     expect(await countAmenityRelation(roomType.id, activeAmenity.id)).toBe(1);
 
-    const persistedStaleAmenity = await amenitiesRepository.findOne({
+    const persistedStaleAmenity = await amenityRepo.findOne({
       where: { id: staleAmenity.id },
       withDeleted: true,
     });
@@ -591,28 +597,23 @@ describe('RoomType workflow (e2e)', () => {
     const roomTypeService = app.get(RoomTypeService);
     const amenityService = app.get(AmenityService);
     const roomTypeInternals = roomTypeService as unknown as {
-      getLockedAmenitiesIncludingDeleted(
+      lockAmenitiesWithDeleted(
         manager: EntityManager,
         amenityIds: string[],
       ): Promise<Amenity[]>;
     };
     const amenityInternals = amenityService as unknown as {
-      getLockedActiveAmenity(
-        manager: EntityManager,
-        id: string,
-      ): Promise<Amenity>;
+      lockActiveAmenity(manager: EntityManager, id: string): Promise<Amenity>;
     };
     const originalRestoreLock =
-      roomTypeInternals.getLockedAmenitiesIncludingDeleted.bind(
-        roomTypeInternals,
-      );
+      roomTypeInternals.lockAmenitiesWithDeleted.bind(roomTypeInternals);
     const originalDeleteLock =
-      amenityInternals.getLockedActiveAmenity.bind(amenityInternals);
+      amenityInternals.lockActiveAmenity.bind(amenityInternals);
     const restoreHasLock = createDeferred<void>();
     const deleteAttemptedLock = createDeferred<void>();
     const releaseRestore = createDeferred<void>();
     const restoreLockSpy = jest
-      .spyOn(roomTypeInternals, 'getLockedAmenitiesIncludingDeleted')
+      .spyOn(roomTypeInternals, 'lockAmenitiesWithDeleted')
       .mockImplementation(async (manager, amenityIds) => {
         const locked = await originalRestoreLock(manager, amenityIds);
         if (amenityIds.includes(amenity.id)) {
@@ -622,7 +623,7 @@ describe('RoomType workflow (e2e)', () => {
         return locked;
       });
     const deleteLockSpy = jest
-      .spyOn(amenityInternals, 'getLockedActiveAmenity')
+      .spyOn(amenityInternals, 'lockActiveAmenity')
       .mockImplementation(async (manager, id) => {
         if (id === amenity.id) {
           deleteAttemptedLock.resolve();
@@ -663,10 +664,10 @@ describe('RoomType workflow (e2e)', () => {
         ErrorCode.AMENITY_IN_USE,
       );
 
-      const persistedRoomType = await roomTypesRepository.findOneByOrFail({
+      const persistedRoomType = await roomTypeRepo.findOneByOrFail({
         id: roomType.id,
       });
-      const persistedAmenity = await amenitiesRepository.findOneByOrFail({
+      const persistedAmenity = await amenityRepo.findOneByOrFail({
         id: amenity.id,
       });
       expect(persistedRoomType.deletedAt).toBeNull();
@@ -690,28 +691,21 @@ describe('RoomType workflow (e2e)', () => {
     const roomMutationService = app.get(RoomMutationService);
     const roomTypeService = app.get(RoomTypeService);
     const roomMutationInternals = roomMutationService as unknown as {
-      getLockedActiveRoomType(
-        manager: EntityManager,
-        id: string,
-      ): Promise<RoomType>;
+      lockActiveRoomType(manager: EntityManager, id: string): Promise<RoomType>;
     };
     const roomTypeInternals = roomTypeService as unknown as {
-      getLockedActiveRoomTypeForMutation(
-        manager: EntityManager,
-        id: string,
-      ): Promise<RoomType>;
+      lockActiveRoomType(manager: EntityManager, id: string): Promise<RoomType>;
     };
-    const originalCreateLock =
-      roomMutationInternals.getLockedActiveRoomType.bind(roomMutationInternals);
+    const originalCreateLock = roomMutationInternals.lockActiveRoomType.bind(
+      roomMutationInternals,
+    );
     const originalDeleteLock =
-      roomTypeInternals.getLockedActiveRoomTypeForMutation.bind(
-        roomTypeInternals,
-      );
+      roomTypeInternals.lockActiveRoomType.bind(roomTypeInternals);
     const createHasLock = createDeferred<void>();
     const deleteAttemptedLock = createDeferred<void>();
     const releaseCreate = createDeferred<void>();
     const createLockSpy = jest
-      .spyOn(roomMutationInternals, 'getLockedActiveRoomType')
+      .spyOn(roomMutationInternals, 'lockActiveRoomType')
       .mockImplementation(async (manager, id) => {
         const locked = await originalCreateLock(manager, id);
         if (id === roomType.id) {
@@ -721,7 +715,7 @@ describe('RoomType workflow (e2e)', () => {
         return locked;
       });
     const deleteLockSpy = jest
-      .spyOn(roomTypeInternals, 'getLockedActiveRoomTypeForMutation')
+      .spyOn(roomTypeInternals, 'lockActiveRoomType')
       .mockImplementation(async (manager, id) => {
         if (id === roomType.id) {
           deleteAttemptedLock.resolve();
@@ -768,12 +762,12 @@ describe('RoomType workflow (e2e)', () => {
         createResponse.body as ResponseEnvelope<{ id: string }>
       ).data.id;
       createdRoomIds.push(createdRoomId);
-      const persistedRoomType = await roomTypesRepository
+      const persistedRoomType = await roomTypeRepo
         .createQueryBuilder('roomType')
         .withDeleted()
         .where('roomType.id = :id', { id: roomType.id })
         .getOneOrFail();
-      const activeRoomCount = await roomsRepository
+      const activeRoomCount = await roomRepo
         .createQueryBuilder('room')
         .where('room.roomTypeId = :roomTypeId', { roomTypeId: roomType.id })
         .andWhere('room.deletedAt IS NULL')
@@ -798,8 +792,8 @@ describe('RoomType workflow (e2e)', () => {
   });
 
   async function createAdmin(): Promise<User> {
-    const user = await usersRepository.save(
-      usersRepository.create({
+    const user = await userRepo.save(
+      userRepo.create({
         fullName: 'RoomType E2E Admin',
         email: nextEmail('admin'),
         phone: null,
@@ -814,16 +808,16 @@ describe('RoomType workflow (e2e)', () => {
   }
 
   async function createAmenity(name: string): Promise<Amenity> {
-    const amenity = await amenitiesRepository.save(
-      amenitiesRepository.create({ name, description: null }),
+    const amenity = await amenityRepo.save(
+      amenityRepo.create({ name, description: null }),
     );
     createdAmenityIds.push(amenity.id);
     return amenity;
   }
 
   async function createRoomType(name: string): Promise<RoomType> {
-    const roomType = await roomTypesRepository.save(
-      roomTypesRepository.create({
+    const roomType = await roomTypeRepo.save(
+      roomTypeRepo.create({
         name,
         description: null,
         maxGuests: 2,

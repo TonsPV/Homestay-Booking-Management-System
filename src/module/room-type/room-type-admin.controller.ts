@@ -21,7 +21,7 @@ import {
   ApiCreatedEnvelope,
   ApiOkEnvelope,
 } from '../../openapi/api-response.decorators';
-import { AccessTokenGuard } from '../auth/access-token.guard';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { CreateRoomTypeDto } from './dto/create-room-type.dto';
@@ -29,13 +29,11 @@ import { AdminListRoomTypesQueryDto } from './dto/list-room-types-query.dto';
 import { UpdateRoomTypeDto } from './dto/update-room-type.dto';
 import { SetRoomTypeAmenitiesDto } from './dto/set-room-type-amenities.dto';
 import { AdminRoomTypeDto } from './dto/room-type-response.dto';
-import {
-  type AdminRoomTypeResponse,
-  RoomTypeService,
-} from './room-type.service';
+import { RoomTypeService } from './room-type.service';
+import { type AdminRoomTypeResponse } from './room-type.types';
 
 @Controller('v1/admin/room-types')
-@UseGuards(AccessTokenGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('ADMIN')
 @ApiBearerAuth()
 @ApiCommonAuthErrors()

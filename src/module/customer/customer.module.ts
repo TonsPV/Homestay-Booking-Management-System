@@ -6,6 +6,7 @@ import { AuditModule } from '../audit/audit.module';
 import { CustomerAdminController } from './customer-admin.controller';
 import { CustomerAdminService } from './customer-admin.service';
 import { CustomerCredentialManagementController } from './customer-credential-management.controller';
+import { CustomerCredentialLookupService } from './customer-credential-lookup.service';
 import { CustomerCredentialPolicy } from './customer-credential.policy';
 import { CustomerCredentialService } from './customer-credential.service';
 import { CustomerProfileController } from './customer-profile.controller';
@@ -23,8 +24,9 @@ import { Customer } from './schema/customer.entity';
     CustomerProfileService,
     CustomerAdminService,
     CustomerCredentialPolicy,
+    CustomerCredentialLookupService,
     CustomerCredentialService,
   ],
-  exports: [CustomerCredentialPolicy],
+  exports: [CustomerCredentialPolicy, CustomerCredentialLookupService],
 })
 export class CustomerModule {}

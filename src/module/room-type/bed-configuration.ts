@@ -7,7 +7,7 @@ export enum BedType {
   SOFA_BED = 'SOFA_BED',
 }
 
-export interface BedConfiguration {
+export interface BedConfig {
   type: BedType;
   quantity: number;
 }
@@ -28,7 +28,7 @@ export const MAX_BED_QUANTITY = 20;
  * Parses only the explicitly supported legacy phrases. Unknown free text is
  * deliberately returned as null so migration/audit callers can preserve it.
  */
-export function parseLegacyBedType(value: string): BedConfiguration[] | null {
+export function parseLegacyBedType(value: string): BedConfig[] | null {
   const normalized = normalizeLegacyBedType(value);
 
   if (normalized.length === 0) {
@@ -44,7 +44,7 @@ export function parseLegacyBedType(value: string): BedConfiguration[] | null {
 
   const merged = new Map<BedType, number>();
 
-  for (const configuration of parsed as BedConfiguration[]) {
+  for (const configuration of parsed as BedConfig[]) {
     const quantity =
       (merged.get(configuration.type) ?? 0) + configuration.quantity;
 
@@ -61,9 +61,7 @@ export function parseLegacyBedType(value: string): BedConfiguration[] | null {
   }));
 }
 
-export function sortBedConfigurations(
-  configurations: BedConfiguration[],
-): BedConfiguration[] {
+export function sortBedConfigs(configurations: BedConfig[]): BedConfig[] {
   const order = new Map(BED_TYPE_ORDER.map((type, index) => [type, index]));
 
   return [...configurations].sort(
@@ -83,7 +81,7 @@ function normalizeLegacyBedType(value: string): string {
     .replace(/\s+/g, ' ');
 }
 
-function parseLegacyBedSegment(value: string): BedConfiguration | null {
+function parseLegacyBedSegment(value: string): BedConfig | null {
   const match = /^(?:(\d+)\s+)?(.+)$/.exec(value);
   const quantity = match?.[1] === undefined ? 1 : Number(match[1]);
   const label = match?.[2] ?? value;

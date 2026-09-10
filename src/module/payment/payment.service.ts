@@ -8,6 +8,7 @@ import { PaymentCollectionService } from './payment-collection.service';
 import { PaymentManualService } from './payment-manual.service';
 import {
   type CustomerPaymentListResult,
+  type ManagementPaymentListResult,
   PaymentQueryService,
   type PaymentListResult,
 } from './payment-query.service';
@@ -31,10 +32,10 @@ export type {
 @Injectable()
 export class PaymentService {
   constructor(
-    private readonly paymentCollectionService: PaymentCollectionService,
-    private readonly paymentManualService: PaymentManualService,
-    private readonly paymentQueryService: PaymentQueryService,
-    private readonly paymentRefundService: PaymentRefundService,
+    private readonly collection: PaymentCollectionService,
+    private readonly manual: PaymentManualService,
+    private readonly query: PaymentQueryService,
+    private readonly refundService: PaymentRefundService,
   ) {}
 
   async listForCustomer(
@@ -42,25 +43,21 @@ export class PaymentService {
     bookingId: string,
     query: ListPaymentsQueryDto,
   ): Promise<CustomerPaymentListResult> {
-    return this.paymentQueryService.listForCustomer(
-      customerId,
-      bookingId,
-      query,
-    );
+    return this.query.listForCustomer(customerId, bookingId, query);
   }
 
   async listManagement(
     bookingId: string,
     query: ListPaymentsQueryDto,
   ): Promise<PaymentListResult> {
-    return this.paymentQueryService.listManagement(bookingId, query);
+    return this.query.listManagement(bookingId, query);
   }
 
   async listAllManagement(
     query: ListPaymentsQueryDto,
     allowedMethods?: readonly PaymentMethod[],
-  ): Promise<PaymentListResult> {
-    return this.paymentQueryService.listAllManagement(query, allowedMethods);
+  ): Promise<ManagementPaymentListResult> {
+    return this.query.listAllManagement(query, allowedMethods);
   }
 
   async recordManualPayment(
@@ -70,7 +67,7 @@ export class PaymentService {
     body: CreateManualPaymentDto,
     requestId?: string,
   ): Promise<PaymentResponse> {
-    return this.paymentManualService.record(
+    return this.manual.record(
       userId,
       bookingId,
       idempotencyKey,
@@ -86,7 +83,7 @@ export class PaymentService {
     clientIp: string | undefined,
     body: CreateVnpayPaymentDto,
   ): Promise<OnlinePaymentResponse> {
-    return this.paymentCollectionService.createVnPayPayment(
+    return this.collection.createVnPayPayment(
       customerId,
       bookingId,
       idempotencyKey,
@@ -99,22 +96,22 @@ export class PaymentService {
     query: Record<string, unknown>,
     requestId?: string,
   ): Promise<VnPayIpnResponse> {
-    return this.paymentCollectionService.handleVnPayIpn(query, requestId);
+    return this.collection.handleVnPayIpn(query, requestId);
   }
 
   async handleVnPayReturn(
     query: Record<string, unknown>,
     requestId?: string,
   ): Promise<VnPayReturnResponse> {
-    return this.paymentCollectionService.handleVnPayReturn(query, requestId);
+    return this.collection.handleVnPayReturn(query, requestId);
   }
 
   async expirePendingOnlinePayments(now = new Date()): Promise<number> {
-    return this.paymentCollectionService.expirePendingOnlinePayments(now);
+    return this.collection.expirePendingOnlinePayments(now);
   }
 
   countStaleRefunds(now = new Date()): Promise<number> {
-    return this.paymentQueryService.countStaleRefunds(now);
+    return this.query.countStaleRefunds(now);
   }
 
   async refund(
@@ -125,7 +122,7 @@ export class PaymentService {
     body: RefundPaymentDto,
     requestId?: string,
   ): Promise<PaymentResponse> {
-    return this.paymentRefundService.refund(
+    return this.refundService.refund(
       userId,
       paymentId,
       idempotencyKey,
@@ -141,7 +138,7 @@ export class PaymentService {
     clientIp: string | undefined,
     requestId?: string,
   ): Promise<PaymentResponse> {
-    return this.paymentRefundService.reconcileVnPayRefund(
+    return this.refundService.reconcileVnPayRefund(
       userId,
       paymentId,
       clientIp,
@@ -156,7 +153,7 @@ export class PaymentService {
     clientIp: string | undefined,
     requestId?: string,
   ): Promise<PaymentResponse> {
-    return this.paymentRefundService.resolveDuplicateCharge(
+    return this.refundService.resolveDuplicateCharge(
       userId,
       paymentId,
       idempotencyKey,

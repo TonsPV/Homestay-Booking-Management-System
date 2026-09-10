@@ -1,8 +1,10 @@
 import { UnauthorizedException } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
+import { JwtService } from '@nestjs/jwt';
 import { createHmac } from 'node:crypto';
 
 import { AccessTokenService } from '../../../../src/module/auth/access-token.service';
+import { AccessTokenClaimsValidator } from '../../../../src/module/auth/access-token-claims.validator';
 
 describe('AccessTokenService', () => {
   const secret = 'unit-test-access-token-secret';
@@ -23,7 +25,11 @@ describe('AccessTokenService', () => {
       }),
     };
 
-    service = new AccessTokenService(config as unknown as ConfigService);
+    service = new AccessTokenService(
+      config as unknown as ConfigService,
+      new AccessTokenClaimsValidator(),
+      new JwtService(),
+    );
     jest.spyOn(Date, 'now').mockReturnValue(1_800_000_000_000);
   });
 
@@ -142,6 +148,8 @@ describe('AccessTokenService', () => {
     };
     const durationService = new AccessTokenService(
       config as unknown as ConfigService,
+      new AccessTokenClaimsValidator(),
+      new JwtService(),
     );
 
     expect(durationService.getExpiresInSeconds()).toBe(expected);
@@ -155,6 +163,8 @@ describe('AccessTokenService', () => {
       };
       const invalidService = new AccessTokenService(
         config as unknown as ConfigService,
+        new AccessTokenClaimsValidator(),
+        new JwtService(),
       );
 
       expect(() => invalidService.getExpiresInSeconds()).toThrow(
@@ -169,6 +179,8 @@ describe('AccessTokenService', () => {
     };
     const invalidService = new AccessTokenService(
       config as unknown as ConfigService,
+      new AccessTokenClaimsValidator(),
+      new JwtService(),
     );
 
     expect(() => invalidService.getExpiresInSeconds()).toThrow(

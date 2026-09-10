@@ -1,7 +1,7 @@
 import AppDataSource from '../src/database/data-source';
 import {
   parseLegacyBedType,
-  type BedConfiguration,
+  type BedConfig,
 } from '../src/module/room-type/bed-configuration';
 import { RoomTypeBed } from '../src/module/room-type/schema/room-type-bed.entity';
 
@@ -13,7 +13,7 @@ interface RoomTypeBedAuditRow {
 
 interface PendingBackfill {
   id: string;
-  configurations: BedConfiguration[];
+  configurations: BedConfig[];
 }
 
 async function run(): Promise<void> {

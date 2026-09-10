@@ -14,7 +14,7 @@ import {
   ApiCommonAuthErrors,
   ApiOkEnvelope,
 } from '../../openapi/api-response.decorators';
-import { AccessTokenGuard } from '../auth/access-token.guard';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { RoomImageDto } from './dto/room-response.dto';
@@ -22,12 +22,12 @@ import { RoomImageService } from './room-image.service';
 import type { RoomImageResponse } from './room.service';
 
 @Controller('v1/room-images')
-@UseGuards(AccessTokenGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('ADMIN')
 @ApiBearerAuth()
 @ApiCommonAuthErrors()
 export class RoomImageController {
-  constructor(private readonly roomImageService: RoomImageService) {}
+  constructor(private readonly imageService: RoomImageService) {}
 
   @Delete(':imageId')
   @HttpCode(HttpStatus.OK)
@@ -35,7 +35,7 @@ export class RoomImageController {
   delete(
     @Param('imageId') imageId: string,
   ): Promise<ApiResponsePayload<RoomImageResponse>> {
-    return this.roomImageService
+    return this.imageService
       .delete(imageId)
       .then((image) => ApiResponse.ok(image, 'Xoa anh phong thanh cong.'));
   }
@@ -45,7 +45,7 @@ export class RoomImageController {
   setCover(
     @Param('imageId') imageId: string,
   ): Promise<ApiResponsePayload<RoomImageResponse>> {
-    return this.roomImageService
+    return this.imageService
       .setCover(imageId)
       .then((image) => ApiResponse.ok(image, 'Dat anh bia thanh cong.'));
   }

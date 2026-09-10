@@ -25,7 +25,7 @@ import {
   ApiCreatedEnvelope,
   ApiOkEnvelope,
 } from '../../openapi/api-response.decorators';
-import { AccessTokenGuard } from '../auth/access-token.guard';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import type { AccessTokenPayload } from '../auth/auth.types';
 import { CurrentAuth } from '../auth/decorators/current-auth.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -38,7 +38,7 @@ import { ListManagementBookingsQueryDto } from './dto/list-management-bookings-q
 import { UpdateBookingStatusDto } from './dto/update-booking-status.dto';
 
 @Controller('v1/management/bookings')
-@UseGuards(AccessTokenGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('ADMIN', 'STAFF')
 @ApiBearerAuth()
 @ApiCommonAuthErrors()

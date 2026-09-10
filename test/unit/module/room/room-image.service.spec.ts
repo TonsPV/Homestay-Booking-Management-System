@@ -38,10 +38,10 @@ describe('RoomImageService', () => {
       andWhere: jest.fn().mockReturnThis(),
       getOne: jest.fn().mockResolvedValue({ id: '1' }),
     };
-    const roomRepository = {
+    const roomRepo = {
       createQueryBuilder: jest.fn().mockReturnValue(roomQuery),
     };
-    const imagesRepository = {
+    const imageRepo = {
       countBy: jest.fn().mockResolvedValue(0),
       update: jest.fn().mockResolvedValue({ affected: 0 }),
       create: jest.fn().mockImplementation((value: unknown) => value),
@@ -50,11 +50,11 @@ describe('RoomImageService', () => {
     const manager = {
       getRepository: jest.fn((entity: unknown) => {
         if (entity === Room) {
-          return roomRepository;
+          return roomRepo;
         }
 
         if (entity === RoomImage) {
-          return imagesRepository;
+          return imageRepo;
         }
 
         throw new Error('Unexpected repository.');
@@ -110,22 +110,24 @@ describe('RoomImageService', () => {
       andWhere: jest.fn().mockReturnThis(),
       getOne: jest.fn().mockResolvedValue({ id: '1' }),
     };
-    const roomRepository = {
+    const roomRepo = {
       createQueryBuilder: jest.fn().mockReturnValue(roomQuery),
     };
-    const imagesRepository = {
-      findOne: jest.fn().mockResolvedValue({ id: '2', roomId: '1' }),
-      findOneBy: jest.fn().mockResolvedValue(image),
+    const imageRepo = {
+      findOne: jest
+        .fn()
+        .mockResolvedValueOnce({ id: '2', roomId: '1' })
+        .mockResolvedValueOnce(image),
       update: jest.fn().mockResolvedValue({ affected: 1 }),
     };
     const manager = {
       getRepository: jest.fn((entity: unknown) => {
         if (entity === Room) {
-          return roomRepository;
+          return roomRepo;
         }
 
         if (entity === RoomImage) {
-          return imagesRepository;
+          return imageRepo;
         }
 
         throw new Error('Unexpected repository.');
@@ -149,11 +151,11 @@ describe('RoomImageService', () => {
     });
 
     expect(roomQuery.setLock).toHaveBeenCalledWith('pessimistic_write');
-    expect(imagesRepository.update).toHaveBeenCalledWith(
+    expect(imageRepo.update).toHaveBeenCalledWith(
       { roomId: '1' },
       { isCover: false },
     );
-    expect(imagesRepository.update).toHaveBeenCalledWith(
+    expect(imageRepo.update).toHaveBeenCalledWith(
       { id: '2', roomId: '1' },
       { isCover: true },
     );
@@ -173,22 +175,24 @@ describe('RoomImageService', () => {
       andWhere: jest.fn().mockReturnThis(),
       getOne: jest.fn().mockResolvedValue({ id: '1' }),
     };
-    const roomRepository = {
+    const roomRepo = {
       createQueryBuilder: jest.fn().mockReturnValue(roomQuery),
     };
-    const imagesRepository = {
-      findOne: jest.fn().mockResolvedValue({ id: '2', roomId: '1' }),
-      findOneBy: jest.fn().mockResolvedValue(image),
+    const imageRepo = {
+      findOne: jest
+        .fn()
+        .mockResolvedValueOnce({ id: '2', roomId: '1' })
+        .mockResolvedValueOnce(image),
       remove: jest.fn().mockResolvedValue(image),
     };
     const manager = {
       getRepository: jest.fn((entity: unknown) => {
         if (entity === Room) {
-          return roomRepository;
+          return roomRepo;
         }
 
         if (entity === RoomImage) {
-          return imagesRepository;
+          return imageRepo;
         }
 
         throw new Error('Unexpected repository.');
@@ -209,7 +213,7 @@ describe('RoomImageService', () => {
     await expect(service.delete('2')).resolves.toMatchObject({ id: '2' });
 
     expect(roomQuery.setLock).toHaveBeenCalledWith('pessimistic_write');
-    expect(imagesRepository.remove).toHaveBeenCalledWith(image);
+    expect(imageRepo.remove).toHaveBeenCalledWith(image);
     expect(roomImageStorage.deleteManaged).toHaveBeenCalledWith(image.imageUrl);
   });
 });

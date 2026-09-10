@@ -1,6 +1,6 @@
 import { SetMetadata } from '@nestjs/common';
 
-import type { ActorType } from '../../../common/domain/account.enums';
+import type { ActorType } from '../../../common/account/account.enums';
 
 export const ACTORS_KEY = 'actors';
 

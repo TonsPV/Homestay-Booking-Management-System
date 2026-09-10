@@ -1,3 +1,8 @@
+import type {
+  AdminCustomerResponse,
+  AdminCustomerListResponse,
+} from './customer.types';
+
 import {
   BadRequestException,
   Injectable,
@@ -6,11 +11,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import type { EntityManager, Repository } from 'typeorm';
 
-import type { AccountStatus } from '../../common/domain/account.enums';
-import {
-  createPaginationMeta,
-  type PaginationMeta,
-} from '../../common/pagination/pagination.types';
+import { createPaginationMeta } from '../../common/pagination/pagination.types';
 import {
   AuditLogService,
   type AuditActorContext,
@@ -22,40 +23,21 @@ import {
   parsePagination,
   requireAccountStatus,
 } from '../../common/validation';
-import {
-  CustomerCredentialPolicy,
-  type CustomerCredentialCapabilities,
-} from './customer-credential.policy';
+import { CustomerCredentialPolicy } from './customer-credential.policy';
+
+import { CustomerCredentialLookupService } from './customer-credential-lookup.service';
 import { ListCustomersQueryDto } from './dto/list-customers-query.dto';
 import { Customer } from './schema/customer.entity';
 
-export interface AdminCustomerResponse {
-  id: string;
-  fullName: string;
-  email: string | null;
-  phone: string;
-  status: AccountStatus;
-  createdAt: Date;
-  updatedAt: Date;
-  credentialCapabilities: CustomerCredentialCapabilities;
-}
-
-type AdminCustomerProfile = Omit<
-  AdminCustomerResponse,
-  'credentialCapabilities'
->;
-
-export interface AdminCustomerListResponse {
-  items: AdminCustomerResponse[];
-  meta: PaginationMeta;
-}
+type AdminProfile = Omit<AdminCustomerResponse, 'credentialCapabilities'>;
 
 @Injectable()
 export class CustomerAdminService {
   constructor(
     @InjectRepository(Customer)
-    private readonly customersRepository: Repository<Customer>,
-    private readonly customerCredentialPolicy: CustomerCredentialPolicy,
+    private readonly customerRepo: Repository<Customer>,
+    private readonly credentialPolicy: CustomerCredentialPolicy,
+    private readonly credentialLookup: CustomerCredentialLookupService,
     private readonly auditLogService: AuditLogService,
   ) {}
 
@@ -67,7 +49,7 @@ export class CustomerAdminService {
     );
     const search = optionalSearch(query.search);
     const status = optionalAccountStatus(query.status);
-    const customersQuery = this.customersRepository
+    const customersQuery = this.customerRepo
       .createQueryBuilder('customer')
       .addSelect('customer.passwordHash')
       .where('customer.deletedAt IS NULL')
@@ -92,9 +74,7 @@ export class CustomerAdminService {
     const [customers, total] = await customersQuery.getManyAndCount();
 
     return {
-      items: customers.map((customer) =>
-        this.toAdminCustomerResponse(customer),
-      ),
+      items: customers.map((customer) => this.toAdminResponse(customer)),
       meta: createPaginationMeta(page, limit, total),
     };
   }
@@ -104,31 +84,25 @@ export class CustomerAdminService {
     statusValue: unknown,
     auditContext?: AuditActorContext,
   ): Promise<AdminCustomerResponse> {
-    const customer = await this.withCustomerTransaction((repository, manager) =>
-      this.updateStatusWithRepository(
-        repository,
-        id,
-        statusValue,
-        manager,
-        auditContext,
-      ),
+    const customer = await this.withTransaction((repository, manager) =>
+      this.saveStatus(repository, id, statusValue, manager, auditContext),
     );
 
     return {
       ...customer,
       credentialCapabilities:
-        await this.customerCredentialPolicy.evaluateByCustomerId(id),
+        await this.credentialLookup.getCapabilitiesByCustomerId(id),
     };
   }
 
-  private async updateStatusWithRepository(
+  private async saveStatus(
     repository: Repository<Customer>,
     id: string,
     statusValue: unknown,
-    manager: EntityManager | undefined,
+    manager: EntityManager,
     auditContext: AuditActorContext | undefined,
-  ): Promise<AdminCustomerProfile> {
-    const customer = await this.getCustomer(id, repository);
+  ): Promise<AdminProfile> {
+    const customer = await this.lockCustomerForUpdate(id, repository);
     const status = requireAccountStatus(statusValue);
 
     if (customer.status !== status) {
@@ -137,7 +111,7 @@ export class CustomerAdminService {
       customer.tokenVersion += 1;
       const savedCustomer = await repository.save(customer);
 
-      if (manager !== undefined && auditContext !== undefined) {
+      if (auditContext !== undefined) {
         await this.auditLogService.record(manager, {
           ...auditContext,
           action:
@@ -150,47 +124,33 @@ export class CustomerAdminService {
         });
       }
 
-      return this.toAdminCustomerProfile(savedCustomer);
+      return this.toAdminProfile(savedCustomer);
     }
 
-    return this.toAdminCustomerProfile(await repository.save(customer));
+    return this.toAdminProfile(await repository.save(customer));
   }
 
-  private async withCustomerTransaction<T>(
+  private async withTransaction<T>(
     operation: (
       repository: Repository<Customer>,
-      manager: EntityManager | undefined,
+      manager: EntityManager,
     ) => Promise<T>,
   ): Promise<T> {
-    const repository = this.customersRepository as Repository<Customer> & {
-      manager?: EntityManager;
-    };
-
-    if (repository.manager === undefined) {
-      return operation(this.customersRepository, undefined);
-    }
-
-    return repository.manager.transaction((manager) =>
+    return this.customerRepo.manager.transaction((manager) =>
       operation(manager.getRepository(Customer), manager),
     );
   }
 
-  private async getCustomer(
+  private async lockCustomerForUpdate(
     id: string,
-    repository: Repository<Customer> = this.customersRepository,
+    repository: Repository<Customer>,
   ): Promise<Customer> {
     this.validateId(id);
 
-    const repositoryWithFindOne = repository as Repository<Customer> & {
-      findOne?: Repository<Customer>['findOne'];
-    };
-    const customer =
-      typeof repositoryWithFindOne.findOne === 'function'
-        ? await repositoryWithFindOne.findOne({
-            where: { id },
-            lock: { mode: 'pessimistic_write' },
-          })
-        : await repository.findOneBy({ id });
+    const customer = await repository.findOne({
+      where: { id },
+      lock: { mode: 'pessimistic_write' },
+    });
 
     if (customer === null) {
       throw new NotFoundException('Khong tim thay customer.');
@@ -205,14 +165,14 @@ export class CustomerAdminService {
     }
   }
 
-  private toAdminCustomerResponse(customer: Customer): AdminCustomerResponse {
+  private toAdminResponse(customer: Customer): AdminCustomerResponse {
     return {
-      ...this.toAdminCustomerProfile(customer),
-      credentialCapabilities: this.customerCredentialPolicy.evaluate(customer),
+      ...this.toAdminProfile(customer),
+      credentialCapabilities: this.credentialPolicy.evaluate(customer),
     };
   }
 
-  private toAdminCustomerProfile(customer: Customer): AdminCustomerProfile {
+  private toAdminProfile(customer: Customer): AdminProfile {
     return {
       id: customer.id,
       fullName: customer.fullName,

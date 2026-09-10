@@ -11,7 +11,7 @@ import {
   ROOM_IMAGE_MAX_FILE_SIZE,
   ROOM_IMAGE_MAX_PIXELS,
   ROOM_IMAGE_PUBLIC_PATH,
-  resolveRoomImageUploadDirectory,
+  resolveRoomImageDir,
 } from '../../config/room-image-storage';
 
 export interface UploadedRoomImageFile {
@@ -35,7 +35,7 @@ export class RoomImageStorageService {
   private readonly uploadDirectory: string;
 
   constructor(configService: ConfigService) {
-    this.uploadDirectory = resolveRoomImageUploadDirectory(configService);
+    this.uploadDirectory = resolveRoomImageDir(configService);
   }
 
   async store(roomId: string, file: UploadedRoomImageFile): Promise<string> {
@@ -43,7 +43,7 @@ export class RoomImageStorageService {
       throw new BadRequestException('Room id khong hop le.');
     }
 
-    this.validateDeclaredFile(file);
+    this.validateFile(file);
 
     let image: sharp.Sharp;
     let metadata: sharp.Metadata;
@@ -131,7 +131,7 @@ export class RoomImageStorageService {
     }
   }
 
-  private validateDeclaredFile(file: UploadedRoomImageFile): void {
+  private validateFile(file: UploadedRoomImageFile): void {
     if (
       !Buffer.isBuffer(file.buffer) ||
       file.buffer.length === 0 ||

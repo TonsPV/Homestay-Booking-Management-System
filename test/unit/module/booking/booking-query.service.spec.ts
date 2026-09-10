@@ -28,7 +28,7 @@ describe('BookingQueryService', () => {
         existsBy: jest.fn().mockResolvedValue(false),
       } as unknown as Repository<Payment>,
       {
-        evaluateByCustomerId: jest.fn().mockResolvedValue({
+        getCapabilitiesByCustomerId: jest.fn().mockResolvedValue({
           canSetInitialPassword: true,
           reasonCode: null,
         }),
@@ -231,6 +231,12 @@ function bookingFixture(): Booking {
     totalAmount: '2000000.00',
     status: BookingStatus.PENDING_PAYMENT,
     paymentStatus: BookingPaymentStatus.UNPAID,
+    acceptedPaymentId: null,
+    acceptedPayment: null,
+    requestIntentActorType: null,
+    requestIntentActorId: null,
+    requestIntentKey: null,
+    requestIntentHash: null,
     paymentExpiresAt: new Date('2030-01-01T00:15:00.000Z'),
     customerNote: null,
     cancelledAt: null,

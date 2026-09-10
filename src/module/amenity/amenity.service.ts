@@ -52,17 +52,17 @@ interface AmenityListResult<TItem> {
 export class AmenityService {
   constructor(
     @InjectRepository(Amenity)
-    private readonly amenitiesRepository: Repository<Amenity>,
+    private readonly amenityRepo: Repository<Amenity>,
   ) {}
 
   async listPublic(
     query: ListAmenitiesQueryDto,
   ): Promise<AmenityListResult<AmenityResponse>> {
-    const result = await this.list(query, false);
+    const listResult = await this.findList(query, false);
 
     return {
-      items: result.items.map((amenity) => this.toPublicResponse(amenity)),
-      meta: result.meta,
+      items: listResult.items.map((amenity) => this.toPublicResponse(amenity)),
+      meta: listResult.meta,
     };
   }
 
@@ -78,16 +78,16 @@ export class AmenityService {
       false,
       'Include deleted khong hop le.',
     );
-    const result = await this.list(query, includeDeleted);
+    const listResult = await this.findList(query, includeDeleted);
 
     return {
-      items: result.items.map((amenity) => this.toAdminResponse(amenity)),
-      meta: result.meta,
+      items: listResult.items.map((amenity) => this.toAdminResponse(amenity)),
+      meta: listResult.meta,
     };
   }
 
   async getAdmin(id: string): Promise<AdminAmenityResponse> {
-    return this.toAdminResponse(await this.getAmenityWithDeleted(id));
+    return this.toAdminResponse(await this.findWithDeleted(id));
   }
 
   async create(body: CreateAmenityDto): Promise<AdminAmenityResponse> {
@@ -103,12 +103,12 @@ export class AmenityService {
         500,
       ) ?? null;
 
-    await this.ensureNameIsAvailable(name);
+    await this.assertNameAvailable(name);
 
     try {
       return this.toAdminResponse(
-        await this.amenitiesRepository.save(
-          this.amenitiesRepository.create({ name, description }),
+        await this.amenityRepo.save(
+          this.amenityRepo.create({ name, description }),
         ),
       );
     } catch (error) {
@@ -120,7 +120,7 @@ export class AmenityService {
     id: string,
     body: UpdateAmenityDto,
   ): Promise<AdminAmenityResponse> {
-    const amenity = await this.getActiveAmenity(id);
+    this.validateId(id);
     const name = optionalTrimmedString(
       body.name,
       'Ten tien nghi khong hop le.',
@@ -136,29 +136,34 @@ export class AmenityService {
       throw new BadRequestException('Khong co du lieu de cap nhat.');
     }
 
-    if (name !== undefined) {
-      await this.ensureNameIsAvailable(name, amenity.id);
-      amenity.name = name;
-    }
+    return this.amenityRepo.manager.transaction(async (manager) => {
+      const repository = manager.getRepository(Amenity);
+      const amenity = await this.lockActiveAmenity(manager, id);
 
-    if (description !== undefined) {
-      amenity.description = description;
-    }
+      if (name !== undefined) {
+        await this.assertNameAvailable(name, amenity.id, repository);
+        amenity.name = name;
+      }
 
-    try {
-      return this.toAdminResponse(await this.amenitiesRepository.save(amenity));
-    } catch (error) {
-      this.throwDuplicateConflict(error);
-    }
+      if (description !== undefined) {
+        amenity.description = description;
+      }
+
+      try {
+        return this.toAdminResponse(await repository.save(amenity));
+      } catch (error) {
+        this.throwDuplicateConflict(error);
+      }
+    });
   }
 
   async softDelete(id: string): Promise<AdminAmenityResponse> {
     this.validateId(id);
-    const amenity = await this.amenitiesRepository.manager.transaction(
+    const amenity = await this.amenityRepo.manager.transaction(
       async (manager) => {
-        const amenity = await this.getLockedActiveAmenity(manager, id);
+        const amenity = await this.lockActiveAmenity(manager, id);
 
-        if (await this.isAssignedToActiveRoomType(manager, amenity.id)) {
+        if (await this.isUsedByActiveRoomType(manager, amenity.id)) {
           throw new AppHttpException(
             HttpStatus.CONFLICT,
             ErrorCode.AMENITY_IN_USE,
@@ -174,24 +179,22 @@ export class AmenityService {
   }
 
   async restore(id: string): Promise<AdminAmenityResponse> {
-    const amenity = await this.getAmenityWithDeleted(id);
+    const amenity = await this.findWithDeleted(id);
 
     if (amenity.deletedAt === null) {
       throw new BadRequestException('Tien nghi chua bi xoa.');
     }
 
-    await this.ensureNameIsAvailable(amenity.name, amenity.id);
+    await this.assertNameAvailable(amenity.name, amenity.id);
 
     try {
-      return this.toAdminResponse(
-        await this.amenitiesRepository.recover(amenity),
-      );
+      return this.toAdminResponse(await this.amenityRepo.recover(amenity));
     } catch (error) {
       this.throwDuplicateConflict(error);
     }
   }
 
-  private async list(
+  private async findList(
     query: ListAmenitiesQueryDto,
     includeDeleted: boolean,
   ): Promise<AmenityListResult<Amenity>> {
@@ -199,7 +202,7 @@ export class AmenityService {
       query as Record<string, unknown>,
     );
     const search = optionalSearch(query.search);
-    const amenitiesQuery = this.amenitiesRepository
+    const amenitiesQuery = this.amenityRepo
       .createQueryBuilder('amenity')
       .orderBy('amenity.name', 'ASC')
       .addOrderBy('amenity.id', 'ASC')
@@ -228,7 +231,7 @@ export class AmenityService {
   private async getActiveAmenity(id: string): Promise<Amenity> {
     this.validateId(id);
 
-    const amenity = await this.amenitiesRepository.findOneBy({ id });
+    const amenity = await this.amenityRepo.findOneBy({ id });
 
     if (amenity === null) {
       throw new NotFoundException('Khong tim thay tien nghi.');
@@ -237,10 +240,10 @@ export class AmenityService {
     return amenity;
   }
 
-  private async getAmenityWithDeleted(id: string): Promise<Amenity> {
+  private async findWithDeleted(id: string): Promise<Amenity> {
     this.validateId(id);
 
-    const amenity = await this.amenitiesRepository
+    const amenity = await this.amenityRepo
       .createQueryBuilder('amenity')
       .withDeleted()
       .where('amenity.id = :id', { id })
@@ -253,11 +256,12 @@ export class AmenityService {
     return amenity;
   }
 
-  private async ensureNameIsAvailable(
+  private async assertNameAvailable(
     name: string,
     currentAmenityId?: string,
+    repository: Repository<Amenity> = this.amenityRepo,
   ): Promise<void> {
-    const query = this.amenitiesRepository
+    const query = repository
       .createQueryBuilder('amenity')
       .withDeleted()
       .where('amenity.name = :name', { name });
@@ -277,7 +281,7 @@ export class AmenityService {
     }
   }
 
-  private async getLockedActiveAmenity(
+  private async lockActiveAmenity(
     manager: EntityManager,
     id: string,
   ): Promise<Amenity> {
@@ -296,7 +300,7 @@ export class AmenityService {
     return amenity;
   }
 
-  private async isAssignedToActiveRoomType(
+  private async isUsedByActiveRoomType(
     manager: EntityManager,
     id: string,
   ): Promise<boolean> {

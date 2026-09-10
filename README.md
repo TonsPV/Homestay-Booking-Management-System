@@ -1,333 +1,400 @@
 # Homestay Booking Management System API
 
-Backend API for a homestay operation: customer accounts, staff administration,
-room inventory and availability, bookings, manual payments, VNPay payments,
-refunds, and audit records. The application is a NestJS modular monolith backed
-by MySQL and is delivered as a single backend application.
+Tài liệu tiếng Việt, đối chiếu mã nguồn trong working tree ngày **10/09/2026**. Tên biến, handler, endpoint và command giữ nguyên. Tài liệu không xác nhận kết quả chạy test hoặc trạng thái triển khai.
 
-## Overview
+## 1. Tổng quan hệ thống
 
-The main business relationships are:
+Backend dùng NestJS, Express adapter, TypeORM và MySQL. `AppModule` đăng ký các module nghiệp vụ trong cùng ứng dụng; `ScheduleModule` đăng ký tác vụ nền. JWT dùng cho xác thực; Swagger tạo đặc tả OpenAPI; VNPay phục vụ thanh toán; Sharp xử lý ảnh phòng.
 
-```text
-Customer/staff client
-    +--> Booking ----> Room calendar
-    +--> Payment ----> VNPay (online payment/refund/query)
-                   |
-                   +--> Booking payment lifecycle
-```
+| Module   | Chức năng hiện có                                                     |
+| -------- | --------------------------------------------------------------------- |
+| Auth     | Đăng ký Customer, đăng nhập Customer/User, đọc thông tin người gọi    |
+| Customer | Hồ sơ cá nhân, đổi mật khẩu, quản lý trạng thái, đặt mật khẩu ban đầu |
+| User     | Tạo, tra cứu và cập nhật tài khoản nội bộ                             |
+| Amenity  | Danh mục tiện nghi, quản trị và khôi phục                             |
+| RoomType | Loại phòng, cấu hình giường, liên kết tiện nghi                       |
+| Room     | Tra cứu phòng, tìm phòng trống, quản lý trạng thái, ảnh và lịch block |
+| Booking  | Tạo/tra cứu booking, hủy, chuyển trạng thái và xử lý hết hạn          |
+| Payment  | Thu tiền thủ công, VNPay, IPN/Return, refund và reconcile             |
+| Audit    | Ghi audit log; không có controller API riêng trong module             |
+| Health   | Liveness và readiness                                                 |
 
-Booking, Payment, and Room own the important consistency rules. Critical
-mutations use TypeORM transactions and database pessimistic locks. Retryable
-booking/payment/VNPay-refund commands use idempotency data so a retry can be
-replayed or rejected as a conflict.
+HTTP đi qua cấu hình chung, guard/ValidationPipe, controller, service và lớp truy cập MySQL; response được xử lý bởi interceptor/filter. TypeORM dùng `synchronize: false`, `migrationsRun: true` và `timezone: 'Z'`. Schema được quản lý bằng migration; khởi động ứng dụng có thể thay đổi database.
 
-For the detailed module map and lock boundaries, see
-[`docs/architecture.md`](docs/architecture.md). For payment behavior, see
-[`docs/payment-flows.md`](docs/payment-flows.md). The Payment/Refund data-model
-decision is recorded in
-[`docs/decisions/payment-refund-model-decision.md`](docs/decisions/payment-refund-model-decision.md).
+Nguồn: [AppModule](src/app.module.ts), [bootstrap](src/main.ts), [cấu hình HTTP](src/bootstrap/configure-app.ts), [package.json](package.json).
 
-## Tech Stack
+Dashboard API, OTP/SMS, `NO_SHOW`, `BookingCharge` và partial refund: **[Chưa có trong mã nguồn hiện tại]**. Không coi đề xuất trong thiết kế lịch sử là chức năng đã triển khai.
 
-- Node.js 22.x and TypeScript
-- NestJS 11
-- TypeORM with MySQL 8.4
-- `class-validator` / `class-transformer`
-- Swagger/OpenAPI
-- Jest, ts-jest, and Supertest
-- VNPay SDK (`vnpay`)
-- Sharp for room-image processing
-- Helmet and `@nestjs/schedule`
+## 2. Cấu hình môi trường và biến môi trường
 
-## Architecture
+Ứng dụng chọn `.env.test` khi biến của tiến trình `NODE_ENV === 'test'`; các trường hợp khác chọn `.env`. Cần đặt `NODE_ENV=test` **trước khi khởi động** nếu muốn chọn file test.
 
-This is a modular monolith organized by business module. Controllers handle
-HTTP concerns, facade/capability services coordinate use cases, policies hold
-small business decisions, and TypeORM-backed stores perform persistence inside
-the caller's transaction.
+Bảng dưới phân biệt **giá trị trong .env.example** với fallback trong code. Giá trị ví dụ không phải cấu hình production và không phải lúc nào cũng là fallback.
 
-```text
-HTTP request
-    |
-    v
-Guards + DTO validation + controllers
-    |
-    v
-Facade/capability services
-    |
-    +--> business policies / lifecycle coordination
-    |
-    +--> TypeORM transaction runner + persistence stores --> MySQL
-    |
-    +--> VnPayGatewayService -----------------------------> VNPay
-    +--> RoomImageStorageService --------------------------> local filesystem
-```
+Nguồn: [.env.example](.env.example), [environment.ts](src/config/environment.ts), [AppModule](src/app.module.ts), [main.ts](src/main.ts).
 
-Some core workflows use small domain policies and persistence boundaries to
-make transaction/locking rules explicit, but the project intentionally keeps a
-simple modular-monolith structure without introducing a separate architecture
-framework.
+### HTTP và ứng dụng
 
-See [`docs/architecture.md`](docs/architecture.md) for ownership and runtime
-details.
+| Biến                         | Giá trị trong .env.example  | Cách sử dụng/kiểm tra trong code                                                   |
+| ---------------------------- | --------------------------- | ---------------------------------------------------------------------------------- |
+| `NODE_ENV`                   | `development`               | Validator mặc định `development`; ảnh hưởng chọn file và kiểm tra production       |
+| `APP_PORT`                   | `3000`                      | Cổng listen; main.ts dùng 3000 khi không có giá trị                                |
+| `CORS_ORIGINS`               | `http://localhost:5173`     | Danh sách origin HTTP/HTTPS ngăn bằng dấu phẩy; production yêu cầu không rỗng      |
+| `SWAGGER_ENABLED`            | `false`                     | Nếu không khai báo, validator mặc định bật ngoài production; file mẫu chủ động tắt |
+| `HTTP_JSON_BODY_LIMIT`       | `1mb`                       | Fallback `1mb`; kích thước dương, không quá `50mb`                                 |
+| `HTTP_URLENCODED_BODY_LIMIT` | `1mb`                       | Cùng giới hạn trên, áp dụng body URL-encoded                                       |
+| `ROOM_IMAGE_UPLOAD_DIR`      | `.data/uploads/room-images` | Thư mục ảnh; fallback cùng giá trị                                                 |
 
-## Main Modules
+Các biến boolean được validator đọc nhận `true`, `false`, `1`, `0`. Ảnh được phục vụ tại `/media/room-images/`, không nằm dưới global prefix `/api`.
 
-| Module | Responsibility |
-|---|---|
-| Auth | Customer/user login, access tokens, actor and role guards |
-| Customer | Customer profile, password, and customer administration |
-| User | ADMIN-managed staff accounts |
-| Amenity | Public catalog and ADMIN CRUD/restore |
-| RoomType | Room types, beds, amenities, and ADMIN management |
-| Room | Inventory, status, availability, calendar blocks, images, search |
-| Booking | Creation, queries, cancellation, status lifecycle, expiry |
-| Payment | Manual payment, VNPay collection, callbacks, refund, reconciliation |
-| Audit | Transactional business audit records |
-| Common/Health | HTTP envelope, validation, request context, liveness/readiness |
+### MySQL và health
 
-Public and management routes are separated where visibility or actor permissions
-differ. The full contract is in [`openapi/openapi.json`](openapi/openapi.json).
+| Biến                         | Giá trị trong .env.example | Cách sử dụng/kiểm tra                                                 |
+| ---------------------------- | -------------------------- | --------------------------------------------------------------------- |
+| `DB_HOST`                    | `127.0.0.1`                | Host MySQL; AppModule dùng `getOrThrow`                               |
+| `DB_PORT`                    | `3306`                     | Port MySQL; cũng là host port trong Compose                           |
+| `DB_USERNAME`                | `property_user`            | Tài khoản kết nối; Compose truyền thành `MYSQL_USER`                  |
+| `DB_PASSWORD`                | Giá trị thay thế           | Mật khẩu kết nối; Compose truyền thành `MYSQL_PASSWORD`               |
+| `DB_DATABASE`                | `property_management`      | Database; Compose truyền thành `MYSQL_DATABASE`                       |
+| `DB_POOL_SIZE`               | `10`                       | Fallback 10; số nguyên 1–100                                          |
+| `DB_POOL_QUEUE_LIMIT`        | `50`                       | Fallback 50; số nguyên 1–1000                                         |
+| `DB_CONNECT_TIMEOUT_MS`      | `5000`                     | Fallback 5000; số nguyên 250–60000 ms                                 |
+| `HEALTH_DB_PROBE_TIMEOUT_MS` | `1000`                     | Fallback 1000; số nguyên 100–10000 ms                                 |
+| `MYSQL_ROOT_PASSWORD`        | Giá trị thay thế           | Dùng bởi Compose/MySQL, không phải tài khoản kết nối mặc định của API |
 
-## Core Business Flows
+[compose.yaml](compose.yaml) chỉ khai báo service `mysql`, image `mysql:8.4` và volume `mysql_data`; không có service container API.
 
-- **Booking:** validate dates, capacity, customer/contact data, and room
-  availability; create the booking, reserve each stay night, and write the
-  audit record in one transaction.
-- **Manual payment:** a STAFF/ADMIN records `CASH` or `BANK_TRANSFER`; the
-  server uses the booking total, locks the booking, creates a successful payment,
-  and lets the lifecycle coordinator mark the booking paid/confirmed.
-- **VNPay:** the customer creates a pending payment and receives a signed URL.
-  VNPay IPN is the server-to-server mutation path. Return is read-only
-  presentation; it does not confirm a payment.
-- **Refund:** manual refunds complete locally. VNPay refunds use a pending
-  state before the external call and only become `REFUNDED` after a verified
-  full-refund result. Unknown results remain available for reconciliation.
+### JWT và Booking
 
-Detailed diagrams and status handling are in
-[`docs/payment-flows.md`](docs/payment-flows.md).
+| Biến                                     | Giá trị trong .env.example | Cách sử dụng/kiểm tra                                              |
+| ---------------------------------------- | -------------------------- | ------------------------------------------------------------------ |
+| `JWT_ACCESS_TOKEN_SECRET`                | Chuỗi mẫu phải thay        | Bắt buộc, tối thiểu 32 ký tự; validator từ chối chuỗi mẫu hiện tại |
+| `JWT_ACCESS_TOKEN_EXPIRES_IN`            | `1h`                       | Fallback `1h`; duration dương                                      |
+| `BOOKING_PAYMENT_TIMEOUT_MINUTES`        | `15`                       | Fallback 15; số nguyên 1–1440                                      |
+| `BOOKING_MAX_ACTIVE_UNPAID_PER_CUSTOMER` | `3`                        | Fallback 3; số nguyên 1–20                                         |
+| `BOOKING_MAX_HELD_NIGHTS_PER_CUSTOMER`   | `30`                       | Fallback 30; số nguyên 1–365                                       |
+| `BOOKING_MAX_ADVANCE_DAYS`               | `365`                      | Fallback 365; số nguyên 1–3650                                     |
+| `EXPIRATION_SCHEDULERS_ENABLED`          | `true`                     | Fallback true; bật/tắt scheduler xử lý hết hạn                     |
 
-## Transaction, Locking, and Idempotency
+### VNPay
 
-- TypeORM transactions are used for booking creation/cancellation/expiry,
-  calendar reservation/blocking, payment acceptance, and refund state changes.
-- Critical workflows use `pessimistic_write` (`FOR UPDATE` at the database
-  level) for records such as Booking, Payment, Room, or a canonical payment.
-- Booking creation stores an optional actor-scoped request intent. Manual
-  payment, VNPay creation, and VNPay refund commands require an
-  `Idempotency-Key` where applicable.
-- A matching operation/key is replayed or reconciled; reuse for another
-  booking/payment or an incompatible operation is rejected.
-- Cross-entity state changes are owned by
-  `BookingPaymentLifecycleService`, which keeps Booking, Payment, Room Calendar,
-  and audit updates together in the application workflow.
+| Biến                        | Giá trị trong .env.example                           | Cách sử dụng/kiểm tra                                                            |
+| --------------------------- | ---------------------------------------------------- | -------------------------------------------------------------------------------- |
+| `VNPAY_ENABLED`             | `false`                                              | Fallback false                                                                   |
+| `VNPAY_TMN_CODE`            | Rỗng                                                 | Khi bật VNPay, yêu cầu đúng 8 ký tự chữ/số                                       |
+| `VNPAY_HASH_SECRET`         | Rỗng                                                 | Khi bật VNPay, yêu cầu tối thiểu 16 ký tự                                        |
+| `VNPAY_PAYMENT_URL`         | `https://sandbox.vnpayment.vn/paymentv2/vpcpay.html` | Fallback cùng URL; yêu cầu HTTPS                                                 |
+| `VNPAY_RETURN_URL`          | `http://localhost:3000/api/v1/payments/vnpay/return` | Fallback cùng URL; kiểm tra HTTP/HTTPS và điều kiện production khi bật VNPay     |
+| `VNPAY_FRONTEND_RETURN_URL` | `http://localhost:5173/payments/vnpay/return`        | Fallback trong code là rỗng; có giá trị thì kiểm tra URL và điều kiện production |
+| `VNPAY_REQUEST_TIMEOUT_MS`  | `10000`                                              | Fallback 10000; số nguyên 1000–120000 ms                                         |
 
-The exact lock order and transaction boundaries are documented in
-[`docs/architecture.md`](docs/architecture.md).
+Trong production, helper kiểm tra Return URL yêu cầu HTTPS và loại một số hostname local được liệt kê trong code. Đây không phải kiểm tra kết nối thực tế tới URL. `VNPAY_RETURN_URL` không phải endpoint IPN.
 
-## Project Structure
+### Seed và công cụ kiểm thử
 
-```text
-src/
-├── bootstrap/          # global HTTP setup
-├── common/             # HTTP, validation, health, transaction support
-├── config/             # environment and image-storage configuration
-├── database/           # datasource, migrations, scripts, seed
-├── openapi/            # Swagger setup and contract checks
-└── module/
-    ├── auth/
-    ├── customer/
-    ├── user/
-    ├── amenity/
-    ├── room-type/
-    ├── room/
-    ├── booking/
-    ├── payment/
-    └── audit/
+| Biến                          | Phạm vi                                                              |
+| ----------------------------- | -------------------------------------------------------------------- |
+| `SEED_ADMIN_FULL_NAME`        | Tên ADMIN; bắt buộc khi chạy seed                                    |
+| `SEED_ADMIN_EMAIL`            | Email ADMIN; bắt buộc khi chạy seed                                  |
+| `SEED_ADMIN_PHONE`            | Số điện thoại tùy chọn                                               |
+| `SEED_ADMIN_PASSWORD`         | Mật khẩu được kiểm tra bởi `requirePassword`; bắt buộc khi chạy seed |
+| `PRODUCTION_SMOKE_PORT`       | Script smoke; fallback 3100                                          |
+| `PRODUCTION_SMOKE_TIMEOUT_MS` | Script smoke; fallback 20000 ms                                      |
 
-scripts/                # schema, data, OpenAPI, and smoke checks
-test/
-├── unit/               # unit/service/policy/config/contract tests
-└── <feature>/          # MySQL-backed HTTP workflow tests
-```
+Nguồn: [seed-admin.ts](src/database/seeds/seed-admin.ts), [smoke-production-start.js](scripts/smoke-production-start.js). Các biến smoke không nằm trong `.env.example`; script đọc môi trường tiến trình.
 
-## Getting Started
+Script tạo fixture riêng còn đọc `HBMS_LIVE_ADMIN_IDENTIFIER`, `HBMS_LIVE_STAFF_IDENTIFIER`, `HBMS_LIVE_AUTH_PASSWORD` và `HBMS_LIVE_COUNTER_CUSTOMER_PHONE` trong [provision-live-auth-fixtures.ts](scripts/provision-live-auth-fixtures.ts). Không cần chạy script này để khởi động API; nó ghi dữ liệu tài khoản kiểm thử.
 
-### Requirements
+## 3. Cài đặt và chạy dự án
 
-- Node.js 22.x
-- npm
-- MySQL 8.4, or Docker Desktop/Engine for the repository's MySQL Compose
-  service
+### Yêu cầu
 
-### Environment Variables
+- Node.js `22.x` theo `package.json` và npm.
+- MySQL 8.4 theo Compose.
+- Docker Compose nếu dùng service MySQL của repo; không bắt buộc nếu đã có MySQL phù hợp.
 
-The application reads `.env`, except when `NODE_ENV=test`, when it reads
-`.env.test`. Start from the example files and replace all credential/secret
-placeholders; do not commit `.env` files.
+Các command dưới đây dùng PowerShell và chạy từ thư mục gốc repo. Chạy từng bước, dừng nếu command lỗi; không sử dụng database production cho hướng dẫn local.
 
-```bash
-cp .env.example .env
-```
-
-PowerShell:
+### Cài dependency và tạo cấu hình
 
 ```powershell
-Copy-Item .env.example .env
+npm ci
+if (-not (Test-Path -LiteralPath .env)) { Copy-Item .env.example .env }
 ```
 
-Edit `.env` before starting MySQL or the API. VNPay is disabled by default in
-the development example; enable it and provide sandbox credentials when you
-need to exercise the online-payment flow.
+Sửa `.env` trước khi khởi động:
 
-| Area | Variables |
-|---|---|
-| Runtime | `NODE_ENV`, `APP_PORT`, `CORS_ORIGINS`, `SWAGGER_ENABLED`, `HTTP_JSON_BODY_LIMIT`, `HTTP_URLENCODED_BODY_LIMIT` |
-| Database | `DB_HOST`, `DB_PORT`, `DB_USERNAME`, `DB_PASSWORD`, `DB_DATABASE`, `DB_POOL_SIZE`, `DB_POOL_QUEUE_LIMIT`, `DB_CONNECT_TIMEOUT_MS`, `HEALTH_DB_PROBE_TIMEOUT_MS` |
-| Auth | `JWT_ACCESS_TOKEN_SECRET`, `JWT_ACCESS_TOKEN_EXPIRES_IN` |
-| Booking/expiry | `BOOKING_PAYMENT_TIMEOUT_MINUTES`, `BOOKING_MAX_ACTIVE_UNPAID_PER_CUSTOMER`, `BOOKING_MAX_HELD_NIGHTS_PER_CUSTOMER`, `BOOKING_MAX_ADVANCE_DAYS`, `EXPIRATION_SCHEDULERS_ENABLED` |
-| Images | `ROOM_IMAGE_UPLOAD_DIR` |
-| VNPay | `VNPAY_ENABLED`, `VNPAY_TMN_CODE`, `VNPAY_HASH_SECRET`, `VNPAY_PAYMENT_URL`, `VNPAY_RETURN_URL`, `VNPAY_FRONTEND_RETURN_URL`, `VNPAY_REQUEST_TIMEOUT_MS` |
-| Admin seed | `SEED_ADMIN_FULL_NAME`, `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PHONE`, `SEED_ADMIN_PASSWORD` |
-| Compose only | `MYSQL_ROOT_PASSWORD` |
+- Thay `JWT_ACCESS_TOKEN_SECRET` bằng secret riêng đạt điều kiện validator. Giữ nguyên chuỗi mẫu sẽ làm ứng dụng không khởi động.
+- Điền kết nối `DB_*`; nếu dùng Compose, điền thêm `MYSQL_ROOT_PASSWORD`.
+- Giữ `VNPAY_ENABLED=false` nếu chưa có cấu hình VNPay; khi bật phải cung cấp các giá trị hợp lệ.
+- Không commit secret hoặc file `.env`.
 
-`JWT_ACCESS_TOKEN_SECRET` must be at least 32 characters and must not be one of
-the example values. When VNPay is enabled, the terminal code must be exactly
-8 alphanumeric characters and the hash secret must be at least 16 characters.
-Production requires a non-empty exact CORS allowlist. With VNPay enabled in
-production, `VNPAY_RETURN_URL` must be public HTTPS; a configured
-`VNPAY_FRONTEND_RETURN_URL` must also be public HTTPS.
+### Khởi động MySQL và API
 
-### Install, Database, and Run
+Nếu dùng MySQL trong repo:
 
-```bash
-npm install
-
-# Optional: use the repository's MySQL-only Compose topology.
+```powershell
 docker compose up -d mysql
+docker compose ps
+```
 
+Chờ MySQL sẵn sàng rồi chạy:
+
+```powershell
 npm run start:dev
 ```
 
-The API listens on `http://localhost:3000/api` by default. If an existing MySQL
-instance is used, configure the `DB_*` variables and skip the Compose command.
-When the API starts, TypeORM automatically runs pending migrations against the
-configured database.
+API nghiệp vụ có tiền tố `http://localhost:3000/api/v1` khi dùng port mẫu; health ở `/api/health`. Không có cam kết rằng gọi trực tiếp URL gốc prefix sẽ trả một resource.
 
-To create a local ADMIN account, set the `SEED_ADMIN_*` variables and run:
+Ứng dụng tự chạy migration còn chờ. Có thể xem/chạy migration bằng CLI:
 
-```bash
+```powershell
+npm run migration:show
+npm run migration:run
+```
+
+`migration:run` thay đổi schema/dữ liệu theo migration. Không bật `synchronize` để thay thế migration.
+
+### Seed ADMIN và Swagger
+
+Sau khi schema đã tồn tại, điền `SEED_ADMIN_*` và chạy:
+
+```powershell
 npm run seed:admin
 ```
 
-`compose.yaml` provisions MySQL only; this repository does not provide an API
-container or a production orchestration manifest.
+Seed tạo ADMIN nếu email chưa tồn tại; không đổi mật khẩu ADMIN đã có. Nếu email thuộc User không phải ADMIN, script báo lỗi. Seed mặc định từ chối production nếu thiếu cờ cho phép trong script.
 
-## Database Migrations
+Đặt `SWAGGER_ENABLED=true`, khởi động lại API để truy cập:
 
-TypeORM `synchronize` is disabled. Schema changes remain explicit migrations in
-`src/database/migrations`; the runtime applies pending migrations automatically
-when the API starts. The CLI commands are still available for checking or
-applying migrations before startup.
+- Swagger UI: `http://localhost:3000/api/docs`.
+- OpenAPI JSON: `http://localhost:3000/api/docs-json`.
 
-```bash
-npm run migration:show
-npm run migration:run
-npm run schema:check
-npm run data:audit
-```
-
-`npm run migration:revert` exists, but do not use it casually against a shared
-or pre-existing database. The baseline migration is intentionally not a safe
-automatic data-destructive rollback.
-
-## Testing
-
-```bash
-npm test -- --runInBand
-npm run test:e2e -- --runInBand
-npm run test:cov
-npm run lint
-npm run build
-npx tsc -p tsconfig.build.json --noEmit
-```
-
-Before E2E tests, create `.env.test` from `.env.test.example` and point it to a
-dedicated MySQL database whose name ends with `_test`:
-
-```bash
-cp .env.test.example .env.test
-```
-
-PowerShell equivalent:
+### Build và kiểm thử
 
 ```powershell
-Copy-Item .env.test.example .env.test
+npx tsc --noEmit
+npm run lint
+npm test -- --runInBand
+npm run build
 ```
 
-The E2E setup checks `NODE_ENV=test` and the `_test` database suffix before
-migrations, inserts, deletes, or cleanup. It refuses to run against a normal
-development or production database. E2E schedulers are disabled by the example
-configuration.
+Chạy artifact đã build:
 
-## OpenAPI / Swagger
-
-Set `SWAGGER_ENABLED=true` to expose:
-
-- Swagger UI: `http://localhost:3000/api/docs`
-- JSON document: `http://localhost:3000/api/docs-json`
-
-The committed snapshot is `openapi/openapi.json`.
-
-```bash
-npm run openapi:generate
-npm run openapi:check
-npm run openapi:validate
+```powershell
+npm run start:prod
 ```
 
-Regenerate the snapshot after a route or DTO contract change.
+Tên script `start:prod` chỉ chạy `node dist/main.js`, **không tự đặt `NODE_ENV=production`**. Cấu hình triển khai thực tế của máy chủ: **[Chưa có trong mã nguồn hiện tại]**.
 
-Health endpoints are available independently of Swagger:
+E2E cần database riêng có tên kết thúc bằng `_test`. Chuẩn bị `.env.test` từ [.env.test.example](.env.test.example), chỉnh kết nối tới database test, sau đó:
 
-- `GET /api/health/live` — process liveness
-- `GET /api/health/ready` — bounded MySQL readiness probe
+```powershell
+$env:NODE_ENV = 'test'
+npm run test:e2e -- --runInBand
+```
 
-## Important Design Decisions
+E2E nạp `.env.test` với `override: true` và có thao tác thay đổi dữ liệu. Không trỏ file này vào database thật. Xem [hướng dẫn kiểm thử](docs/testing-and-deployment.md) cho migration, schema, OpenAPI và smoke; tài liệu này không tuyên bố các command vừa được chạy thành công.
 
-1. VNPay IPN is the financial mutation authority; browser Return is verified
-   presentation and recovery UX only.
-2. Booking, Payment, and Room Calendar changes that must agree are committed in
-   a single transaction where the workflow owns them.
-3. Pessimistic locks serialize concurrent booking/payment/refund decisions;
-   database uniqueness constraints remain the final conflict guard.
-4. `BookingPaymentLifecycleService` owns cross-entity payment side effects.
-5. External VNPay refund calls happen outside the database transaction; uncertain
-   outcomes remain `REFUND_PENDING` for reconciliation.
-6. Migrations are explicit and `synchronize` is disabled.
+## 4. API và chức năng hiện có
 
-## Current Limitations
+Danh sách dưới trích từ decorator của **67 handler** trong controller. Prefix `/api` lấy từ `configureApp`; `:id`, `:bookingId`, `:roomId`, `:imageId` là path parameter.
 
-- The MVP supports full payments and one online provider (VNPay); partial,
-  installment, split, overpayment, and payment-ledger allocation are outside
-  the current scope.
-- Room images use local filesystem storage. Filesystem and MySQL writes are not
-  one atomic transaction, and there is no object-storage adapter in this repo.
-- Rate limiting and the minute-based expiry schedulers are process-local. A
-  multi-instance deployment would need shared rate-limit storage and scheduler
-  coordination.
-- Compose provisions only MySQL. API packaging, deployment topology, secret
-  management, and TLS termination are outside this repository.
-- VNPay production configuration, reconciliation operations, and financial
-  controls need deployment-specific validation; this project does not claim
-  PCI compliance or absolute production security.
+Cột quyền ghi lại `Roles`/`Actors` hoặc JWT ở controller. Đây không phải toàn bộ điều kiện nghiệp vụ: service còn kiểm tra quyền sở hữu và trạng thái bản ghi. Với IPN/Return, không có bearer không đồng nghĩa bỏ kiểm tra chữ ký VNPay.
 
-## Future Improvements
+Request/response DTO và schema chi tiết nằm tại [OpenAPI](openapi/openapi.json) và [hợp đồng API](docs/api-contracts.md). Tên handler được giữ nguyên để tìm trong source.
 
-- Add object-backed room-image storage and a cleanup/retention process.
-- Add distributed rate-limit and scheduler coordination if multiple API
-  instances are needed.
-- Add operational metrics/tracing for payment, reconciliation, and scheduler
-  outcomes.
-- Add another payment provider or a payment ledger only when business scope
-  requires it.
+### health.controller.ts
+
+Nguồn: [controller](src/common/health/health.controller.ts).
+
+| Method | Endpoint            | Handler        | Quyền khai báo              |
+| ------ | ------------------- | -------------- | --------------------------- |
+| `GET`  | `/api/health/live`  | `getLiveness`  | Không khai báo Roles/Actors |
+| `GET`  | `/api/health/ready` | `getReadiness` | Không khai báo Roles/Actors |
+
+### amenity-admin.controller.ts
+
+Nguồn: [controller](src/module/amenity/amenity-admin.controller.ts).
+
+| Method   | Endpoint                              | Handler      | Quyền khai báo |
+| -------- | ------------------------------------- | ------------ | -------------- |
+| `POST`   | `/api/v1/admin/amenities`             | `create`     | ADMIN          |
+| `GET`    | `/api/v1/admin/amenities`             | `list`       | ADMIN          |
+| `GET`    | `/api/v1/admin/amenities/:id`         | `getById`    | ADMIN          |
+| `PATCH`  | `/api/v1/admin/amenities/:id`         | `update`     | ADMIN          |
+| `DELETE` | `/api/v1/admin/amenities/:id`         | `softDelete` | ADMIN          |
+| `PATCH`  | `/api/v1/admin/amenities/:id/restore` | `restore`    | ADMIN          |
+
+### amenity.controller.ts
+
+Nguồn: [controller](src/module/amenity/amenity.controller.ts).
+
+| Method | Endpoint                | Handler   | Quyền khai báo              |
+| ------ | ----------------------- | --------- | --------------------------- |
+| `GET`  | `/api/v1/amenities`     | `list`    | Không khai báo Roles/Actors |
+| `GET`  | `/api/v1/amenities/:id` | `getById` | Không khai báo Roles/Actors |
+
+### auth.controller.ts
+
+Nguồn: [controller](src/module/auth/auth.controller.ts).
+
+| Method | Endpoint                          | Handler            | Quyền khai báo              |
+| ------ | --------------------------------- | ------------------ | --------------------------- |
+| `POST` | `/api/v1/auth/customers/register` | `registerCustomer` | Không khai báo Roles/Actors |
+| `POST` | `/api/v1/auth/customers/login`    | `loginCustomer`    | Không khai báo Roles/Actors |
+| `POST` | `/api/v1/auth/users/login`        | `loginUser`        | Không khai báo Roles/Actors |
+| `GET`  | `/api/v1/auth/me`                 | `me`               | JWT                         |
+
+### booking-management.controller.ts
+
+Nguồn: [controller](src/module/booking/booking-management.controller.ts).
+
+| Method  | Endpoint                                 | Handler        | Quyền khai báo |
+| ------- | ---------------------------------------- | -------------- | -------------- |
+| `POST`  | `/api/v1/management/bookings`            | `create`       | ADMIN, STAFF   |
+| `GET`   | `/api/v1/management/bookings`            | `list`         | ADMIN, STAFF   |
+| `GET`   | `/api/v1/management/bookings/:id`        | `getById`      | ADMIN, STAFF   |
+| `PATCH` | `/api/v1/management/bookings/:id/status` | `updateStatus` | ADMIN, STAFF   |
+
+### booking.controller.ts
+
+Nguồn: [controller](src/module/booking/booking.controller.ts).
+
+| Method  | Endpoint                      | Handler   | Quyền khai báo |
+| ------- | ----------------------------- | --------- | -------------- |
+| `POST`  | `/api/v1/bookings`            | `create`  | customer       |
+| `GET`   | `/api/v1/bookings`            | `list`    | customer       |
+| `GET`   | `/api/v1/bookings/:id`        | `getById` | customer       |
+| `PATCH` | `/api/v1/bookings/:id/cancel` | `cancel`  | customer       |
+
+### customer-admin.controller.ts
+
+Nguồn: [controller](src/module/customer/customer-admin.controller.ts).
+
+| Method  | Endpoint                       | Handler         | Quyền khai báo |
+| ------- | ------------------------------ | --------------- | -------------- |
+| `GET`   | `/api/v1/customers`            | `listCustomers` | ADMIN          |
+| `PATCH` | `/api/v1/customers/:id/status` | `updateStatus`  | ADMIN          |
+
+### customer-credential-management.controller.ts
+
+Nguồn: [controller](src/module/customer/customer-credential-management.controller.ts).
+
+| Method  | Endpoint                                            | Handler              | Quyền khai báo |
+| ------- | --------------------------------------------------- | -------------------- | -------------- |
+| `PATCH` | `/api/v1/management/customers/:id/initial-password` | `setInitialPassword` | ADMIN, STAFF   |
+
+### customer-profile.controller.ts
+
+Nguồn: [controller](src/module/customer/customer-profile.controller.ts).
+
+| Method  | Endpoint                        | Handler          | Quyền khai báo |
+| ------- | ------------------------------- | ---------------- | -------------- |
+| `GET`   | `/api/v1/customers/me`          | `me`             | customer       |
+| `PATCH` | `/api/v1/customers/me`          | `updateMe`       | customer       |
+| `PATCH` | `/api/v1/customers/me/password` | `changePassword` | customer       |
+
+### payment-management.controller.ts
+
+Nguồn: [controller](src/module/payment/payment-management.controller.ts).
+
+| Method | Endpoint                                                   | Handler                  | Quyền khai báo |
+| ------ | ---------------------------------------------------------- | ------------------------ | -------------- |
+| `GET`  | `/api/v1/management/payments`                              | `listAll`                | ADMIN, STAFF   |
+| `GET`  | `/api/v1/management/bookings/:bookingId/payments`          | `list`                   | ADMIN, STAFF   |
+| `POST` | `/api/v1/management/bookings/:bookingId/payments`          | `create`                 | ADMIN, STAFF   |
+| `POST` | `/api/v1/management/payments/:id/refund`                   | `refund`                 | ADMIN          |
+| `POST` | `/api/v1/management/payments/:id/resolve-duplicate-charge` | `resolveDuplicateCharge` | ADMIN          |
+| `POST` | `/api/v1/management/payments/:id/reconcile-refund`         | `reconcileRefund`        | ADMIN          |
+
+### payment.controller.ts
+
+Nguồn: [controller](src/module/payment/payment.controller.ts).
+
+| Method | Endpoint                               | Handler              | Quyền khai báo |
+| ------ | -------------------------------------- | -------------------- | -------------- |
+| `POST` | `/api/v1/bookings/:bookingId/payments` | `createVnPayPayment` | customer       |
+| `GET`  | `/api/v1/bookings/:bookingId/payments` | `list`               | customer       |
+
+### vnpay.controller.ts
+
+Nguồn: [controller](src/module/payment/vnpay.controller.ts).
+
+| Method | Endpoint                        | Handler     | Quyền khai báo              |
+| ------ | ------------------------------- | ----------- | --------------------------- |
+| `GET`  | `/api/v1/payments/vnpay/ipn`    | `ipn`       | Không khai báo Roles/Actors |
+| `GET`  | `/api/v1/payments/vnpay/return` | `getReturn` | Không khai báo Roles/Actors |
+
+### room-image.controller.ts
+
+Nguồn: [controller](src/module/room/room-image.controller.ts).
+
+| Method   | Endpoint                                 | Handler    | Quyền khai báo |
+| -------- | ---------------------------------------- | ---------- | -------------- |
+| `DELETE` | `/api/v1/room-images/:imageId`           | `delete`   | ADMIN          |
+| `PATCH`  | `/api/v1/room-images/:imageId/set-cover` | `setCover` | ADMIN          |
+
+### room-management.controller.ts
+
+Nguồn: [controller](src/module/room/room-management.controller.ts).
+
+| Method   | Endpoint                                    | Handler     | Quyền khai báo |
+| -------- | ------------------------------------------- | ----------- | -------------- |
+| `GET`    | `/api/v1/management/rooms`                  | `list`      | ADMIN, STAFF   |
+| `GET`    | `/api/v1/management/rooms/available`        | `available` | ADMIN, STAFF   |
+| `GET`    | `/api/v1/management/rooms/:roomId/calendar` | `calendar`  | ADMIN, STAFF   |
+| `POST`   | `/api/v1/management/rooms/:roomId/blocks`   | `block`     | ADMIN, STAFF   |
+| `DELETE` | `/api/v1/management/rooms/:roomId/blocks`   | `unblock`   | ADMIN, STAFF   |
+| `GET`    | `/api/v1/management/rooms/:id`              | `getById`   | ADMIN, STAFF   |
+
+### room.controller.ts
+
+Nguồn: [controller](src/module/room/room.controller.ts).
+
+| Method   | Endpoint                       | Handler        | Quyền khai báo              |
+| -------- | ------------------------------ | -------------- | --------------------------- |
+| `GET`    | `/api/v1/rooms/search`         | `search`       | Không khai báo Roles/Actors |
+| `GET`    | `/api/v1/rooms`                | `list`         | Không khai báo Roles/Actors |
+| `GET`    | `/api/v1/rooms/:id`            | `getById`      | Không khai báo Roles/Actors |
+| `POST`   | `/api/v1/rooms`                | `create`       | ADMIN                       |
+| `PATCH`  | `/api/v1/rooms/:id`            | `update`       | ADMIN                       |
+| `DELETE` | `/api/v1/rooms/:id`            | `delete`       | ADMIN                       |
+| `PATCH`  | `/api/v1/rooms/:id/status`     | `updateStatus` | ADMIN, STAFF                |
+| `POST`   | `/api/v1/rooms/:roomId/images` | `createImage`  | ADMIN                       |
+
+### room-type-admin.controller.ts
+
+Nguồn: [controller](src/module/room-type/room-type-admin.controller.ts).
+
+| Method   | Endpoint                                 | Handler        | Quyền khai báo |
+| -------- | ---------------------------------------- | -------------- | -------------- |
+| `POST`   | `/api/v1/admin/room-types`               | `create`       | ADMIN          |
+| `GET`    | `/api/v1/admin/room-types`               | `list`         | ADMIN          |
+| `GET`    | `/api/v1/admin/room-types/:id`           | `getById`      | ADMIN          |
+| `PATCH`  | `/api/v1/admin/room-types/:id`           | `update`       | ADMIN          |
+| `DELETE` | `/api/v1/admin/room-types/:id`           | `softDelete`   | ADMIN          |
+| `PATCH`  | `/api/v1/admin/room-types/:id/restore`   | `restore`      | ADMIN          |
+| `PUT`    | `/api/v1/admin/room-types/:id/amenities` | `setAmenities` | ADMIN          |
+
+### room-type.controller.ts
+
+Nguồn: [controller](src/module/room-type/room-type.controller.ts).
+
+| Method | Endpoint                 | Handler   | Quyền khai báo              |
+| ------ | ------------------------ | --------- | --------------------------- |
+| `GET`  | `/api/v1/room-types`     | `list`    | Không khai báo Roles/Actors |
+| `GET`  | `/api/v1/room-types/:id` | `getById` | Không khai báo Roles/Actors |
+
+### user-admin.controller.ts
+
+Nguồn: [controller](src/module/user/user-admin.controller.ts).
+
+| Method  | Endpoint                   | Handler        | Quyền khai báo |
+| ------- | -------------------------- | -------------- | -------------- |
+| `POST`  | `/api/v1/users`            | `createUser`   | ADMIN          |
+| `GET`   | `/api/v1/users`            | `listUsers`    | ADMIN          |
+| `PATCH` | `/api/v1/users/:id`        | `updateUser`   | ADMIN          |
+| `PATCH` | `/api/v1/users/:id/status` | `updateStatus` | ADMIN          |
+
+Chi tiết kiến trúc, nghiệp vụ, database và thanh toán: [mục lục tài liệu](docs/README.md).

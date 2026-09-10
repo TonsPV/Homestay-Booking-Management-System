@@ -1,3 +1,12 @@
+import type {
+  CustomerResponse,
+  UserResponse,
+  LoginResponse,
+  RegistrationResult,
+  MeResponse,
+  AccessTokenPayload,
+} from './auth.types';
+
 import {
   BadRequestException,
   ConflictException,
@@ -9,9 +18,9 @@ import { InjectRepository } from '@nestjs/typeorm';
 import type { Repository } from 'typeorm';
 
 import { getMysqlDuplicateKey } from '../../common/database';
-import type { AccessTokenPayload } from './auth.types';
+
 import {
-  getVietnamesePhoneLookupVariants,
+  getPhoneLookupVariants,
   isEmail,
   normalizePhone,
   optionalNullableEmail,
@@ -23,72 +32,21 @@ import {
 import { AccessTokenService } from './access-token.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterCustomerDto } from './dto/register-customer.dto';
-import {
-  Customer,
-  type CustomerStatus,
-} from '../customer/schema/customer.entity';
-import {
-  User,
-  type UserRole,
-  type UserStatus,
-} from '../user/schema/user.entity';
+import { Customer } from '../customer/schema/customer.entity';
+import { User } from '../user/schema/user.entity';
 import { PasswordHasherService } from './password-hasher.service';
 
-interface NormalizedRegisterCustomerInput {
+interface RegistrationInput {
   fullName: string;
   email: string | null;
   phone: string;
   password: string;
 }
 
-interface NormalizedLoginInput {
+interface LoginInput {
   identifier: string;
   password: string;
 }
-
-export interface CustomerResponse {
-  id: string;
-  fullName: string;
-  email: string | null;
-  phone: string;
-  status: CustomerStatus;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
-export interface UserResponse {
-  id: string;
-  fullName: string;
-  email: string;
-  phone: string | null;
-  role: UserRole;
-  status: UserStatus;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
-export interface LoginResponse {
-  accessToken: string;
-  tokenType: 'Bearer';
-  expiresIn: number;
-  actorType: 'customer' | 'user';
-  customer?: CustomerResponse;
-  user?: UserResponse;
-}
-
-export interface RegistrationAcceptedResponse {
-  accepted: true;
-}
-
-export type MeResponse =
-  | {
-      actorType: 'customer';
-      customer: CustomerResponse;
-    }
-  | {
-      actorType: 'user';
-      user: UserResponse;
-    };
 
 @Injectable()
 export class AuthService {
@@ -96,36 +54,36 @@ export class AuthService {
 
   constructor(
     @InjectRepository(Customer)
-    private readonly customersRepository: Repository<Customer>,
+    private readonly customerRepo: Repository<Customer>,
     @InjectRepository(User)
-    private readonly usersRepository: Repository<User>,
-    private readonly passwordHasherService: PasswordHasherService,
-    private readonly accessTokenService: AccessTokenService,
+    private readonly userRepo: Repository<User>,
+    private readonly passwordHasher: PasswordHasherService,
+    private readonly tokenService: AccessTokenService,
   ) {}
 
   async registerCustomer(
     body: RegisterCustomerDto,
-  ): Promise<RegistrationAcceptedResponse> {
-    const input = this.normalizeRegisterCustomerInput(body);
+  ): Promise<RegistrationResult> {
+    const input = this.normalizeRegistration(body);
     const [passwordHash, existingEmail, existingPhone] = await Promise.all([
-      this.passwordHasherService.hash(input.password),
-      this.customersRepository.findOneBy({
+      this.passwordHasher.hash(input.password),
+      this.customerRepo.findOneBy({
         email: input.email ?? '__registration_without_email__',
       }),
-      this.customersRepository
+      this.customerRepo
         .createQueryBuilder('customer')
         .where('customer.phone IN (:...phones)', {
-          phones: getVietnamesePhoneLookupVariants(input.phone),
+          phones: getPhoneLookupVariants(input.phone),
         })
         .getOne(),
     ]);
 
     if (existingEmail !== null || existingPhone !== null) {
-      this.logRegistrationDuplicate(existingEmail, existingPhone);
-      throw this.registrationConflictException();
+      this.logRegistrationConflict(existingEmail, existingPhone);
+      throw this.registrationConflict();
     }
 
-    const customer = this.customersRepository.create({
+    const customer = this.customerRepo.create({
       fullName: input.fullName,
       email: input.email,
       phone: input.phone,
@@ -133,7 +91,7 @@ export class AuthService {
       status: 'ACTIVE',
     });
     try {
-      await this.customersRepository.save(customer);
+      await this.customerRepo.save(customer);
     } catch (error) {
       const duplicateKey = getMysqlDuplicateKey(error);
 
@@ -145,7 +103,7 @@ export class AuthService {
         `Customer registration rejected. reason=${this.getDuplicateReason(duplicateKey)}`,
       );
 
-      throw this.registrationConflictException();
+      throw this.registrationConflict();
     }
 
     return { accepted: true };
@@ -154,9 +112,9 @@ export class AuthService {
   async loginCustomer(body: LoginDto): Promise<LoginResponse> {
     const input = this.normalizeLoginInput(body);
     const identifier = this.normalizeIdentifier(input.identifier);
-    const customer = await this.findCustomerForLogin(identifier);
+    const customer = await this.findCustomerByIdentifier(identifier);
 
-    const passwordMatches = await this.passwordHasherService.verifyOrDummy(
+    const passwordMatches = await this.passwordHasher.verifyOrDummy(
       input.password,
       customer?.passwordHash ?? null,
     );
@@ -167,21 +125,21 @@ export class AuthService {
       customer.passwordHash === null ||
       !passwordMatches
     ) {
-      this.logAuthenticationFailure(
+      this.logAuthFailure(
         'customer',
-        this.getCustomerLoginFailureReason(customer, passwordMatches),
+        this.customerLoginReason(customer, passwordMatches),
       );
       throw this.invalidLoginException();
     }
 
     return {
-      accessToken: this.accessTokenService.sign({
+      accessToken: this.tokenService.sign({
         actorType: 'customer',
         customerId: customer.id,
         tokenVersion: customer.tokenVersion,
       }),
       tokenType: 'Bearer',
-      expiresIn: this.accessTokenService.getExpiresInSeconds(),
+      expiresIn: this.tokenService.getExpiresInSeconds(),
       actorType: 'customer',
       customer: this.toCustomerResponse(customer),
     };
@@ -190,30 +148,27 @@ export class AuthService {
   async loginUser(body: LoginDto): Promise<LoginResponse> {
     const input = this.normalizeLoginInput(body);
     const identifier = this.normalizeIdentifier(input.identifier);
-    const user = await this.findUserForLogin(identifier);
+    const user = await this.findUserByIdentifier(identifier);
 
-    const passwordMatches = await this.passwordHasherService.verifyOrDummy(
+    const passwordMatches = await this.passwordHasher.verifyOrDummy(
       input.password,
       user?.passwordHash ?? null,
     );
 
     if (user === null || user.status !== 'ACTIVE' || !passwordMatches) {
-      this.logAuthenticationFailure(
-        'user',
-        this.getUserLoginFailureReason(user, passwordMatches),
-      );
+      this.logAuthFailure('user', this.userLoginReason(user, passwordMatches));
       throw this.invalidLoginException();
     }
 
     return {
-      accessToken: this.accessTokenService.sign({
+      accessToken: this.tokenService.sign({
         actorType: 'user',
         userId: user.id,
         role: user.role,
         tokenVersion: user.tokenVersion,
       }),
       tokenType: 'Bearer',
-      expiresIn: this.accessTokenService.getExpiresInSeconds(),
+      expiresIn: this.tokenService.getExpiresInSeconds(),
       actorType: 'user',
       user: this.toUserResponse(user),
     };
@@ -227,7 +182,7 @@ export class AuthService {
         throw new UnauthorizedException('Invalid access token.');
       }
 
-      const customer = await this.customersRepository.findOneBy({
+      const customer = await this.customerRepo.findOneBy({
         id: customerId,
       });
 
@@ -247,7 +202,7 @@ export class AuthService {
       throw new UnauthorizedException('Invalid access token.');
     }
 
-    const user = await this.usersRepository.findOneBy({ id: userId });
+    const user = await this.userRepo.findOneBy({ id: userId });
 
     if (user === null || user.status === 'LOCKED') {
       throw new UnauthorizedException('Invalid access token.');
@@ -259,15 +214,15 @@ export class AuthService {
     };
   }
 
-  private async findCustomerForLogin(
+  private async findCustomerByIdentifier(
     identifier: string,
   ): Promise<Customer | null> {
     const email = isEmail(identifier) ? identifier.toLowerCase() : identifier;
     const phone = normalizePhone(identifier);
     const phones =
-      phone === null ? [identifier] : getVietnamesePhoneLookupVariants(phone);
+      phone === null ? [identifier] : getPhoneLookupVariants(phone);
 
-    return this.customersRepository
+    return this.customerRepo
       .createQueryBuilder('customer')
       .addSelect('customer.passwordHash')
       .where('customer.deletedAt IS NULL')
@@ -278,13 +233,13 @@ export class AuthService {
       .getOne();
   }
 
-  private async findUserForLogin(identifier: string): Promise<User | null> {
+  private async findUserByIdentifier(identifier: string): Promise<User | null> {
     const email = isEmail(identifier) ? identifier.toLowerCase() : identifier;
     const phone = normalizePhone(identifier);
     const phones =
-      phone === null ? [identifier] : getVietnamesePhoneLookupVariants(phone);
+      phone === null ? [identifier] : getPhoneLookupVariants(phone);
 
-    return this.usersRepository
+    return this.userRepo
       .createQueryBuilder('user')
       .addSelect('user.passwordHash')
       .where('user.deletedAt IS NULL')
@@ -295,9 +250,7 @@ export class AuthService {
       .getOne();
   }
 
-  private normalizeRegisterCustomerInput(
-    body: RegisterCustomerDto,
-  ): NormalizedRegisterCustomerInput {
+  private normalizeRegistration(body: RegisterCustomerDto): RegistrationInput {
     const fullName = requireTrimmedString(
       body.fullName,
       'Ho ten la bat buoc.',
@@ -315,7 +268,7 @@ export class AuthService {
     };
   }
 
-  private normalizeLoginInput(body: LoginDto): NormalizedLoginInput {
+  private normalizeLoginInput(body: LoginDto): LoginInput {
     const identifier = this.firstTrimmedString([
       body.identifier,
       body.emailOrPhone,
@@ -357,16 +310,13 @@ export class AuthService {
     return normalizePhone(identifier) ?? identifier;
   }
 
-  private logAuthenticationFailure(
-    actorType: 'customer' | 'user',
-    reason: string,
-  ): void {
+  private logAuthFailure(actorType: 'customer' | 'user', reason: string): void {
     this.logger.warn(
       `Authentication rejected. actorType=${actorType} reason=${reason}`,
     );
   }
 
-  private getCustomerLoginFailureReason(
+  private customerLoginReason(
     customer: Customer | null,
     passwordMatches: boolean,
   ): string {
@@ -385,10 +335,7 @@ export class AuthService {
     return passwordMatches ? 'unknown' : 'password_mismatch';
   }
 
-  private getUserLoginFailureReason(
-    user: User | null,
-    passwordMatches: boolean,
-  ): string {
+  private userLoginReason(user: User | null, passwordMatches: boolean): string {
     if (user === null) {
       return 'account_not_found';
     }
@@ -404,13 +351,13 @@ export class AuthService {
     return new UnauthorizedException('Thong tin dang nhap khong hop le.');
   }
 
-  private registrationConflictException(): ConflictException {
+  private registrationConflict(): ConflictException {
     return new ConflictException(
       'Khong the dang ky bang email hoac so dien thoai nay.',
     );
   }
 
-  private logRegistrationDuplicate(
+  private logRegistrationConflict(
     existingEmail: Customer | null,
     existingPhone: Customer | null,
   ): void {

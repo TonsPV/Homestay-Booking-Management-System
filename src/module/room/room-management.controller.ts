@@ -13,13 +13,17 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ApiResponse, type ApiResponsePayload } from '../../common/http';
+import { ReqContext, type RequestContext } from '../../common/http';
+import { CurrentAuth } from '../auth/decorators/current-auth.decorator';
+import type { AccessTokenPayload } from '../auth/auth.types';
+import { AuditActorType } from '../audit/domain/audit-log';
 import {
   ApiCommonAuthErrors,
   ApiCommonMutationErrors,
   ApiCreatedEnvelope,
   ApiOkEnvelope,
 } from '../../openapi/api-response.decorators';
-import { AccessTokenGuard } from '../auth/access-token.guard';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { BlockRoomDatesDto } from './dto/block-room-dates.dto';
@@ -43,7 +47,7 @@ import {
 } from './room.service';
 
 @Controller('v1/management/rooms')
-@UseGuards(AccessTokenGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('ADMIN', 'STAFF')
 @ApiTags('Management Rooms')
 @ApiBearerAuth()
@@ -51,7 +55,7 @@ import {
 export class RoomManagementController {
   constructor(
     private readonly roomService: RoomService,
-    private readonly roomAvailabilityService: RoomAvailabilityService,
+    private readonly availabilityService: RoomAvailabilityService,
   ) {}
 
   @Get()
@@ -94,7 +98,7 @@ export class RoomManagementController {
     @Param('roomId') roomId: string,
     @Query() query: RoomCalendarRangeQueryDto,
   ): Promise<ApiResponsePayload<RoomCalendarEntryResponse[]>> {
-    return this.roomAvailabilityService
+    return this.availabilityService
       .list(roomId, query)
       .then((entries) =>
         ApiResponse.ok(entries, 'Lay lich phong quan ly thanh cong.'),
@@ -107,11 +111,17 @@ export class RoomManagementController {
   @ApiCreatedEnvelope(RoomCalendarEntryDto, { isArray: true })
   @ApiCommonMutationErrors()
   block(
+    @CurrentAuth() auth: AccessTokenPayload,
+    @ReqContext() context: RequestContext,
     @Param('roomId') roomId: string,
     @Body() body: BlockRoomDatesDto,
   ): Promise<ApiResponsePayload<RoomCalendarEntryResponse[]>> {
-    return this.roomAvailabilityService
-      .block(roomId, body)
+    return this.availabilityService
+      .block(roomId, body, {
+        actorType: AuditActorType.USER,
+        actorId: auth.user_id ?? null,
+        requestId: context.requestId,
+      })
       .then((entries) =>
         ApiResponse.created(entries, 'Khoa lich phong thanh cong.'),
       );
@@ -122,11 +132,17 @@ export class RoomManagementController {
   @ApiOperation({ summary: 'Remove blocked nights from a room date range' })
   @ApiOkEnvelope(UnblockRoomDatesDto)
   unblock(
+    @CurrentAuth() auth: AccessTokenPayload,
+    @ReqContext() context: RequestContext,
     @Param('roomId') roomId: string,
     @Query() query: RoomCalendarRangeQueryDto,
   ): Promise<ApiResponsePayload<UnblockRoomDatesResponse>> {
-    return this.roomAvailabilityService
-      .unblock(roomId, query)
+    return this.availabilityService
+      .unblock(roomId, query, {
+        actorType: AuditActorType.USER,
+        actorId: auth.user_id ?? null,
+        requestId: context.requestId,
+      })
       .then((result) =>
         ApiResponse.ok(result, 'Mo khoa lich phong thanh cong.'),
       );

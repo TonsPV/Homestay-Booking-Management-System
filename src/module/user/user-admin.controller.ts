@@ -25,7 +25,7 @@ import {
   ApiCreatedEnvelope,
   ApiOkEnvelope,
 } from '../../openapi/api-response.decorators';
-import { AccessTokenGuard } from '../auth/access-token.guard';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import type { AccessTokenPayload } from '../auth/auth.types';
 import { CurrentAuth } from '../auth/decorators/current-auth.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -36,15 +36,15 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { ListUsersQueryDto } from './dto/list-users-query.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UserAdminService } from './user-admin.service';
-import type { AdminUserResponse } from './user-admin.service';
+import type { AdminUserResponse } from './user.types';
 
 @Controller('v1/users')
-@UseGuards(AccessTokenGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('ADMIN')
 @ApiBearerAuth()
 @ApiCommonAuthErrors()
 export class UserAdminController {
-  constructor(private readonly userAdminService: UserAdminService) {}
+  constructor(private readonly adminService: UserAdminService) {}
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
@@ -53,7 +53,7 @@ export class UserAdminController {
   createUser(
     @Body() body: CreateUserDto,
   ): Promise<ApiResponsePayload<AdminUserResponse>> {
-    return this.userAdminService
+    return this.adminService
       .createUser(body)
       .then((user) => ApiResponse.created(user, 'Tao user thanh cong.'));
   }
@@ -63,7 +63,7 @@ export class UserAdminController {
   listUsers(
     @Query() query: ListUsersQueryDto,
   ): Promise<ApiResponsePayload<AdminUserResponse[]>> {
-    return this.userAdminService
+    return this.adminService
       .listUsers(query)
       .then((result) =>
         ApiResponse.ok(
@@ -82,7 +82,7 @@ export class UserAdminController {
     @Body() body: UpdateUserDto,
     @CurrentAuth() auth: AccessTokenPayload,
   ): Promise<ApiResponsePayload<AdminUserResponse>> {
-    return this.userAdminService
+    return this.adminService
       .updateUser(id, body, auth.user_id)
       .then((user) => ApiResponse.ok(user, 'Cap nhat user thanh cong.'));
   }
@@ -96,7 +96,7 @@ export class UserAdminController {
     @CurrentAuth() auth: AccessTokenPayload,
     @ReqContext() context: RequestContext,
   ): Promise<ApiResponsePayload<AdminUserResponse>> {
-    return this.userAdminService
+    return this.adminService
       .updateStatus(id, body.status, auth.user_id, {
         actorType: AuditActorType.USER,
         actorId: auth.user_id ?? null,

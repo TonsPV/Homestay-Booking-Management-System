@@ -1,3 +1,4 @@
+import type { AuditMetadata } from '../audit-log.types';
 import {
   Column,
   CreateDateColumn,
@@ -11,8 +12,6 @@ import {
   AuditActorType,
   AuditEntityType,
 } from '../domain/audit-log';
-
-export type AuditMetadata = Record<string, boolean | number | string | null>;
 
 @Entity('audit_logs')
 @Index('idx_audit_logs_action_created', ['action', 'createdAt'])

@@ -45,8 +45,8 @@ interface UserPayload {
 describe('User workflow (e2e)', () => {
   let app: INestApplication<App>;
   let e2eHarness: E2eHarness | undefined;
-  let usersRepository: Repository<User>;
-  let customersRepository: Repository<Customer>;
+  let userRepo: Repository<User>;
+  let customerRepo: Repository<Customer>;
   let passwordHasher: PasswordHasherService;
   let accessTokenService: AccessTokenService;
   let admin: User;
@@ -69,8 +69,8 @@ describe('User workflow (e2e)', () => {
     await app.init();
 
     const dataSource = app.get(DataSource);
-    usersRepository = dataSource.getRepository(User);
-    customersRepository = dataSource.getRepository(Customer);
+    userRepo = dataSource.getRepository(User);
+    customerRepo = dataSource.getRepository(Customer);
     passwordHasher = app.get(PasswordHasherService);
     accessTokenService = app.get(AccessTokenService);
     admin = await createDirectUser({ role: 'ADMIN' });
@@ -81,11 +81,11 @@ describe('User workflow (e2e)', () => {
       const userIds = [...new Set(createdUserIds)];
 
       if (customerIds.length > 0) {
-        await customersRepository.delete(customerIds);
+        await customerRepo.delete(customerIds);
       }
 
       if (userIds.length > 0) {
-        await usersRepository.delete(userIds);
+        await userRepo.delete(userIds);
       }
     });
   });
@@ -148,7 +148,7 @@ describe('User workflow (e2e)', () => {
     });
     const created = createResponse.body as ResponseEnvelope<UserPayload>;
     const staffId = created.data.id;
-    const staff = await usersRepository.findOneByOrFail({ id: staffId });
+    const staff = await userRepo.findOneByOrFail({ id: staffId });
     const oldToken = tokenForUser(staff);
 
     const listResponse = await request(app.getHttpServer())
@@ -185,7 +185,7 @@ describe('User workflow (e2e)', () => {
       })
       .expect(200);
     const updateBody = updateResponse.body as ResponseEnvelope<UserPayload>;
-    const updated = await usersRepository.findOneByOrFail({ id: staffId });
+    const updated = await userRepo.findOneByOrFail({ id: staffId });
 
     expect(updateBody.data).toMatchObject({
       id: staffId,
@@ -226,7 +226,7 @@ describe('User workflow (e2e)', () => {
     });
     const staffId = (createResponse.body as ResponseEnvelope<UserPayload>).data
       .id;
-    const staff = await usersRepository.findOneByOrFail({ id: staffId });
+    const staff = await userRepo.findOneByOrFail({ id: staffId });
     const preLockToken = tokenForUser(staff);
 
     await request(app.getHttpServer())
@@ -248,7 +248,7 @@ describe('User workflow (e2e)', () => {
     expect(
       (lockResponse.body as ResponseEnvelope<UserPayload>).data,
     ).toMatchObject({ id: staffId, status: 'LOCKED' });
-    const locked = await usersRepository.findOneByOrFail({ id: staffId });
+    const locked = await userRepo.findOneByOrFail({ id: staffId });
     expect(locked.tokenVersion).toBe(staff.tokenVersion + 1);
 
     await request(app.getHttpServer())
@@ -264,7 +264,7 @@ describe('User workflow (e2e)', () => {
     expect(
       (unlockResponse.body as ResponseEnvelope<UserPayload>).data,
     ).toMatchObject({ id: staffId, status: 'ACTIVE' });
-    const unlocked = await usersRepository.findOneByOrFail({ id: staffId });
+    const unlocked = await userRepo.findOneByOrFail({ id: staffId });
     expect(unlocked.tokenVersion).toBe(staff.tokenVersion + 2);
 
     await request(app.getHttpServer())
@@ -285,7 +285,7 @@ describe('User workflow (e2e)', () => {
       .set('Authorization', 'Bearer ' + adminToken)
       .send({ status: 'ACTIVE' })
       .expect(200);
-    const idempotent = await usersRepository.findOneByOrFail({ id: staffId });
+    const idempotent = await userRepo.findOneByOrFail({ id: staffId });
     expect(idempotent.tokenVersion).toBe(unlocked.tokenVersion);
   });
 
@@ -340,7 +340,7 @@ describe('User workflow (e2e)', () => {
       .map((response) => response.status)
       .sort();
     expect(raceStatuses).toEqual([201, 409]);
-    const raceUsers = await usersRepository.findBy({ email: raceEmail });
+    const raceUsers = await userRepo.findBy({ email: raceEmail });
     expect(raceUsers).toHaveLength(1);
     createdUserIds.push(firstBody.data.id, raceUsers[0].id);
   });
@@ -367,7 +367,7 @@ describe('User workflow (e2e)', () => {
     expect(responses.map((response) => response.status).sort()).toEqual([
       200, 200,
     ]);
-    const finalUser = await usersRepository.findOneByOrFail({ id: staffId });
+    const finalUser = await userRepo.findOneByOrFail({ id: staffId });
     expect(finalUser.status).toBe('LOCKED');
     expect(finalUser.tokenVersion).toBe(2);
   });
@@ -382,8 +382,8 @@ describe('User workflow (e2e)', () => {
     )
       ? overrides.passwordHash
       : await passwordHasher.hash(PASSWORD);
-    const user = await usersRepository.save(
-      usersRepository.create({
+    const user = await userRepo.save(
+      userRepo.create({
         fullName: 'User E2E Direct ' + sequence,
         email: nextEmail('direct-user-' + sequence),
         phone: null,
@@ -399,8 +399,8 @@ describe('User workflow (e2e)', () => {
   }
 
   async function createDirectCustomer(): Promise<Customer> {
-    const customer = await customersRepository.save(
-      customersRepository.create({
+    const customer = await customerRepo.save(
+      customerRepo.create({
         fullName: 'User E2E Customer',
         email: nextEmail('customer'),
         phone: '+84' + nextLocalPhone().slice(1),

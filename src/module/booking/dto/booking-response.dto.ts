@@ -4,7 +4,7 @@ import { CustomerCredentialCapabilitiesDto } from '../../customer/dto/customer-c
 import {
   BOOKING_TRANSITION_REASON_CODES,
   type BookingTransitionReasonCode,
-} from '../booking-domain-error.mapper';
+} from '../booking.types';
 import { BookingPaymentStatus, BookingStatus } from '../domain/booking-state';
 
 export class BookingCustomerDto {

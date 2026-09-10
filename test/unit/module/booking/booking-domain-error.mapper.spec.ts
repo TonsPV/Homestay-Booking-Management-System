@@ -4,7 +4,7 @@ import { ErrorCode } from '../../../../src/common/error-codes';
 import { AppHttpException } from '../../../../src/common/http/app-http-exception';
 import {
   throwMappedBookingDomainError,
-  toBookingTransitionCapabilityResponse,
+  toTransitionCapability,
 } from '../../../../src/module/booking/booking-domain-error.mapper';
 import {
   BookingCheckInTooFarError,
@@ -104,7 +104,7 @@ describe('booking domain error HTTP mapping', () => {
 
   it('keeps public transition capability reason codes unchanged', () => {
     expect(
-      toBookingTransitionCapabilityResponse({
+      toTransitionCapability({
         targetStatus: BookingStatus.CONFIRMED,
         allowed: false,
         reason: BookingTransitionDenialReason.CONFIRMATION_REQUIRES_PAYMENT,

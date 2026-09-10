@@ -2,8 +2,8 @@ import { Logger, UnauthorizedException } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
 import { type DataSource, type EntityManager, type Repository } from 'typeorm';
 
-import { TypeOrmTransactionRunner } from '../../../../src/common/infrastructure/persistence/typeorm-transaction.runner';
-import type { TransactionContext } from '../../../../src/common/application/transaction';
+import { TypeOrmTransactionRunner } from '../../../../src/common/database/typeorm-transaction.runner';
+import type { TransactionContext } from '../../../../src/common/database/transaction';
 import { TransactionalAuditLog } from '../../../../src/module/audit/ports/transactional-audit-log';
 import {
   AuditAction,
@@ -33,33 +33,38 @@ import {
   TypeOrmBookingCreationStore,
   TypeOrmBookingCustomerStore,
   TypeOrmBookingRoomStore,
-} from '../../../../src/module/booking/infrastructure/persistence/typeorm-booking-creation.store';
+} from '../../../../src/module/booking/persistence/typeorm-booking-creation.store';
 import {
   TypeOrmBookingLifecycleStore,
   TypeOrmBookingPaymentStateStore,
-} from '../../../../src/module/booking/infrastructure/persistence/typeorm-booking-lifecycle.store';
-import { TypeOrmRoomCalendarStore } from '../../../../src/module/booking/infrastructure/persistence/typeorm-room-calendar.store';
-import { TypeOrmPaymentAcceptanceStore } from '../../../../src/module/payment/infrastructure/persistence/typeorm-payment-acceptance.store';
-import { TypeOrmPaymentRefundStore } from '../../../../src/module/payment/infrastructure/persistence/typeorm-payment-refund.store';
+} from '../../../../src/module/booking/persistence/typeorm-booking-lifecycle.store';
+import { TypeOrmRoomCalendarStore } from '../../../../src/module/booking/persistence/typeorm-room-calendar.store';
+import { TypeOrmPaymentAcceptanceStore } from '../../../../src/module/payment/persistence/typeorm-payment-acceptance.store';
+import { TypeOrmPaymentRefundStore } from '../../../../src/module/payment/persistence/typeorm-payment-refund.store';
 import { RoomCalendarReservationConflictError } from '../../../../src/module/booking/ports/room-calendar.store';
 
 describe('BookingService characterization', () => {
-  let bookingsRepository: {
+  let bookingRepo: {
     createQueryBuilder: jest.Mock;
+    findOneBy: jest.Mock;
   };
   let dataSource: {
     transaction: jest.Mock;
+    getRepository: jest.Mock;
   };
   let auditRecord: jest.Mock;
+  let creationService: BookingCreationService;
   let service: BookingService;
 
   beforeEach(() => {
     jest.useFakeTimers().setSystemTime(new Date('2030-01-01T00:00:00.000Z'));
-    bookingsRepository = {
+    bookingRepo = {
       createQueryBuilder: jest.fn(),
+      findOneBy: jest.fn().mockResolvedValue(null),
     };
     dataSource = {
       transaction: jest.fn(),
+      getRepository: jest.fn().mockReturnValue(bookingRepo),
     };
     auditRecord = jest.fn().mockResolvedValue(undefined);
     const configValues: Record<string, number> = {
@@ -103,20 +108,21 @@ describe('BookingService characterization', () => {
         transactionRunner,
       ),
     );
-    service = new BookingService(
-      new BookingCreationService(
+    creationService = new BookingCreationService(
+      transactionRunner,
+      config as unknown as ConfigService,
+      new BookingStayPolicy(365),
+      new TypeOrmBookingCreationStore(
+        dataSource as unknown as DataSource,
         transactionRunner,
-        config as unknown as ConfigService,
-        new BookingStayPolicy(365),
-        new TypeOrmBookingCreationStore(
-          dataSource as unknown as DataSource,
-          transactionRunner,
-        ),
-        new TypeOrmBookingCustomerStore(transactionRunner),
-        new TypeOrmBookingRoomStore(transactionRunner),
-        new TypeOrmRoomCalendarStore(transactionRunner),
-        auditLogService,
       ),
+      new TypeOrmBookingCustomerStore(transactionRunner),
+      new TypeOrmBookingRoomStore(transactionRunner),
+      new TypeOrmRoomCalendarStore(transactionRunner),
+      auditLogService,
+    );
+    service = new BookingService(
+      creationService,
       new BookingLifecycleService(
         transactionRunner,
         new BookingTransitionPolicy(),
@@ -126,12 +132,12 @@ describe('BookingService characterization', () => {
         auditLogService,
       ),
       new BookingQueryService(
-        bookingsRepository as unknown as Repository<Booking>,
+        bookingRepo as unknown as Repository<Booking>,
         {
           existsBy: jest.fn().mockResolvedValue(false),
         } as never,
         {
-          evaluateByCustomerId: jest.fn().mockResolvedValue({
+          getCapabilitiesByCustomerId: jest.fn().mockResolvedValue({
             canSetInitialPassword: true,
             reasonCode: null,
           }),
@@ -175,7 +181,7 @@ describe('BookingService characterization', () => {
       (work: (entityManager: EntityManager) => unknown) =>
         Promise.resolve(work(manager)),
     );
-    bookingsRepository.createQueryBuilder.mockReturnValue(
+    bookingRepo.createQueryBuilder.mockReturnValue(
       createBookingQuery(savedBooking),
     );
 
@@ -250,7 +256,7 @@ describe('BookingService characterization', () => {
       (work: (entityManager: EntityManager) => unknown) =>
         Promise.resolve(work(manager)),
     );
-    bookingsRepository.createQueryBuilder.mockReturnValue(
+    bookingRepo.createQueryBuilder.mockReturnValue(
       createBookingQuery(savedBooking),
     );
 
@@ -286,18 +292,220 @@ describe('BookingService characterization', () => {
     );
   });
 
-  it('replays a committed booking for the same request identity', async () => {
+  it('replays a committed booking for the same request identity after check-in becomes past', async () => {
     const customer = customerFixture();
     const room = roomFixture();
     const savedBooking = bookingFixture({
       id: '100',
-      checkInDate: '2030-02-01',
-      checkOutDate: '2030-02-04',
+      checkInDate: '2030-01-02',
+      checkOutDate: '2030-01-04',
       totalAmount: '3000000.00',
     });
     const bookingCreate = jest.fn((value: Booking) => value);
     const bookingSave = jest.fn((value: Booking) =>
       Promise.resolve({ ...savedBooking, ...value, id: '100' }),
+    );
+    const calendarInsert = jest.fn().mockResolvedValue({ identifiers: [] });
+    const findOneBy = jest.fn().mockResolvedValue(null);
+    const manager = createManager({
+      customer,
+      room,
+      bookingCreate,
+      bookingSave,
+      calendarCreate: jest.fn((value: RoomCalendar) => value),
+      calendarInsert,
+      findOneBy,
+    });
+    dataSource.transaction.mockImplementation(
+      (work: (entityManager: EntityManager) => unknown) =>
+        Promise.resolve(work(manager)),
+    );
+    bookingRepo.createQueryBuilder.mockReturnValue(
+      createBookingQuery(savedBooking),
+    );
+
+    const body = {
+      roomId: '1',
+      checkInDate: '2030-01-02',
+      checkOutDate: '2030-01-04',
+      guestCount: 2,
+    };
+    await expect(
+      service.createForCustomer('10', body, undefined, 'booking-intent-001'),
+    ).resolves.toMatchObject({ id: '100' });
+
+    jest.setSystemTime(new Date('2030-01-05T00:00:00.000Z'));
+
+    const committed = bookingCreate.mock.results[0]?.value as Booking;
+    findOneBy.mockResolvedValue({
+      ...savedBooking,
+      requestIntentActorType: committed.requestIntentActorType,
+      requestIntentActorId: committed.requestIntentActorId,
+      requestIntentKey: committed.requestIntentKey,
+      requestIntentHash: committed.requestIntentHash,
+    });
+
+    await expect(
+      service.createForCustomer('10', body, undefined, 'booking-intent-001'),
+    ).resolves.toMatchObject({ id: '100' });
+    expect(bookingCreate).toHaveBeenCalledTimes(1);
+    expect(bookingCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        requestIntentActorType: 'CUSTOMER',
+        requestIntentActorId: '10',
+        requestIntentKey: 'booking-intent-001',
+        requestIntentHash:
+          '8e94c94469730895e0b0c83a71a708bb79a5748964cd258ea32118fc379edba1',
+      }),
+    );
+    expect(bookingSave).toHaveBeenCalledTimes(1);
+    expect(findOneBy).toHaveBeenCalledTimes(2);
+    expect(calendarInsert).toHaveBeenCalledTimes(1);
+    expect(auditRecord).toHaveBeenCalledTimes(1);
+  });
+
+  it('replays a committed management booking after check-in becomes past', async () => {
+    const customer = customerFixture();
+    const room = roomFixture();
+    const savedBooking = bookingFixture({
+      id: '101',
+      checkInDate: '2030-01-02',
+      checkOutDate: '2030-01-04',
+      totalAmount: '2000000.00',
+      createdByUserId: '20',
+    });
+    const bookingCreate = jest.fn((value: Booking) => value);
+    const bookingSave = jest.fn((value: Booking) =>
+      Promise.resolve({ ...savedBooking, ...value, id: '101' }),
+    );
+    const calendarInsert = jest.fn().mockResolvedValue({ identifiers: [] });
+    const findOneBy = jest.fn().mockResolvedValue(null);
+    const manager = createManager({
+      customer,
+      room,
+      bookingCreate,
+      bookingSave,
+      calendarCreate: jest.fn((value: RoomCalendar) => value),
+      calendarInsert,
+      findOneBy,
+    });
+    dataSource.transaction.mockImplementation(
+      (work: (entityManager: EntityManager) => unknown) =>
+        Promise.resolve(work(manager)),
+    );
+
+    const body = {
+      customerId: '10',
+      roomId: '1',
+      checkInDate: '2030-01-02',
+      checkOutDate: '2030-01-04',
+      guestCount: 2,
+    };
+    await expect(
+      creationService.createForManagement(
+        '20',
+        body,
+        undefined,
+        'management-intent-001',
+      ),
+    ).resolves.toBe('101');
+
+    jest.setSystemTime(new Date('2030-01-05T00:00:00.000Z'));
+
+    const committed = bookingCreate.mock.results[0]?.value as Booking;
+    findOneBy.mockResolvedValue({
+      ...savedBooking,
+      requestIntentActorType: committed.requestIntentActorType,
+      requestIntentActorId: committed.requestIntentActorId,
+      requestIntentKey: committed.requestIntentKey,
+      requestIntentHash: committed.requestIntentHash,
+    });
+
+    await expect(
+      creationService.createForManagement(
+        '20',
+        body,
+        undefined,
+        'management-intent-001',
+      ),
+    ).resolves.toBe('101');
+    expect(bookingCreate).toHaveBeenCalledTimes(1);
+    expect(bookingCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        requestIntentActorType: 'USER',
+        requestIntentActorId: '20',
+        requestIntentKey: 'management-intent-001',
+        requestIntentHash:
+          '6670b710a81b846b19f9d97659b111253d439dd4a4f72a321d0ed1a94ae3c69f',
+      }),
+    );
+    expect(bookingSave).toHaveBeenCalledTimes(1);
+    expect(findOneBy).toHaveBeenCalledTimes(2);
+    expect(calendarInsert).toHaveBeenCalledTimes(1);
+    expect(auditRecord).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['customer', 'management'] as const)(
+    'replays a committed %s snapshot before opening a transaction',
+    async (actor) => {
+      jest.setSystemTime(new Date('2030-01-05T00:00:00.000Z'));
+      bookingRepo.findOneBy.mockResolvedValue({
+        id: '100',
+        requestIntentHash:
+          actor === 'customer'
+            ? '8e94c94469730895e0b0c83a71a708bb79a5748964cd258ea32118fc379edba1'
+            : '6670b710a81b846b19f9d97659b111253d439dd4a4f72a321d0ed1a94ae3c69f',
+      });
+      const body = {
+        roomId: '1',
+        checkInDate: '2030-01-02',
+        checkOutDate: '2030-01-04',
+        guestCount: 2,
+      };
+      const invoke = () =>
+        actor === 'customer'
+          ? creationService.createForCustomer(
+              '10',
+              body,
+              undefined,
+              'snapshot-replay',
+            )
+          : creationService.createForManagement(
+              '20',
+              { ...body, customerId: '10' },
+              undefined,
+              'snapshot-replay',
+            );
+      await expect(invoke()).resolves.toEqual(
+        actor === 'customer' ? { customerId: '10', bookingId: '100' } : '100',
+      );
+      expect(bookingRepo.findOneBy).toHaveBeenCalledWith({
+        requestIntentActorType: actor === 'customer' ? 'CUSTOMER' : 'USER',
+        requestIntentActorId: actor === 'customer' ? '10' : '20',
+        requestIntentKey: 'snapshot-replay',
+      });
+      body.guestCount = 1;
+      await expect(invoke()).rejects.toHaveProperty(
+        'response.errorCode',
+        ErrorCode.BOOKING_REQUEST_INTENT_CONFLICT,
+      );
+      expect(dataSource.transaction).not.toHaveBeenCalled();
+      expect(auditRecord).not.toHaveBeenCalled();
+    },
+  );
+
+  it('checks request-intent conflict before rejecting a changed past stay', async () => {
+    const customer = customerFixture();
+    const room = roomFixture();
+    const savedBooking = bookingFixture({
+      id: '102',
+      checkInDate: '2030-01-02',
+      checkOutDate: '2030-01-04',
+      totalAmount: '2000000.00',
+    });
+    const bookingCreate = jest.fn((value: Booking) => value);
+    const bookingSave = jest.fn((value: Booking) =>
+      Promise.resolve({ ...savedBooking, ...value, id: '102' }),
     );
     const findOneBy = jest.fn().mockResolvedValue(null);
     const manager = createManager({
@@ -313,19 +521,21 @@ describe('BookingService characterization', () => {
       (work: (entityManager: EntityManager) => unknown) =>
         Promise.resolve(work(manager)),
     );
-    bookingsRepository.createQueryBuilder.mockReturnValue(
-      createBookingQuery(savedBooking),
-    );
 
-    const body = {
+    const originalBody = {
       roomId: '1',
-      checkInDate: '2030-02-01',
-      checkOutDate: '2030-02-04',
+      checkInDate: '2030-01-02',
+      checkOutDate: '2030-01-04',
       guestCount: 2,
     };
-    await expect(
-      service.createForCustomer('10', body, undefined, 'booking-intent-001'),
-    ).resolves.toMatchObject({ id: '100' });
+    await creationService.createForCustomer(
+      '10',
+      originalBody,
+      undefined,
+      'conflict-after-past',
+    );
+
+    jest.setSystemTime(new Date('2030-01-05T00:00:00.000Z'));
 
     const committed = bookingCreate.mock.results[0]?.value as Booking;
     findOneBy.mockResolvedValue({
@@ -337,10 +547,51 @@ describe('BookingService characterization', () => {
     });
 
     await expect(
-      service.createForCustomer('10', body, undefined, 'booking-intent-001'),
-    ).resolves.toMatchObject({ id: '100' });
+      creationService.createForCustomer(
+        '10',
+        { ...originalBody, guestCount: 1 },
+        undefined,
+        'conflict-after-past',
+      ),
+    ).rejects.toHaveProperty(
+      'response.errorCode',
+      ErrorCode.BOOKING_REQUEST_INTENT_CONFLICT,
+    );
     expect(bookingCreate).toHaveBeenCalledTimes(1);
-    expect(findOneBy).toHaveBeenCalledTimes(2);
+  });
+
+  it('rejects a new request intent for a past stay without creating a booking', async () => {
+    const bookingCreate = jest.fn();
+    const manager = createManager({
+      customer: customerFixture(),
+      room: roomFixture(),
+      bookingCreate,
+      bookingSave: jest.fn(),
+      calendarCreate: jest.fn(),
+      calendarInsert: jest.fn(),
+    });
+    dataSource.transaction.mockImplementation(
+      (work: (entityManager: EntityManager) => unknown) =>
+        Promise.resolve(work(manager)),
+    );
+
+    await expect(
+      creationService.createForCustomer(
+        '10',
+        {
+          roomId: '1',
+          checkInDate: '2029-12-31',
+          checkOutDate: '2030-01-02',
+          guestCount: 1,
+        },
+        undefined,
+        'new-past-intent',
+      ),
+    ).rejects.toHaveProperty(
+      'response.errorCode',
+      ErrorCode.BOOKING_CHECKIN_IN_PAST,
+    );
+    expect(bookingCreate).not.toHaveBeenCalled();
   });
 
   it('rejects a booking whose guest count exceeds room capacity', async () => {
@@ -590,9 +841,7 @@ describe('BookingService characterization', () => {
       (work: (entityManager: EntityManager) => unknown) =>
         Promise.resolve(work(manager)),
     );
-    bookingsRepository.createQueryBuilder.mockReturnValue(
-      createBookingQuery(booking),
-    );
+    bookingRepo.createQueryBuilder.mockReturnValue(createBookingQuery(booking));
 
     await service.updateStatus('100', {
       status: BookingStatus.CHECKED_IN,
@@ -613,9 +862,7 @@ describe('BookingService characterization', () => {
       (work: (entityManager: EntityManager) => unknown) =>
         Promise.resolve(work(manager)),
     );
-    bookingsRepository.createQueryBuilder.mockReturnValue(
-      createBookingQuery(booking),
-    );
+    bookingRepo.createQueryBuilder.mockReturnValue(createBookingQuery(booking));
 
     await service.updateStatus(
       '100',
@@ -653,9 +900,7 @@ describe('BookingService characterization', () => {
       (work: (entityManager: EntityManager) => unknown) =>
         Promise.resolve(work(manager)),
     );
-    bookingsRepository.createQueryBuilder.mockReturnValue(
-      createBookingQuery(booking),
-    );
+    bookingRepo.createQueryBuilder.mockReturnValue(createBookingQuery(booking));
 
     await service.updateStatus(
       '100',
@@ -728,9 +973,7 @@ describe('BookingService characterization', () => {
       (work: (entityManager: EntityManager) => unknown) =>
         Promise.resolve(work(manager)),
     );
-    bookingsRepository.createQueryBuilder.mockReturnValue(
-      createBookingQuery(booking),
-    );
+    bookingRepo.createQueryBuilder.mockReturnValue(createBookingQuery(booking));
 
     await service.updateStatus('100', {
       status: BookingStatus.CHECKED_OUT,
@@ -756,9 +999,7 @@ describe('BookingService characterization', () => {
       (work: (entityManager: EntityManager) => unknown) =>
         Promise.resolve(work(manager)),
     );
-    bookingsRepository.createQueryBuilder.mockReturnValue(
-      createBookingQuery(booking),
-    );
+    bookingRepo.createQueryBuilder.mockReturnValue(createBookingQuery(booking));
 
     await service.updateStatus('100', {
       status: BookingStatus.CHECKED_OUT,
@@ -820,9 +1061,7 @@ describe('BookingService characterization', () => {
       (work: (entityManager: EntityManager) => unknown) =>
         Promise.resolve(work(manager)),
     );
-    bookingsRepository.createQueryBuilder.mockReturnValue(
-      createBookingQuery(booking),
-    );
+    bookingRepo.createQueryBuilder.mockReturnValue(createBookingQuery(booking));
 
     await service.updateStatus(
       '100',
@@ -875,9 +1114,7 @@ describe('BookingService characterization', () => {
       (work: (entityManager: EntityManager) => unknown) =>
         Promise.resolve(work(manager)),
     );
-    bookingsRepository.createQueryBuilder.mockReturnValue(
-      createBookingQuery(booking),
-    );
+    bookingRepo.createQueryBuilder.mockReturnValue(createBookingQuery(booking));
 
     await service.cancelForCustomer(
       '10',
@@ -930,7 +1167,7 @@ describe('BookingService characterization', () => {
         Promise.resolve(work(manager)),
     );
 
-    await expect(service.expirePendingPayments(now)).resolves.toBe(2);
+    await expect(service.expireUnpaidBookings(now)).resolves.toBe(2);
     expect(expired).toEqual([
       expect.objectContaining({
         status: BookingStatus.CANCELLED,
@@ -987,7 +1224,7 @@ describe('BookingService characterization', () => {
         Promise.resolve(work(manager)),
     );
 
-    await expect(service.expirePendingPayments()).resolves.toBe(0);
+    await expect(service.expireUnpaidBookings()).resolves.toBe(0);
     expect(bookingSave).not.toHaveBeenCalled();
     expect(calendarDelete).not.toHaveBeenCalled();
     expect(paymentExecute).not.toHaveBeenCalled();
@@ -1173,6 +1410,12 @@ function bookingFixture(overrides: Partial<Booking> = {}): Booking {
     totalAmount: '2000000.00',
     status: BookingStatus.PENDING_PAYMENT,
     paymentStatus: BookingPaymentStatus.UNPAID,
+    acceptedPaymentId: null,
+    acceptedPayment: null,
+    requestIntentActorType: null,
+    requestIntentActorId: null,
+    requestIntentKey: null,
+    requestIntentHash: null,
     paymentExpiresAt: new Date('2030-01-01T00:15:00.000Z'),
     customerNote: null,
     cancelledAt: null,

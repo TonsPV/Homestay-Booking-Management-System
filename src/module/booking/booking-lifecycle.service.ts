@@ -9,7 +9,7 @@ import {
 import {
   type TransactionContext,
   TransactionRunner,
-} from '../../common/application/transaction';
+} from '../../common/database/transaction';
 import { ErrorCode } from '../../common/error-codes';
 import { AppHttpException } from '../../common/http/app-http-exception';
 import { optionalNullableTrimmedString } from '../../common/validation';
@@ -45,10 +45,10 @@ import { BookingStatus } from './domain/booking-state';
 export class BookingLifecycleService {
   constructor(
     private readonly transactions: TransactionRunner,
-    private readonly bookingTransitionPolicy: BookingTransitionPolicy,
+    private readonly transitionPolicy: BookingTransitionPolicy,
     private readonly lifecycle: BookingPaymentLifecycleService,
     private readonly bookings: BookingLifecycleStore,
-    private readonly bookingPayments: BookingPaymentStateStore,
+    private readonly payments: BookingPaymentStateStore,
     private readonly auditLog: TransactionalAuditLog,
   ) {}
 
@@ -68,7 +68,7 @@ export class BookingLifecycleService {
       ) ?? null;
 
     await this.transactions.run(async (transaction) => {
-      const booking = await this.getLockedBooking(transaction, id);
+      const booking = await this.lockBooking(transaction, id);
 
       if (booking.customerId !== activeCustomerId) {
         throw new NotFoundException('Khong tim thay booking.');
@@ -105,43 +105,39 @@ export class BookingLifecycleService {
     context?: BookingAuditContext,
   ): Promise<void> {
     this.validateId(id, 'Booking id khong hop le.');
-    const status = this.requireBookingStatus(body.status);
-    const cancellationReason = this.normalizeManagementCancellationReason(
+    const status = this.requireStatus(body.status);
+    const cancellationReason = this.normalizeCancelReason(
       body.cancellationReason,
     );
 
     await this.transactions.run(async (transaction) => {
-      const booking = await this.getLockedBooking(transaction, id);
+      const booking = await this.lockBooking(transaction, id);
 
       if (booking.status === status) {
         return;
       }
 
       const fromStatus = booking.status;
-      const refundPending = await this.bookingPayments.hasPendingRefund(
+      const refundPending = await this.payments.hasPendingRefund(
         transaction,
         booking.id,
       );
-      const room = await this.getLockedRoomForTransition(
+      const room = await this.lockRoomForTransition(
         transaction,
         booking,
         status,
       );
-      const capability = this.bookingTransitionPolicy.evaluate(
-        booking,
-        status,
-        {
-          refundPending,
-          roomExists:
-            status === BookingStatus.CHECKED_IN ||
-            status === BookingStatus.CHECKED_OUT
-              ? room !== null
-              : undefined,
-          roomStatus: room?.status,
-        },
-      );
+      const capability = this.transitionPolicy.evaluate(booking, status, {
+        refundPending,
+        roomExists:
+          status === BookingStatus.CHECKED_IN ||
+          status === BookingStatus.CHECKED_OUT
+            ? room !== null
+            : undefined,
+        roomStatus: room?.status,
+      });
       try {
-        this.bookingTransitionPolicy.assertAllowed(booking, capability);
+        this.transitionPolicy.assertAllowed(booking, capability);
       } catch (error) {
         throwMappedBookingDomainError(error);
       }
@@ -186,7 +182,7 @@ export class BookingLifecycleService {
         return;
       }
 
-      await this.applyRoomStayTransition(transaction, booking, status, room);
+      await this.applyRoomTransition(transaction, booking, status, room);
 
       booking.status = status;
       booking.paymentExpiresAt = null;
@@ -203,11 +199,11 @@ export class BookingLifecycleService {
     });
   }
 
-  async expirePendingPayments(now = new Date()): Promise<number> {
-    return this.lifecycle.expirePendingPayments(now);
+  async expireUnpaidBookings(now = new Date()): Promise<number> {
+    return this.lifecycle.expireUnpaidBookings(now);
   }
 
-  private async getLockedBooking(
+  private async lockBooking(
     context: TransactionContext,
     id: string,
   ): Promise<Booking> {
@@ -220,7 +216,7 @@ export class BookingLifecycleService {
     return booking;
   }
 
-  private async getLockedRoomForTransition(
+  private async lockRoomForTransition(
     context: TransactionContext,
     booking: Booking,
     nextStatus: BookingStatus,
@@ -259,7 +255,7 @@ export class BookingLifecycleService {
     });
   }
 
-  private async applyRoomStayTransition(
+  private async applyRoomTransition(
     context: TransactionContext,
     booking: Booking,
     nextStatus: BookingStatus,
@@ -300,13 +296,13 @@ export class BookingLifecycleService {
     await this.bookings.saveRoomState(context, room);
   }
 
-  private normalizeManagementCancellationReason(value: unknown): string | null {
+  private normalizeCancelReason(value: unknown): string | null {
     if (value === undefined || value === null || value === '') {
       return null;
     }
 
     if (typeof value !== 'string') {
-      this.throwCancellationReasonValidation('Ly do huy booking khong hop le.');
+      this.rejectCancelReason('Ly do huy booking khong hop le.');
     }
 
     const cancellationReason = value.trim();
@@ -316,7 +312,7 @@ export class BookingLifecycleService {
     }
 
     if (cancellationReason.length > 500) {
-      this.throwCancellationReasonValidation(
+      this.rejectCancelReason(
         'Ly do huy booking khong duoc vuot qua 500 ky tu.',
       );
     }
@@ -324,7 +320,7 @@ export class BookingLifecycleService {
     return cancellationReason;
   }
 
-  private throwCancellationReasonValidation(message: string): never {
+  private rejectCancelReason(message: string): never {
     throw new AppHttpException(
       HttpStatus.BAD_REQUEST,
       ErrorCode.COMMON_VALIDATION_FAILED,
@@ -342,8 +338,8 @@ export class BookingLifecycleService {
     );
   }
 
-  private requireBookingStatus(value: unknown): BookingStatus {
-    const status = this.optionalBookingStatus(value);
+  private requireStatus(value: unknown): BookingStatus {
+    const status = this.optionalStatus(value);
 
     if (status === undefined) {
       throw new BadRequestException('Trang thai booking khong hop le.');
@@ -352,7 +348,7 @@ export class BookingLifecycleService {
     return status;
   }
 
-  private optionalBookingStatus(value: unknown): BookingStatus | undefined {
+  private optionalStatus(value: unknown): BookingStatus | undefined {
     if (value === undefined || value === null || value === '') {
       return undefined;
     }

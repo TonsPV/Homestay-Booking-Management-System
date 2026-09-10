@@ -1,5 +1,6 @@
 import { type INestApplication } from '@nestjs/common';
 import { Test, type TestingModule } from '@nestjs/testing';
+import { ConfigService } from '@nestjs/config';
 import { DataSource, type Repository } from 'typeorm';
 import request from 'supertest';
 import type { App } from 'supertest/types';
@@ -15,6 +16,13 @@ import {
   BookingStatus,
 } from '../../src/module/booking/domain/booking-state';
 import { RoomCalendar } from '../../src/module/booking/schema/room-calendar.entity';
+import { Booking } from '../../src/module/booking/schema/booking.entity';
+import { BookingCustomerStore } from '../../src/module/booking/ports/booking-creation.store';
+import { AuditLog } from '../../src/module/audit/schema/audit-log.entity';
+import {
+  AuditActorType,
+  AuditEntityType,
+} from '../../src/module/audit/domain/audit-log';
 import { Customer } from '../../src/module/customer/schema/customer.entity';
 import { Room } from '../../src/module/room/schema/room.entity';
 import { RoomStatus } from '../../src/module/room/domain/room-status';
@@ -461,6 +469,139 @@ describe('Booking create/query workflow (e2e)', () => {
       })
       .expect(400);
   });
+
+  it.each(['count', 'nights', 'same-key'] as const)(
+    'serializes same-customer admission at the %s boundary with request identities',
+    async (scenario) => {
+      const room = await createRoom('Quota ' + scenario);
+      const customer = await createCustomer('quota-' + scenario);
+      const token = signCustomer(customer);
+      const config = app.get(ConfigService);
+      const countLimit = config.getOrThrow<number>(
+        'BOOKING_MAX_ACTIVE_UNPAID_PER_CUSTOMER',
+      );
+      const nightLimit = config.getOrThrow<number>(
+        'BOOKING_MAX_HELD_NIGHTS_PER_CUSTOMER',
+      );
+      let offset = 2;
+      const stay = (nights: number) => {
+        const date = (days: number) =>
+          new Date(Date.now() + days * 86400000).toISOString().slice(0, 10);
+        const body = {
+          roomId: room.id,
+          checkInDate: date(offset),
+          checkOutDate: date(offset + nights),
+          guestCount: 1,
+        };
+        offset += nights + 1;
+        return body;
+      };
+      const submit = (body: ReturnType<typeof stay>, key: string) =>
+        request(app.getHttpServer())
+          .post('/api/v1/bookings')
+          .set('Authorization', 'Bearer ' + token)
+          .set('Idempotency-Key', key)
+          .send(body);
+      const initialCount = scenario === 'nights' ? 1 : countLimit - 1;
+      const initialNights =
+        scenario === 'nights' ? nightLimit - 1 : initialCount;
+      for (let i = 0; i < initialCount; i += 1) {
+        await submit(
+          stay(scenario === 'nights' ? initialNights : 1),
+          `quota-${customer.id}-initial-${i}`,
+        ).expect(201);
+      }
+
+      // Both real transactions reach the customer lock before either proceeds.
+      // An earlier non-locking intent read must not freeze admission's snapshot.
+      const customerStore = app.get(BookingCustomerStore);
+      const findById = customerStore.findById.bind(customerStore);
+      let arrivals = 0;
+      let release!: () => void;
+      let rejectBarrier!: (error: Error) => void;
+      const barrier = new Promise<void>((resolve, reject) => {
+        release = resolve;
+        rejectBarrier = reject;
+      });
+      const timer = setTimeout(
+        () =>
+          rejectBarrier(
+            new Error('Concurrent requests did not reach customer lock'),
+          ),
+        5000,
+      );
+      const spy = jest
+        .spyOn(customerStore, 'findById')
+        .mockImplementation(async (context, id, lock) => {
+          if (id === customer.id && lock) {
+            arrivals += 1;
+            if (arrivals === 2) release();
+            await barrier;
+          }
+          return findById(context, id, lock);
+        });
+      const firstBody = stay(1);
+      const secondBody = scenario === 'same-key' ? firstBody : stay(1);
+      const firstKey = `quota-${customer.id}-concurrent-a`;
+      try {
+        const responses = await Promise.all([
+          submit(firstBody, firstKey),
+          submit(
+            secondBody,
+            scenario === 'same-key'
+              ? firstKey
+              : `quota-${customer.id}-concurrent-b`,
+          ),
+        ]);
+        expect(responses.map((response) => response.status).sort()).toEqual(
+          scenario === 'same-key' ? [201, 201] : [201, 409],
+        );
+        if (scenario === 'same-key') {
+          expect((responses[0].body as Envelope<BookingPayload>).data.id).toBe(
+            (responses[1].body as Envelope<BookingPayload>).data.id,
+          );
+          const replay = await submit(firstBody, firstKey).expect(201);
+          expect((replay.body as Envelope<BookingPayload>).data.id).toBe(
+            (responses[0].body as Envelope<BookingPayload>).data.id,
+          );
+          const conflict = await submit(
+            { ...firstBody, guestCount: 2 },
+            firstKey,
+          ).expect(409);
+          expect(conflict.body).toMatchObject({
+            errorCode: ErrorCode.BOOKING_REQUEST_INTENT_CONFLICT,
+          });
+        } else {
+          expect(
+            responses.find((response) => response.status === 409)?.body,
+          ).toMatchObject({
+            errorCode:
+              scenario === 'count'
+                ? ErrorCode.BOOKING_ACTIVE_UNPAID_LIMIT_REACHED
+                : ErrorCode.BOOKING_HELD_NIGHTS_LIMIT_REACHED,
+          });
+        }
+        expect(
+          await dataSource
+            .getRepository(Booking)
+            .countBy({ customerId: customer.id }),
+        ).toBe(initialCount + 1);
+        expect(await calendars.countBy({ roomId: room.id })).toBe(
+          initialNights + 1,
+        );
+        expect(
+          await dataSource.getRepository(AuditLog).countBy({
+            actorId: customer.id,
+            actorType: AuditActorType.CUSTOMER,
+            entityType: AuditEntityType.BOOKING,
+          }),
+        ).toBe(initialCount + 1);
+      } finally {
+        clearTimeout(timer);
+        spy.mockRestore();
+      }
+    },
+  );
 
   it('allows only one overlapping online booking under concurrency', async () => {
     const room = await createRoom('Concurrent');

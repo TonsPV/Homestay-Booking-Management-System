@@ -1,9 +1,9 @@
-import type { TransactionContext } from '../../../common/application/transaction';
-import type { RecordAuditLogInput } from '../audit-log.types';
+import type { TransactionContext } from '../../../common/database/transaction';
+import type { AuditLogInput } from '../audit-log.types';
 
 export abstract class TransactionalAuditLog {
   abstract record(
     context: TransactionContext,
-    input: RecordAuditLogInput,
+    input: AuditLogInput,
   ): Promise<void>;
 }

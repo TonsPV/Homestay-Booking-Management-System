@@ -5,14 +5,17 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import type { EntityManager } from 'typeorm';
-import { IsNull, Repository } from 'typeorm';
+import { type EntityManager, IsNull, Repository } from 'typeorm';
 
 import { getMysqlDuplicateKey } from '../../common/database';
-import type { UserRole } from '../../common/domain/account.enums';
+import type { UserRole } from '../../common/account/account.enums';
 import {
+  optionalEnumValue,
+  optionalId,
   optionalNullableTrimmedString,
   optionalTrimmedString,
+  requireEnumValue,
+  requireId,
   requireTrimmedString,
 } from '../../common/validation';
 import {
@@ -28,8 +31,11 @@ import type { UpdateRoomStatusDto } from './dto/update-room-status.dto';
 import type { UpdateRoomDto } from './dto/update-room.dto';
 import { RoomImageStorageService } from './room-image-storage.service';
 import { RoomQueryService } from './room-query.service';
-import { RoomStatusTransitionPolicy } from './domain/room-status-transition.policy';
-import type { RoomStatusTransitionContext } from './domain/room-status-transition.policy';
+import {
+  RoomStatusTransitionPolicy,
+  type RoomStatusTransitionContext,
+} from './domain/room-status-transition.policy';
+
 import { throwMappedRoomDomainError } from './room-domain-error.mapper';
 import { Room } from './schema/room.entity';
 import { RoomStatus } from './domain/room-status';
@@ -39,20 +45,17 @@ import type { RoomResponse } from './room.types';
 export class RoomMutationService {
   constructor(
     @InjectRepository(Room)
-    private readonly roomsRepository: Repository<Room>,
+    private readonly roomRepo: Repository<Room>,
     @InjectRepository(RoomType)
-    private readonly roomTypesRepository: Repository<RoomType>,
-    private readonly roomImageStorage: RoomImageStorageService,
-    private readonly roomQueryService: RoomQueryService,
-    private readonly roomStatusTransitionPolicy: RoomStatusTransitionPolicy,
+    private readonly roomTypeRepo: Repository<RoomType>,
+    private readonly imageStorage: RoomImageStorageService,
+    private readonly roomQuery: RoomQueryService,
+    private readonly statusPolicy: RoomStatusTransitionPolicy,
     private readonly auditLogService: AuditLogService,
   ) {}
 
   async create(body: CreateRoomDto): Promise<RoomResponse> {
-    const roomTypeId = this.requireId(
-      body.roomTypeId,
-      'Room type id khong hop le.',
-    );
+    const roomTypeId = requireId(body.roomTypeId, 'Room type');
     const roomNumber = requireTrimmedString(
       body.roomNumber,
       'So phong khong hop le.',
@@ -69,9 +72,14 @@ export class RoomMutationService {
         'Mo ta khong hop le.',
         10000,
       ) ?? null;
-    const status = this.optionalStatus(body.status) ?? RoomStatus.READY;
+    const status =
+      optionalEnumValue(
+        body.status,
+        RoomStatus,
+        'Trang thai phong khong hop le.',
+      ) ?? RoomStatus.READY;
 
-    this.assertStatusTransitionAllowed({
+    this.assertTransitionAllowed({
       currentStatus: RoomStatus.READY,
       nextStatus: status,
       role: 'ADMIN',
@@ -79,17 +87,13 @@ export class RoomMutationService {
     });
 
     try {
-      const roomId = await this.roomsRepository.manager.transaction(
+      const roomId = await this.roomRepo.manager.transaction(
         async (manager) => {
-          await this.getLockedActiveRoomType(manager, roomTypeId);
-          await this.ensureRoomNumberIsAvailable(
-            roomNumber,
-            undefined,
-            manager,
-          );
+          await this.lockActiveRoomType(manager, roomTypeId);
+          await this.assertNumberAvailable(roomNumber, undefined, manager);
 
-          const roomsRepository = manager.getRepository(Room);
-          const room = roomsRepository.create({
+          const roomRepo = manager.getRepository(Room);
+          const room = roomRepo.create({
             roomTypeId,
             roomNumber,
             name,
@@ -97,22 +101,19 @@ export class RoomMutationService {
             status,
           });
 
-          return (await roomsRepository.save(room)).id;
+          return (await roomRepo.save(room)).id;
         },
       );
 
-      return this.roomQueryService.getAdminRoom(roomId);
+      return this.roomQuery.getAdminRoom(roomId);
     } catch (error) {
-      this.throwRoomDuplicateConflict(error);
+      this.throwDuplicateConflict(error);
     }
   }
 
   async update(id: string, body: UpdateRoomDto): Promise<RoomResponse> {
-    this.validateId(id);
-    const roomTypeId = this.optionalId(
-      body.roomTypeId,
-      'Room type id khong hop le.',
-    );
+    requireId(id, '');
+    const roomTypeId = optionalId(body.roomTypeId, 'Room type');
     const roomNumber = optionalTrimmedString(
       body.roomNumber,
       'So phong khong hop le.',
@@ -146,24 +147,20 @@ export class RoomMutationService {
     } = {};
 
     try {
-      const roomId = await this.roomsRepository.manager.transaction(
+      const roomId = await this.roomRepo.manager.transaction(
         async (manager) => {
           if (roomTypeId !== undefined) {
-            await this.getLockedActiveRoomType(manager, roomTypeId);
+            await this.lockActiveRoomType(manager, roomTypeId);
           }
 
-          const room = await this.getLockedRoomForMutation(manager, id);
+          const room = await this.lockActiveRoomForMutation(manager, id);
 
           if (roomTypeId !== undefined) {
             changes.roomTypeId = roomTypeId;
           }
 
           if (roomNumber !== undefined) {
-            await this.ensureRoomNumberIsAvailable(
-              roomNumber,
-              room.id,
-              manager,
-            );
+            await this.assertNumberAvailable(roomNumber, room.id, manager);
             changes.roomNumber = roomNumber;
           }
 
@@ -175,11 +172,11 @@ export class RoomMutationService {
             changes.description = description;
           }
 
-          const result = await manager
+          const updateResult = await manager
             .getRepository(Room)
             .update({ id: room.id, deletedAt: IsNull() }, changes);
 
-          if (result.affected !== 1) {
+          if (updateResult.affected !== 1) {
             throw new ConflictException(
               'Phong da thay doi. Vui long tai lai va thu lai.',
             );
@@ -189,39 +186,39 @@ export class RoomMutationService {
         },
       );
 
-      return this.roomQueryService.getAdminRoom(roomId);
+      return this.roomQuery.getAdminRoom(roomId);
     } catch (error) {
-      this.throwRoomDuplicateConflict(error);
+      this.throwDuplicateConflict(error);
     }
   }
 
   async delete(id: string): Promise<RoomResponse> {
-    this.validateId(id);
-    const result = await this.roomsRepository.manager.transaction(
+    requireId(id, '');
+    const deletionResult = await this.roomRepo.manager.transaction(
       async (manager) => {
-        const room = await this.getLockedAdminRoomEntity(manager, id);
+        const room = await this.lockAdminRoom(manager, id);
 
-        if (await this.hasHistory(room.id, manager)) {
+        if (await this.hasRoomHistory(room.id, manager)) {
           throw new ConflictException(
             'Phong da co lich su dat phong. Hay chuyen trang thai sang HIDDEN.',
           );
         }
 
-        const response = this.roomQueryService.toResponse(room);
+        const roomResponse = this.roomQuery.toManagementResponse(room);
         const imageUrls = room.images.map((image) => image.imageUrl);
 
         await manager.getRepository(Room).remove(room);
 
-        return { imageUrls, response };
+        return { imageUrls, roomResponse };
       },
     );
     await Promise.all(
-      result.imageUrls.map((imageUrl) =>
-        this.roomImageStorage.deleteManaged(imageUrl),
+      deletionResult.imageUrls.map((imageUrl) =>
+        this.imageStorage.deleteManaged(imageUrl),
       ),
     );
 
-    return result.response;
+    return deletionResult.roomResponse;
   }
 
   async updateStatus(
@@ -230,9 +227,13 @@ export class RoomMutationService {
     role: UserRole | undefined,
     auditContext: AuditActorContext,
   ): Promise<RoomResponse> {
-    this.validateId(id);
-    const status = this.requireStatus(body.status);
-    const roomId = await this.roomsRepository.manager.transaction(
+    requireId(id, '');
+    const status = requireEnumValue(
+      body.status,
+      RoomStatus,
+      'Trang thai phong khong hop le.',
+    );
+    const roomId = await this.roomRepo.manager.transaction(
       // A no-match locking read must not gap-lock new Booking inserts while
       // this transaction waits for the Room row.
       'READ COMMITTED',
@@ -241,9 +242,9 @@ export class RoomMutationService {
         // CONFIRMED/CHECKED_IN candidate closes the race where a check-in and
         // a manual Room transition start at the same time.
         const hasCheckedInBooking = await this.lockStayBookings(manager, id);
-        const room = await this.getLockedRoomForStatus(manager, id);
+        const room = await this.lockRoomForStatusChange(manager, id);
 
-        this.assertStatusTransitionAllowed({
+        this.assertTransitionAllowed({
           currentStatus: room.status,
           nextStatus: status,
           role,
@@ -254,7 +255,7 @@ export class RoomMutationService {
           return room.id;
         }
 
-        const result = await manager.getRepository(Room).update(
+        const updateResult = await manager.getRepository(Room).update(
           {
             id: room.id,
             status: room.status,
@@ -263,7 +264,7 @@ export class RoomMutationService {
           { status },
         );
 
-        if (result.affected !== 1) {
+        if (updateResult.affected !== 1) {
           throw new ConflictException(
             'Trang thai phong da thay doi. Vui long tai lai va thu lai.',
           );
@@ -284,14 +285,12 @@ export class RoomMutationService {
       },
     );
 
-    return this.roomQueryService.getAdminRoom(roomId);
+    return this.roomQuery.getAdminRoom(roomId);
   }
 
-  private assertStatusTransitionAllowed(
-    context: RoomStatusTransitionContext,
-  ): void {
+  private assertTransitionAllowed(context: RoomStatusTransitionContext): void {
     try {
-      this.roomStatusTransitionPolicy.assertAllowed(context);
+      this.statusPolicy.assertAllowed(context);
     } catch (error) {
       throwMappedRoomDomainError(error);
     }
@@ -318,7 +317,7 @@ export class RoomMutationService {
     );
   }
 
-  private async getLockedRoomForStatus(
+  private async lockRoomForStatusChange(
     manager: EntityManager,
     id: string,
   ): Promise<Room> {
@@ -337,7 +336,7 @@ export class RoomMutationService {
     return room;
   }
 
-  private async getLockedAdminRoomEntity(
+  private async lockAdminRoom(
     manager: EntityManager,
     id: string,
   ): Promise<Room> {
@@ -367,7 +366,7 @@ export class RoomMutationService {
     return room;
   }
 
-  private async getLockedActiveRoomType(
+  private async lockActiveRoomType(
     manager: EntityManager,
     id: string,
   ): Promise<RoomType> {
@@ -386,7 +385,7 @@ export class RoomMutationService {
     return roomType;
   }
 
-  private async getLockedRoomForMutation(
+  private async lockActiveRoomForMutation(
     manager: EntityManager,
     id: string,
   ): Promise<Room> {
@@ -405,10 +404,10 @@ export class RoomMutationService {
     return room;
   }
 
-  private async ensureRoomNumberIsAvailable(
+  private async assertNumberAvailable(
     roomNumber: string,
     currentRoomId?: string,
-    manager: EntityManager = this.roomsRepository.manager,
+    manager: EntityManager = this.roomRepo.manager,
   ): Promise<void> {
     const query = manager
       .getRepository(Room)
@@ -427,9 +426,9 @@ export class RoomMutationService {
     }
   }
 
-  private async hasHistory(
+  private async hasRoomHistory(
     roomId: string,
-    manager: EntityManager = this.roomsRepository.manager,
+    manager: EntityManager = this.roomRepo.manager,
   ): Promise<boolean> {
     const [booking, calendarEntry] = await Promise.all([
       manager
@@ -451,58 +450,7 @@ export class RoomMutationService {
     return booking != null || calendarEntry != null;
   }
 
-  private requireId(value: unknown, message: string): string {
-    if (typeof value !== 'string' && typeof value !== 'number') {
-      throw new BadRequestException(message);
-    }
-
-    const id = String(value);
-
-    if (!/^[1-9][0-9]*$/.test(id)) {
-      throw new BadRequestException(message);
-    }
-
-    return id;
-  }
-
-  private optionalId(value: unknown, message: string): string | undefined {
-    if (value === undefined || value === null || value === '') {
-      return undefined;
-    }
-
-    return this.requireId(value, message);
-  }
-
-  private validateId(id: string): void {
-    this.requireId(id, 'Id khong hop le.');
-  }
-
-  private requireStatus(value: unknown): RoomStatus {
-    const status = this.optionalStatus(value);
-
-    if (status === undefined) {
-      throw new BadRequestException('Trang thai phong khong hop le.');
-    }
-
-    return status;
-  }
-
-  private optionalStatus(value: unknown): RoomStatus | undefined {
-    if (value === undefined || value === null || value === '') {
-      return undefined;
-    }
-
-    if (
-      typeof value !== 'string' ||
-      !Object.values(RoomStatus).includes(value as RoomStatus)
-    ) {
-      throw new BadRequestException('Trang thai phong khong hop le.');
-    }
-
-    return value as RoomStatus;
-  }
-
-  private throwRoomDuplicateConflict(error: unknown): never {
+  private throwDuplicateConflict(error: unknown): never {
     if (getMysqlDuplicateKey(error) === undefined) {
       throw error;
     }

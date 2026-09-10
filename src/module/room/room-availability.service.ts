@@ -5,7 +5,10 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 
-import { TransactionRunner } from '../../common/application/transaction';
+import { TransactionRunner } from '../../common/database/transaction';
+import { TransactionalAuditLog } from '../audit/ports/transactional-audit-log';
+import type { AuditActorContext } from '../audit/audit-log.types';
+import { AuditAction, AuditEntityType } from '../audit/domain/audit-log';
 import { requireTrimmedString } from '../../common/validation';
 import { RoomCalendar } from '../booking/schema/room-calendar.entity';
 import { RoomCalendarStatus } from '../booking/domain/room-calendar-status';
@@ -39,6 +42,7 @@ export class RoomAvailabilityService {
   constructor(
     private readonly transactions: TransactionRunner,
     private readonly roomCalendar: RoomCalendarManagementStore,
+    private readonly auditLog: TransactionalAuditLog,
   ) {}
 
   async list(
@@ -60,6 +64,7 @@ export class RoomAvailabilityService {
   async block(
     roomId: string,
     body: BlockRoomDatesDto,
+    actor: AuditActorContext,
   ): Promise<RoomCalendarEntryResponse[]> {
     this.validateRoomId(roomId);
     const range = this.requireDateRange(body.from, body.to);
@@ -83,6 +88,18 @@ export class RoomAvailabilityService {
           range,
         );
 
+        await this.auditLog.record(transaction, {
+          ...actor,
+          action: AuditAction.ROOM_CALENDAR_BLOCKED,
+          entityType: AuditEntityType.ROOM,
+          entityId: roomId,
+          metadata: {
+            schemaVersion: 1,
+            ...range,
+            reason,
+            addedCount: savedEntries.length,
+          },
+        });
         return savedEntries.map((entry) => this.toResponse(entry));
       });
     } catch (error) {
@@ -93,6 +110,7 @@ export class RoomAvailabilityService {
   async unblock(
     roomId: string,
     query: RoomCalendarRangeQueryDto,
+    actor: AuditActorContext,
   ): Promise<UnblockRoomDatesResponse> {
     this.validateRoomId(roomId);
     const range = this.requireDateRange(query.from, query.to);
@@ -102,13 +120,21 @@ export class RoomAvailabilityService {
         throw new NotFoundException('Khong tim thay phong.');
       }
 
-      return {
-        removedCount: await this.roomCalendar.unblockDates(
-          transaction,
-          roomId,
-          range,
-        ),
-      };
+      const removedCount = await this.roomCalendar.unblockDates(
+        transaction,
+        roomId,
+        range,
+      );
+      if (removedCount > 0) {
+        await this.auditLog.record(transaction, {
+          ...actor,
+          action: AuditAction.ROOM_CALENDAR_UNBLOCKED,
+          entityType: AuditEntityType.ROOM,
+          entityId: roomId,
+          metadata: { schemaVersion: 1, ...range, removedCount },
+        });
+      }
+      return { removedCount };
     });
   }
 

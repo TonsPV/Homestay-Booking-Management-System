@@ -59,7 +59,7 @@ export const ERROR_CODE_HTTP_STATUS = {
   [ErrorCode.PAYMENT_IDEMPOTENCY_KEY_CONFLICT]: HttpStatus.CONFLICT,
 } as const satisfies Record<ErrorCodeType, HttpStatus>;
 
-const FALLBACK_ERROR_CODE_HTTP_STATUSES: Partial<
+const FALLBACK_HTTP_STATUSES: Partial<
   Record<ErrorCodeType, readonly number[]>
 > = {
   [ErrorCode.COMMON_VALIDATION_FAILED]: [400, 422],
@@ -70,12 +70,12 @@ export function getExpectedHttpStatus(errorCode: ErrorCodeType): HttpStatus {
   return ERROR_CODE_HTTP_STATUS[errorCode];
 }
 
-export function isErrorCodeStatusCompatible(
+export function isErrorStatusCompatible(
   errorCode: ErrorCodeType,
   statusCode: number,
 ): boolean {
   return (
-    FALLBACK_ERROR_CODE_HTTP_STATUSES[errorCode]?.includes(statusCode) ??
+    FALLBACK_HTTP_STATUSES[errorCode]?.includes(statusCode) ??
     Number(ERROR_CODE_HTTP_STATUS[errorCode]) === statusCode
   );
 }

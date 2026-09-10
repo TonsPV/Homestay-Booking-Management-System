@@ -1,11 +1,17 @@
 import { Module } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { JwtModule } from '@nestjs/jwt';
+import { PassportModule } from '@nestjs/passport';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { RateLimitGuard } from '../../common/http/rate-limit.guard';
-import { AccessTokenGuard } from './access-token.guard';
 import { AccessTokenService } from './access-token.service';
+import { AccessTokenClaimsValidator } from './access-token-claims.validator';
+import { AccessTokenPrincipalService } from './access-token-principal.service';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
+import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { JwtStrategy } from './strategies/jwt.strategy';
 import { CustomerAuthorizationReader } from './authorization/customer-authorization-reader';
 import { ActorsGuard } from './guards/actors.guard';
 import { RolesGuard } from './guards/roles.guard';
@@ -17,13 +23,32 @@ import { UserAuthorizationService } from './user-authorization.service';
 import { UserAuthorizationReader } from './authorization/user-authorization-reader';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Customer, User])],
+  imports: [
+    TypeOrmModule.forFeature([Customer, User]),
+    PassportModule,
+    JwtModule.registerAsync({
+      inject: [ConfigService],
+      useFactory: (configService: ConfigService) => ({
+        secret: configService.getOrThrow<string>('JWT_ACCESS_TOKEN_SECRET'),
+        signOptions: {
+          algorithm: 'HS256' as const,
+          // typ defaults to JWT in jsonwebtoken, but stating the full header
+          // keeps the exact header contract; AccessTokenService.verify()
+          // still asserts alg/typ per-token.
+          header: { alg: 'HS256' as const, typ: 'JWT' },
+        },
+      }),
+    }),
+  ],
   controllers: [AuthController],
   providers: [
     AuthService,
     AccessTokenService,
-    AccessTokenGuard,
+    AccessTokenClaimsValidator,
+    AccessTokenPrincipalService,
     ActorsGuard,
+    JwtStrategy,
+    JwtAuthGuard,
     PasswordHasherService,
     RateLimitGuard,
     RolesGuard,
@@ -38,8 +63,9 @@ import { UserAuthorizationReader } from './authorization/user-authorization-read
   ],
   exports: [
     AccessTokenService,
-    AccessTokenGuard,
+    AccessTokenPrincipalService,
     ActorsGuard,
+    JwtAuthGuard,
     PasswordHasherService,
     RateLimitGuard,
     RolesGuard,

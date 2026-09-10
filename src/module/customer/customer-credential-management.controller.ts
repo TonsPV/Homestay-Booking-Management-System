@@ -1,32 +1,37 @@
 import { Body, Controller, Param, Patch, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 
-import { ApiResponse, type ApiResponsePayload } from '../../common/http';
+import {
+  ApiResponse,
+  type ApiResponsePayload,
+  ReqContext,
+  type RequestContext,
+} from '../../common/http';
+
+import { CurrentAuth } from '../auth/decorators/current-auth.decorator';
+import type { AccessTokenPayload } from '../auth/auth.types';
+import { AuditActorType } from '../audit/domain/audit-log';
 import {
   ApiCommonAuthErrors,
   ApiCommonMutationErrors,
   ApiOkEnvelope,
 } from '../../openapi/api-response.decorators';
-import { AccessTokenGuard } from '../auth/access-token.guard';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { RolesGuard } from '../auth/guards/roles.guard';
-import {
-  CustomerCredentialService,
-  type CustomerCredentialResult,
-} from './customer-credential.service';
+import { CustomerCredentialService } from './customer-credential.service';
+import { type CredentialResult } from './customer.types';
 import { CustomerCredentialResultDto } from './dto/customer-credential-response.dto';
 import { SetInitialCustomerPasswordDto } from './dto/set-initial-customer-password.dto';
 
 @Controller('v1/management/customers')
-@UseGuards(AccessTokenGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('ADMIN', 'STAFF')
 @ApiTags('Management Customers')
 @ApiBearerAuth()
 @ApiCommonAuthErrors()
 export class CustomerCredentialManagementController {
-  constructor(
-    private readonly customerCredentialService: CustomerCredentialService,
-  ) {}
+  constructor(private readonly credentialService: CustomerCredentialService) {}
 
   @Patch(':id/initial-password')
   @ApiOperation({
@@ -35,11 +40,17 @@ export class CustomerCredentialManagementController {
   @ApiOkEnvelope(CustomerCredentialResultDto)
   @ApiCommonMutationErrors()
   setInitialPassword(
+    @CurrentAuth() auth: AccessTokenPayload,
+    @ReqContext() context: RequestContext,
     @Param('id') id: string,
     @Body() body: SetInitialCustomerPasswordDto,
-  ): Promise<ApiResponsePayload<CustomerCredentialResult>> {
-    return this.customerCredentialService
-      .setInitialPassword(id, body)
+  ): Promise<ApiResponsePayload<CredentialResult>> {
+    return this.credentialService
+      .setInitialPassword(id, body, {
+        actorType: AuditActorType.USER,
+        actorId: auth.user_id ?? null,
+        requestId: context.requestId,
+      })
       .then((result) =>
         ApiResponse.ok(result, 'Tao mat khau customer thanh cong.'),
       );

@@ -35,7 +35,7 @@ export class BookingExpirationService {
     const startedAt = Date.now();
 
     try {
-      const expiredCount = await this.bookingService.expirePendingPayments();
+      const expiredCount = await this.bookingService.expireUnpaidBookings();
 
       this.logger.log(
         JSON.stringify({

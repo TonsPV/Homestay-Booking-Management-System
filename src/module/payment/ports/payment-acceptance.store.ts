@@ -1,4 +1,4 @@
-import type { TransactionContext } from '../../../common/application/transaction';
+import type { TransactionContext } from '../../../common/database/transaction';
 import type { Booking } from '../../booking/schema/booking.entity';
 import type { Payment } from '../schema/payment.entity';
 import { PaymentMethod, PaymentStatus } from '../domain/payment-state';
@@ -10,7 +10,7 @@ export class PaymentIdempotencyConflictError extends Error {
   }
 }
 
-export interface CreatePaymentRecord {
+export interface CreatePaymentInput {
   bookingId: string;
   amount: string;
   currency: 'VND';
@@ -60,7 +60,7 @@ export abstract class PaymentAcceptanceStore {
 
   abstract createPayment(
     context: TransactionContext,
-    input: CreatePaymentRecord,
+    input: CreatePaymentInput,
   ): Promise<Payment>;
 
   abstract savePaymentState(

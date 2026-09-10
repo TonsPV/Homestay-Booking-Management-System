@@ -2,14 +2,13 @@ import { HttpStatus } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
 
 import { ErrorCode } from '../../../../src/common/error-codes';
-import { AppHttpException } from '../../../../src/common/http/app-http-exception';
-import type { TransactionContext } from '../../../../src/common/application/transaction';
+import type { TransactionContext } from '../../../../src/common/database/transaction';
 import {
   AuditAction,
   AuditActorType,
   AuditEntityType,
 } from '../../../../src/module/audit/domain/audit-log';
-import type { RecordAuditLogInput } from '../../../../src/module/audit/audit-log.service';
+import type { AuditLogInput } from '../../../../src/module/audit/audit-log.service';
 import { BookingPaymentLifecycleService } from '../../../../src/module/booking/booking-payment-lifecycle.service';
 import { BookingTransitionPolicy } from '../../../../src/module/booking/domain/booking-transition.policy';
 import {
@@ -87,7 +86,7 @@ describe('BookingPaymentLifecycleService', () => {
     };
     lifecycle = new BookingPaymentLifecycleService(
       {
-        run: (work: (ctx: TransactionContext) => Promise<unknown>) =>
+        run: <T>(work: (ctx: TransactionContext) => Promise<T>) =>
           work(context),
       },
       {
@@ -143,9 +142,7 @@ describe('BookingPaymentLifecycleService', () => {
         }),
       );
       const [, statusChangeInput] = (
-        auditLog.record.mock.calls as Array<
-          [TransactionContext, RecordAuditLogInput]
-        >
+        auditLog.record.mock.calls as Array<[TransactionContext, AuditLogInput]>
       )[1];
       expect(statusChangeInput.metadata).toMatchObject({
         fromStatus: BookingStatus.PENDING_PAYMENT,
@@ -223,15 +220,13 @@ describe('BookingPaymentLifecycleService', () => {
       expect(booking.status).toBe(BookingStatus.CANCELLED);
       expect(paymentAcceptanceStore.saveBookingState).not.toHaveBeenCalled();
       const reviewAuditInputs = (
-        auditLog.record.mock.calls as Array<
-          [TransactionContext, RecordAuditLogInput]
-        >
+        auditLog.record.mock.calls as Array<[TransactionContext, AuditLogInput]>
       ).map(([, input]) => input);
       expect(
         reviewAuditInputs.some(
           (input) =>
             input.metadata !== null &&
-            input.metadata.reviewReason ===
+            input.metadata?.reviewReason ===
               PaymentReviewReason.BOOKING_CANCELLED,
         ),
       ).toBe(true);
@@ -344,16 +339,14 @@ describe('BookingPaymentLifecycleService', () => {
       expect(paymentRefundStore.saveBookingState).not.toHaveBeenCalled();
       expect(calendarStore.releaseBookingReservation).not.toHaveBeenCalled();
       const refundAuditInputs = (
-        auditLog.record.mock.calls as Array<
-          [TransactionContext, RecordAuditLogInput]
-        >
+        auditLog.record.mock.calls as Array<[TransactionContext, AuditLogInput]>
       ).map(([, input]) => input);
       expect(
         refundAuditInputs.some(
           (input) =>
             input.metadata !== null &&
-            input.metadata.canonicalPaymentId === '501' &&
-            input.metadata.duplicatePaymentId === '500',
+            input.metadata?.canonicalPaymentId === '501' &&
+            input.metadata?.duplicatePaymentId === '500',
         ),
       ).toBe(true);
     });
@@ -371,7 +364,7 @@ describe('BookingPaymentLifecycleService', () => {
       ).rejects.toMatchObject({
         status: HttpStatus.CONFLICT,
         response: { errorCode: ErrorCode.BOOKING_CANCELLATION_ALREADY_PAID },
-      } as AppHttpException);
+      });
       expect(bookingStore.saveState).not.toHaveBeenCalled();
     });
 
@@ -411,13 +404,13 @@ describe('BookingPaymentLifecycleService', () => {
     });
   });
 
-  describe('expirePendingPayments', () => {
+  describe('expireUnpaidBookings', () => {
     it('expires the locked unpaid batch with payments and calendars in one transaction', async () => {
       const now = new Date('2030-01-01T01:00:00.000Z');
       const expired = [bookingFixture(), bookingFixture({ id: '101' })];
       bookingStore.findExpiredForUpdate.mockResolvedValue(expired);
 
-      await expect(lifecycle.expirePendingPayments(now)).resolves.toBe(2);
+      await expect(lifecycle.expireUnpaidBookings(now)).resolves.toBe(2);
 
       expect(expired).toEqual([
         expect.objectContaining({ status: BookingStatus.CANCELLED }),
@@ -439,7 +432,7 @@ describe('BookingPaymentLifecycleService', () => {
     });
 
     it('does nothing when no booking has expired', async () => {
-      await expect(lifecycle.expirePendingPayments()).resolves.toBe(0);
+      await expect(lifecycle.expireUnpaidBookings()).resolves.toBe(0);
       expect(bookingStore.saveState).not.toHaveBeenCalled();
       expect(
         paymentStateStore.failPendingOnlinePayments,

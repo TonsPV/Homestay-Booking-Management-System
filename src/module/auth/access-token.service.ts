@@ -1,17 +1,46 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { JwtService } from '@nestjs/jwt';
 
 import { parseDurationToSeconds } from '../../config/duration';
-import type { AccessTokenPayload, AccessTokenSubject } from './auth.types';
+import { AccessTokenClaimsValidator } from './access-token-claims.validator';
+import type {
+  AccessTokenPayload,
+  AccessTokenSubject,
+  CompleteJwt,
+} from './auth.types';
 
+const JWT_LIBRARY_ERROR_NAMES = new Set([
+  'JsonWebTokenError',
+  'TokenExpiredError',
+  'NotBeforeError',
+]);
+
+/** Error class names produced by jsonwebtoken verification failures. */
+export { JWT_LIBRARY_ERROR_NAMES };
+
+/**
+ * Access-token facade: issuance, JWT verification, and JWT configuration.
+ *
+ * The cryptographic primitives (HMAC-SHA256, base64url, serialization) are
+ * delegated to @nestjs/jwt (jsonwebtoken). The verification pipeline is:
+ * library signature/serialization checks -> header alg/typ check ->
+ * AccessTokenClaimsValidator (custom-claim invariants + temporary validity).
+ *
+ * This service never touches the database, never resolves roles, never checks
+ * account status, and never depends on an HTTP request or a WebSocket — so the
+ * same verify() can back a future Socket.IO handshake.
+ */
 @Injectable()
 export class AccessTokenService {
   private readonly algorithm = 'HS256';
   private readonly tokenType = 'JWT';
-  private readonly maxClockSkewSeconds = 60;
 
-  constructor(private readonly configService: ConfigService) {}
+  constructor(
+    private readonly configService: ConfigService,
+    private readonly claimsValidator: AccessTokenClaimsValidator,
+    private readonly jwtService: JwtService,
+  ) {}
 
   getExpiresInSeconds(): number {
     const value = this.configService.getOrThrow<string>(
@@ -49,53 +78,87 @@ export class AccessTokenService {
       }
     }
 
-    const header = {
-      alg: this.algorithm,
-      typ: this.tokenType,
-    };
-    const encodedHeader = this.encodeJson(header);
-    const encodedPayload = this.encodeJson(payload);
-    const signature = this.signSegments(encodedHeader, encodedPayload);
-
-    return `${encodedHeader}.${encodedPayload}.${signature}`;
+    // The expiry and issued-at claims are computed here (not via the library's
+    // `expiresIn` option) so the duration grammar and TTL semantics keep their
+    // exact, tested behavior regardless of library defaults.
+    return this.jwtService.sign(payload, {
+      secret: this.getSecret(),
+      algorithm: this.algorithm,
+    });
   }
 
   verify(token: string): AccessTokenPayload {
-    const segments = token.split('.');
-
-    if (segments.length !== 3) {
-      throw new UnauthorizedException('Invalid access token.');
-    }
-
-    const [encodedHeader, encodedPayload, signature] = segments;
-    const expectedSignature = this.signSegments(encodedHeader, encodedPayload);
-
-    if (!this.safeEquals(signature, expectedSignature)) {
-      throw new UnauthorizedException('Invalid access token.');
-    }
-
-    const header = this.decodeJson(encodedHeader);
-
-    if (header.alg !== this.algorithm || header.typ !== this.tokenType) {
-      throw new UnauthorizedException('Invalid access token.');
-    }
-
-    const payload = this.decodeJson(encodedPayload);
-    const accessTokenPayload = this.toAccessTokenPayload(payload);
-    const now = Math.floor(Date.now() / 1000);
+    const decoded = this.decodeVerifiedToken(token);
 
     if (
-      accessTokenPayload.iat > now + this.maxClockSkewSeconds ||
-      accessTokenPayload.exp <= accessTokenPayload.iat
+      decoded.header.alg !== this.algorithm ||
+      decoded.header.typ !== this.tokenType
     ) {
       throw new UnauthorizedException('Invalid access token.');
     }
 
-    if (accessTokenPayload.exp <= now) {
-      throw new UnauthorizedException('Access token has expired.');
-    }
+    const accessTokenPayload = this.claimsValidator.validate(decoded.payload);
+
+    this.claimsValidator.assertTimeValid(
+      accessTokenPayload,
+      Math.floor(Date.now() / 1000),
+    );
 
     return accessTokenPayload;
+  }
+
+  private decodeVerifiedToken(token: string): CompleteJwt {
+    let decoded: unknown;
+
+    try {
+      // ignoreExpiration / ignoreNotBefore keep the current contract exactly:
+      // expiry and the iat/exp invariants are enforced by the claims validator
+      // below (same boundaries, same messages), and `nbf` stays unenforced.
+      decoded = this.jwtService.verify(token, {
+        secret: this.getSecret(),
+        algorithms: [this.algorithm],
+        ignoreExpiration: true,
+        ignoreNotBefore: true,
+        complete: true,
+      });
+    } catch (error) {
+      if (error instanceof UnauthorizedException) {
+        throw error;
+      }
+
+      if (error instanceof Error && JWT_LIBRARY_ERROR_NAMES.has(error.name)) {
+        throw new UnauthorizedException('Invalid access token.');
+      }
+
+      // Configuration or unexpected system errors must stay observable.
+      throw error;
+    }
+
+    if (
+      decoded === null ||
+      typeof decoded !== 'object' ||
+      Array.isArray(decoded) ||
+      !this.isCompleteJwt(decoded)
+    ) {
+      throw new UnauthorizedException('Invalid access token.');
+    }
+
+    return decoded;
+  }
+
+  private isCompleteJwt(value: object): value is CompleteJwt {
+    const candidate = value as Partial<CompleteJwt>;
+    const header = candidate.header as { alg?: unknown } | undefined;
+
+    return (
+      typeof header === 'object' &&
+      header !== null &&
+      typeof header.alg === 'string' &&
+      typeof candidate.payload === 'object' &&
+      candidate.payload !== null &&
+      !Array.isArray(candidate.payload) &&
+      typeof candidate.signature === 'string'
+    );
   }
 
   private getSecret(): string {
@@ -118,169 +181,9 @@ export class AccessTokenService {
     return value;
   }
 
-  private encodeJson(value: unknown): string {
-    return Buffer.from(JSON.stringify(value), 'utf8').toString('base64url');
-  }
-
-  private decodeJson(segment: string): Record<string, unknown> {
-    try {
-      const parsed: unknown = JSON.parse(
-        Buffer.from(segment, 'base64url').toString('utf8'),
-      );
-
-      if (
-        parsed === null ||
-        typeof parsed !== 'object' ||
-        Array.isArray(parsed)
-      ) {
-        throw new UnauthorizedException('Invalid access token.');
-      }
-
-      return parsed as Record<string, unknown>;
-    } catch (error) {
-      if (error instanceof UnauthorizedException) {
-        throw error;
-      }
-
-      throw new UnauthorizedException('Invalid access token.');
-    }
-  }
-
-  private signSegments(encodedHeader: string, encodedPayload: string): string {
-    return createHmac('sha256', this.getSecret())
-      .update(`${encodedHeader}.${encodedPayload}`)
-      .digest('base64url');
-  }
-
-  private safeEquals(actual: string, expected: string): boolean {
-    const actualBuffer = Buffer.from(actual);
-    const expectedBuffer = Buffer.from(expected);
-
-    return (
-      actualBuffer.length === expectedBuffer.length &&
-      timingSafeEqual(actualBuffer, expectedBuffer)
-    );
-  }
-
-  private toAccessTokenPayload(
-    payload: Record<string, unknown>,
-  ): AccessTokenPayload {
-    const sub = this.readString(payload, 'sub');
-    const actorType = payload.actor_type;
-    const iat = this.readNumber(payload, 'iat');
-    const exp = this.readNumber(payload, 'exp');
-
-    if (actorType !== 'customer' && actorType !== 'user') {
-      throw new UnauthorizedException('Invalid access token.');
-    }
-
-    if (actorType === 'customer') {
-      const customerId = this.readString(payload, 'customer_id');
-      const tokenVersion = this.readTokenVersion(payload, 'token_version');
-
-      if (sub !== `customer:${customerId}`) {
-        throw new UnauthorizedException('Invalid access token.');
-      }
-
-      return {
-        sub,
-        actor_type: actorType,
-        customer_id: customerId,
-        token_version: tokenVersion,
-        iat,
-        exp,
-      };
-    }
-
-    const userId = this.readString(payload, 'user_id');
-    const role = this.readOptionalRole(payload, 'role');
-    const tokenVersion = this.readTokenVersion(payload, 'token_version');
-
-    if (sub !== `user:${userId}`) {
-      throw new UnauthorizedException('Invalid access token.');
-    }
-
-    return {
-      sub,
-      actor_type: actorType,
-      user_id: userId,
-      role,
-      token_version: tokenVersion,
-      iat,
-      exp,
-    };
-  }
-
-  private readString(payload: Record<string, unknown>, key: string): string {
-    const value = payload[key];
-
-    if (typeof value !== 'string' || value.length === 0) {
-      throw new UnauthorizedException('Invalid access token.');
-    }
-
-    return value;
-  }
-
-  private readOptionalString(
-    payload: Record<string, unknown>,
-    key: string,
-  ): string | undefined {
-    const value = payload[key];
-
-    if (value === undefined) {
-      return undefined;
-    }
-
-    if (typeof value !== 'string' || value.length === 0) {
-      throw new UnauthorizedException('Invalid access token.');
-    }
-
-    return value;
-  }
-
-  private readOptionalRole(
-    payload: Record<string, unknown>,
-    key: string,
-  ): 'STAFF' | 'ADMIN' | undefined {
-    const value = this.readOptionalString(payload, key);
-
-    if (value === undefined) {
-      return undefined;
-    }
-
-    if (value !== 'STAFF' && value !== 'ADMIN') {
-      throw new UnauthorizedException('Invalid access token.');
-    }
-
-    return value;
-  }
-
-  private readNumber(payload: Record<string, unknown>, key: string): number {
-    const value = payload[key];
-
-    if (typeof value !== 'number' || !Number.isInteger(value)) {
-      throw new UnauthorizedException('Invalid access token.');
-    }
-
-    return value;
-  }
-
   private requireTokenVersion(value: number | undefined): number {
     if (value === undefined || !Number.isInteger(value) || value < 0) {
       throw new Error('User token version is required.');
-    }
-
-    return value;
-  }
-
-  private readTokenVersion(
-    payload: Record<string, unknown>,
-    key: string,
-  ): number {
-    const value = this.readNumber(payload, key);
-
-    if (value < 0) {
-      throw new UnauthorizedException('Invalid access token.');
     }
 
     return value;

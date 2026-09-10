@@ -1,6 +1,6 @@
 import { type INestApplication } from '@nestjs/common';
 import { Test, type TestingModule } from '@nestjs/testing';
-import { DataSource, type Repository } from 'typeorm';
+import { DataSource, type EntityManager, type Repository } from 'typeorm';
 import request from 'supertest';
 import type { App } from 'supertest/types';
 import sharp from 'sharp';
@@ -11,6 +11,7 @@ import { ROOM_IMAGE_MAX_FILE_SIZE } from '../../src/config/room-image-storage';
 import migrationDataSource from '../../src/database/data-source';
 import { AccessTokenService } from '../../src/module/auth/access-token.service';
 import { PasswordHasherService } from '../../src/module/auth/password-hasher.service';
+import { RoomImageService } from '../../src/module/room/room-image.service';
 import { RoomImageStorageService } from '../../src/module/room/room-image-storage.service';
 import { RoomImage } from '../../src/module/room/schema/room-image.entity';
 import { Room } from '../../src/module/room/schema/room.entity';
@@ -187,6 +188,73 @@ describe('Room image/storage workflow (e2e)', () => {
     expect(await images.countBy({ roomId: room.id, isCover: true })).toBe(1);
   });
 
+  it('re-reads the current cover when deletion races with set-cover', async () => {
+    const room = await createRoom();
+    const first = await upload(room.id, await createPng(), 'cover-a.png');
+    const second = await upload(room.id, await createPng(), 'cover-b.png');
+    const roomImageService = app.get(RoomImageService);
+    const internals = roomImageService as unknown as {
+      lockRoom(manager: EntityManager, roomId: string): Promise<Room>;
+    };
+    // Keep the first delete transaction before its Room lock. The competing
+    // set-cover transaction can then commit, reproducing the old stale
+    // repeatable-read snapshot deterministically.
+    const originalLock = internals.lockRoom.bind(roomImageService);
+    const deleteReachedLock = createDeferred<void>();
+    const coverReachedLock = createDeferred<void>();
+    const releaseDelete = createDeferred<void>();
+    let lockCalls = 0;
+    const lockSpy = jest
+      .spyOn(internals, 'lockRoom')
+      .mockImplementation(async (manager, roomId) => {
+        lockCalls += 1;
+        if (lockCalls === 1) {
+          deleteReachedLock.resolve();
+          await releaseDelete.promise;
+        } else if (lockCalls === 2) {
+          coverReachedLock.resolve();
+        }
+        return originalLock(manager, roomId);
+      });
+    let deletePromise: Promise<request.Response> | undefined;
+    let coverPromise: Promise<request.Response> | undefined;
+
+    try {
+      deletePromise = request(app.getHttpServer())
+        .delete(`/api/v1/room-images/${second.id}`)
+        .set('Authorization', 'Bearer ' + adminToken)
+        .then((response) => response);
+      await waitForSignal(deleteReachedLock.promise, 'Room image delete lock');
+
+      coverPromise = request(app.getHttpServer())
+        .patch(`/api/v1/room-images/${second.id}/set-cover`)
+        .set('Authorization', 'Bearer ' + adminToken)
+        .then((response) => response);
+      await waitForSignal(coverReachedLock.promise, 'Room image cover lock');
+      releaseDelete.resolve();
+
+      const [deleteResponse, coverResponse] = await Promise.all([
+        deletePromise,
+        coverPromise,
+      ]);
+      expect(deleteResponse.status).toBe(200);
+      expect(coverResponse.status).toBe(200);
+      expect(await images.countBy({ roomId: room.id, isCover: true })).toBe(1);
+      expect(await images.findOneByOrFail({ id: first.id })).toMatchObject({
+        isCover: true,
+      });
+    } finally {
+      releaseDelete.resolve();
+      await Promise.allSettled(
+        [deletePromise, coverPromise].filter(
+          (promise): promise is Promise<request.Response> =>
+            promise !== undefined,
+        ),
+      );
+      lockSpy.mockRestore();
+    }
+  });
+
   it('keeps role boundaries and does not delete external image URLs as managed files', async () => {
     const room = await createRoom();
     const image = await images.save(
@@ -296,3 +364,39 @@ describe('Room image/storage workflow (e2e)', () => {
       .toBuffer();
   }
 });
+
+interface Deferred<T> {
+  promise: Promise<T>;
+  resolve(value: T | PromiseLike<T>): void;
+}
+
+function createDeferred<T>(): Deferred<T> {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+
+  return { promise, resolve };
+}
+
+async function waitForSignal(
+  signal: Promise<void>,
+  description: string,
+): Promise<void> {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    await Promise.race([
+      signal,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(description + ' timed out.')),
+          5000,
+        );
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) {
+      clearTimeout(timer);
+    }
+  }
+}

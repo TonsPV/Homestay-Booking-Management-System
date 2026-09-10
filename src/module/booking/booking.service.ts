@@ -22,9 +22,9 @@ export type { BookingResponse } from './booking.types';
 @Injectable()
 export class BookingService {
   constructor(
-    private readonly bookingCreationService: BookingCreationService,
-    private readonly bookingLifecycleService: BookingLifecycleService,
-    private readonly bookingQueryService: BookingQueryService,
+    private readonly creation: BookingCreationService,
+    private readonly lifecycle: BookingLifecycleService,
+    private readonly query: BookingQueryService,
   ) {}
 
   async createForCustomer(
@@ -33,7 +33,7 @@ export class BookingService {
     context?: BookingAuditContext,
     requestIntentKey?: string,
   ): Promise<BookingResponse> {
-    const result = await this.bookingCreationService.createForCustomer(
+    const result = await this.creation.createForCustomer(
       customerId,
       body,
       context,
@@ -49,7 +49,7 @@ export class BookingService {
     context?: BookingAuditContext,
     requestIntentKey?: string,
   ): Promise<ManagementBookingResponse> {
-    const bookingId = await this.bookingCreationService.createForManagement(
+    const bookingId = await this.creation.createForManagement(
       userId,
       body,
       context,
@@ -63,24 +63,24 @@ export class BookingService {
     customerId: string | undefined,
     query: ListBookingsQueryDto,
   ): Promise<BookingListResult> {
-    return this.bookingQueryService.listForCustomer(customerId, query);
+    return this.query.listForCustomer(customerId, query);
   }
 
   async listManagement(
     query: ListManagementBookingsQueryDto,
   ): Promise<BookingListResult> {
-    return this.bookingQueryService.listManagement(query);
+    return this.query.listManagement(query);
   }
 
   async getForCustomer(
     customerId: string | undefined,
     id: string,
   ): Promise<BookingResponse> {
-    return this.bookingQueryService.getForCustomer(customerId, id);
+    return this.query.getForCustomer(customerId, id);
   }
 
   async getManagement(id: string): Promise<ManagementBookingResponse> {
-    return this.bookingQueryService.getManagement(id);
+    return this.query.getManagement(id);
   }
 
   async cancelForCustomer(
@@ -89,13 +89,12 @@ export class BookingService {
     body: CancelBookingDto,
     context?: BookingAuditContext,
   ): Promise<BookingResponse> {
-    const activeCustomerId =
-      await this.bookingLifecycleService.cancelForCustomer(
-        customerId,
-        id,
-        body,
-        context,
-      );
+    const activeCustomerId = await this.lifecycle.cancelForCustomer(
+      customerId,
+      id,
+      body,
+      context,
+    );
 
     return this.getForCustomer(activeCustomerId, id);
   }
@@ -106,12 +105,12 @@ export class BookingService {
     userId?: string,
     context?: BookingAuditContext,
   ): Promise<ManagementBookingResponse> {
-    await this.bookingLifecycleService.updateStatus(id, body, userId, context);
+    await this.lifecycle.updateStatus(id, body, userId, context);
 
     return this.getManagement(id);
   }
 
-  async expirePendingPayments(now = new Date()): Promise<number> {
-    return this.bookingLifecycleService.expirePendingPayments(now);
+  async expireUnpaidBookings(now = new Date()): Promise<number> {
+    return this.lifecycle.expireUnpaidBookings(now);
   }
 }

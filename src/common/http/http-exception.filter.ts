@@ -17,13 +17,10 @@ import type {
 } from './api-response';
 import type { AppRequest } from './request.types';
 import { createRequestMetadata } from './request-metadata';
-import {
-  getFallbackErrorCode,
-  isErrorCodeStatusCompatible,
-} from './error-codes';
+import { getFallbackErrorCode, isErrorStatusCompatible } from './error-codes';
 import { isErrorCode, type ErrorCode } from '../error-codes';
 
-const INVALID_MESSAGE_ARRAY_FALLBACK = 'Request validation failed.';
+const INVALID_MESSAGE_FALLBACK = 'Request validation failed.';
 
 @Catch()
 export class HttpExceptionFilter implements ExceptionFilter {
@@ -101,7 +98,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
 
         return safeMessages.length === message.length
           ? safeMessages
-          : INVALID_MESSAGE_ARRAY_FALLBACK;
+          : INVALID_MESSAGE_FALLBACK;
       }
     }
 
@@ -138,7 +135,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
         typeof response === 'object' &&
         'errorCode' in response &&
         isErrorCode(response.errorCode) &&
-        isErrorCodeStatusCompatible(response.errorCode, statusCode)
+        isErrorStatusCompatible(response.errorCode, statusCode)
       ) {
         return response.errorCode;
       }

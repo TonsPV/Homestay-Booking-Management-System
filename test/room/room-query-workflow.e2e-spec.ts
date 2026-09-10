@@ -10,9 +10,16 @@ import migrationDataSource from '../../src/database/data-source';
 import { AccessTokenService } from '../../src/module/auth/access-token.service';
 import { PasswordHasherService } from '../../src/module/auth/password-hasher.service';
 import { Amenity } from '../../src/module/amenity/schema/amenity.entity';
+import { Booking } from '../../src/module/booking/schema/booking.entity';
+import {
+  BookingPaymentStatus,
+  BookingStatus,
+} from '../../src/module/booking/domain/booking-state';
 import { RoomCalendar } from '../../src/module/booking/schema/room-calendar.entity';
 import { RoomCalendarStatus } from '../../src/module/booking/domain/room-calendar-status';
+import { Customer } from '../../src/module/customer/schema/customer.entity';
 import { Room } from '../../src/module/room/schema/room.entity';
+import { RoomStatus } from '../../src/module/room/domain/room-status';
 import { BedType } from '../../src/module/room-type/bed-configuration';
 import { RoomType } from '../../src/module/room-type/schema/room-type.entity';
 import { User } from '../../src/module/user/schema/user.entity';
@@ -42,18 +49,22 @@ interface PublicRoomPayload {
 describe('Room catalog/query workflow (e2e)', () => {
   let app: INestApplication<App>;
   let e2eHarness: E2eHarness | undefined;
-  let roomsRepository: Repository<Room>;
-  let roomTypesRepository: Repository<RoomType>;
-  let amenitiesRepository: Repository<Amenity>;
-  let calendarRepository: Repository<RoomCalendar>;
-  let usersRepository: Repository<User>;
+  let roomRepo: Repository<Room>;
+  let roomTypeRepo: Repository<RoomType>;
+  let amenityRepo: Repository<Amenity>;
+  let bookingRepo: Repository<Booking>;
+  let calendarRepo: Repository<RoomCalendar>;
+  let customerRepo: Repository<Customer>;
+  let userRepo: Repository<User>;
   let passwordHasher: PasswordHasherService;
   let accessTokenService: AccessTokenService;
   let adminToken: string;
   const createdRoomIds: string[] = [];
   const createdRoomTypeIds: string[] = [];
   const createdAmenityIds: string[] = [];
+  const createdBookingIds: string[] = [];
   const createdCalendarIds: string[] = [];
+  const createdCustomerIds: string[] = [];
   const createdUserIds: string[] = [];
   const uniqueSuffix = E2eHarness.createUniqueSuffix();
   let fixtureSequence = 0;
@@ -69,11 +80,13 @@ describe('Room catalog/query workflow (e2e)', () => {
     await app.init();
 
     const dataSource = app.get(DataSource);
-    roomsRepository = dataSource.getRepository(Room);
-    roomTypesRepository = dataSource.getRepository(RoomType);
-    amenitiesRepository = dataSource.getRepository(Amenity);
-    calendarRepository = dataSource.getRepository(RoomCalendar);
-    usersRepository = dataSource.getRepository(User);
+    roomRepo = dataSource.getRepository(Room);
+    roomTypeRepo = dataSource.getRepository(RoomType);
+    amenityRepo = dataSource.getRepository(Amenity);
+    bookingRepo = dataSource.getRepository(Booking);
+    calendarRepo = dataSource.getRepository(RoomCalendar);
+    customerRepo = dataSource.getRepository(Customer);
+    userRepo = dataSource.getRepository(User);
     passwordHasher = app.get(PasswordHasherService);
     accessTokenService = app.get(AccessTokenService);
     const admin = await createAdmin();
@@ -86,19 +99,25 @@ describe('Room catalog/query workflow (e2e)', () => {
 
     e2eHarness.registerCleanup(async () => {
       if (createdCalendarIds.length > 0) {
-        await calendarRepository.delete([...new Set(createdCalendarIds)]);
+        await calendarRepo.delete([...new Set(createdCalendarIds)]);
+      }
+      if (createdBookingIds.length > 0) {
+        await bookingRepo.delete([...new Set(createdBookingIds)]);
       }
       if (createdRoomIds.length > 0) {
-        await roomsRepository.delete([...new Set(createdRoomIds)]);
+        await roomRepo.delete([...new Set(createdRoomIds)]);
       }
       if (createdRoomTypeIds.length > 0) {
-        await roomTypesRepository.delete([...new Set(createdRoomTypeIds)]);
+        await roomTypeRepo.delete([...new Set(createdRoomTypeIds)]);
       }
       if (createdAmenityIds.length > 0) {
-        await amenitiesRepository.delete([...new Set(createdAmenityIds)]);
+        await amenityRepo.delete([...new Set(createdAmenityIds)]);
+      }
+      if (createdCustomerIds.length > 0) {
+        await customerRepo.delete([...new Set(createdCustomerIds)]);
       }
       if (createdUserIds.length > 0) {
-        await usersRepository.delete([...new Set(createdUserIds)]);
+        await userRepo.delete([...new Set(createdUserIds)]);
       }
     });
   });
@@ -121,10 +140,10 @@ describe('Room catalog/query workflow (e2e)', () => {
       2,
       '100.00',
     );
-    const ready = await createRoom(roomType, 'READY');
-    const occupied = await createRoom(roomType, 'OCCUPIED');
-    const hidden = await createRoom(roomType, 'HIDDEN');
-    const maintenance = await createRoom(roomType, 'MAINTENANCE');
+    const ready = await createRoom(roomType, RoomStatus.READY);
+    const occupied = await createRoom(roomType, RoomStatus.OCCUPIED);
+    const hidden = await createRoom(roomType, RoomStatus.HIDDEN);
+    const maintenance = await createRoom(roomType, RoomStatus.MAINTENANCE);
 
     const publicResponse = await request(app.getHttpServer())
       .get('/api/v1/rooms')
@@ -176,10 +195,10 @@ describe('Room catalog/query workflow (e2e)', () => {
       '250.00',
       [firstAmenity, secondAmenity],
     );
-    const available = await createRoom(roomType, 'READY');
-    const blocked = await createRoom(roomType, 'READY');
-    const calendar = await calendarRepository.save(
-      calendarRepository.create({
+    const available = await createRoom(roomType, RoomStatus.READY);
+    const blocked = await createRoom(roomType, RoomStatus.READY);
+    const calendar = await calendarRepo.save(
+      calendarRepo.create({
         roomId: blocked.id,
         bookingId: null,
         stayDate: '2035-01-02',
@@ -219,6 +238,136 @@ describe('Room catalog/query workflow (e2e)', () => {
       .expect(200);
   });
 
+  it('sorts price descending and popularity by their intended primary keys', async () => {
+    const customer = await createCustomer();
+    const lowPriceType = await createRoomType(
+      'Sort low ' + uniqueSuffix,
+      99,
+      '100.00',
+    );
+    const tiePriceType = await createRoomType(
+      'Sort tie ' + uniqueSuffix,
+      99,
+      '110.00',
+    );
+    const middlePriceType = await createRoomType(
+      'Sort middle ' + uniqueSuffix,
+      99,
+      '150.00',
+    );
+    const highPriceType = await createRoomType(
+      'Sort high ' + uniqueSuffix,
+      99,
+      '200.00',
+    );
+    const sortRoomName = 'Sort fixture ' + uniqueSuffix;
+    const lowPriceRoom = await createRoom(
+      lowPriceType,
+      RoomStatus.READY,
+      sortRoomName,
+    );
+    const tiePriceRoom = await createRoom(
+      tiePriceType,
+      RoomStatus.READY,
+      sortRoomName,
+    );
+    const middlePriceRoom = await createRoom(
+      middlePriceType,
+      RoomStatus.READY,
+      sortRoomName,
+    );
+    const highPriceRoom = await createRoom(
+      highPriceType,
+      RoomStatus.READY,
+      sortRoomName,
+    );
+
+    await createPopularityBooking(highPriceRoom, customer, 1);
+    await createPopularityBooking(highPriceRoom, customer, 2);
+    await createPopularityBooking(middlePriceRoom, customer, 3);
+    await createPopularityBooking(
+      middlePriceRoom,
+      customer,
+      4,
+      BookingStatus.CANCELLED,
+    );
+
+    const priceResponse = await request(app.getHttpServer())
+      .get('/api/v1/rooms/search')
+      .query({
+        checkIn: '2035-04-01',
+        checkOut: '2035-04-03',
+        guests: 99,
+        sort: 'PRICE_DESC',
+        page: 1,
+        limit: 2,
+      })
+      .expect(200);
+    const priceBody = priceResponse.body as ResponseEnvelope<
+      PublicRoomPayload[]
+    >;
+    const pricePageTwoResponse = await request(app.getHttpServer())
+      .get('/api/v1/rooms/search')
+      .query({
+        checkIn: '2035-04-01',
+        checkOut: '2035-04-03',
+        guests: 99,
+        sort: 'PRICE_DESC',
+        page: 2,
+        limit: 2,
+      })
+      .expect(200);
+    const pricePageTwoBody = pricePageTwoResponse.body as ResponseEnvelope<
+      PublicRoomPayload[]
+    >;
+    expect(priceBody.meta?.pagination.total).toBe(4);
+    expect(priceBody.data.map((room) => room.id)).toEqual([
+      highPriceRoom.id,
+      middlePriceRoom.id,
+    ]);
+    expect(pricePageTwoBody.data.map((room) => room.id)).toEqual([
+      tiePriceRoom.id,
+      lowPriceRoom.id,
+    ]);
+
+    const popularityResponse = await request(app.getHttpServer())
+      .get('/api/v1/rooms/search')
+      .query({
+        checkIn: '2035-04-01',
+        checkOut: '2035-04-03',
+        guests: 99,
+        sort: 'POPULARITY',
+        page: 1,
+        limit: 2,
+      })
+      .expect(200);
+    const popularityBody = popularityResponse.body as ResponseEnvelope<
+      PublicRoomPayload[]
+    >;
+    const popularityPageTwoResponse = await request(app.getHttpServer())
+      .get('/api/v1/rooms/search')
+      .query({
+        checkIn: '2035-04-01',
+        checkOut: '2035-04-03',
+        guests: 99,
+        sort: 'POPULARITY',
+        page: 2,
+        limit: 2,
+      })
+      .expect(200);
+    const popularityPageTwoBody =
+      popularityPageTwoResponse.body as ResponseEnvelope<PublicRoomPayload[]>;
+    expect(popularityBody.meta?.pagination.total).toBe(4);
+    expect(popularityBody.data.map((room) => room.id)).toEqual([
+      highPriceRoom.id,
+      middlePriceRoom.id,
+    ]);
+    expect(popularityPageTwoBody.data.map((room) => room.id)).toEqual([
+      lowPriceRoom.id,
+      tiePriceRoom.id,
+    ]);
+  });
+
   it('returns normalized beds alongside amenities in public room queries', async () => {
     const roomTypeResponse = await request(app.getHttpServer())
       .post('/api/v1/admin/room-types')
@@ -236,10 +385,10 @@ describe('Room catalog/query workflow (e2e)', () => {
     const roomTypeId = (roomTypeResponse.body as { data: { id: string } }).data
       .id;
     createdRoomTypeIds.push(roomTypeId);
-    const roomType = await roomTypesRepository.findOneByOrFail({
+    const roomType = await roomTypeRepo.findOneByOrFail({
       id: roomTypeId,
     });
-    const room = await createRoom(roomType, 'READY');
+    const room = await createRoom(roomType, RoomStatus.READY);
 
     const response = await request(app.getHttpServer())
       .get('/api/v1/rooms/' + room.id)
@@ -269,8 +418,8 @@ describe('Room catalog/query workflow (e2e)', () => {
   });
 
   async function createAdmin(): Promise<User> {
-    const admin = await usersRepository.save(
-      usersRepository.create({
+    const admin = await userRepo.save(
+      userRepo.create({
         fullName: 'Room Query E2E Admin',
         email: nextEmail('admin'),
         phone: null,
@@ -285,11 +434,26 @@ describe('Room catalog/query workflow (e2e)', () => {
   }
 
   async function createAmenity(name: string): Promise<Amenity> {
-    const amenity = await amenitiesRepository.save(
-      amenitiesRepository.create({ name, description: null }),
+    const amenity = await amenityRepo.save(
+      amenityRepo.create({ name, description: null }),
     );
     createdAmenityIds.push(amenity.id);
     return amenity;
+  }
+
+  async function createCustomer(): Promise<Customer> {
+    const customer = await customerRepo.save(
+      customerRepo.create({
+        fullName: 'Room query popularity customer',
+        email: nextEmail('popularity-customer'),
+        phone: '09' + String(Date.now()).slice(-8),
+        passwordHash: null,
+        tokenVersion: 0,
+        status: 'ACTIVE',
+      }),
+    );
+    createdCustomerIds.push(customer.id);
+    return customer;
   }
 
   async function createRoomType(
@@ -298,8 +462,8 @@ describe('Room catalog/query workflow (e2e)', () => {
     basePrice: string,
     amenities: Amenity[] = [],
   ): Promise<RoomType> {
-    const roomType = await roomTypesRepository.save(
-      roomTypesRepository.create({
+    const roomType = await roomTypeRepo.save(
+      roomTypeRepo.create({
         name,
         description: null,
         maxGuests,
@@ -314,18 +478,62 @@ describe('Room catalog/query workflow (e2e)', () => {
   async function createRoom(
     roomType: RoomType,
     status: RoomStatus,
+    name = 'Room Query ' + status + ' ' + fixtureSequence,
   ): Promise<Room> {
-    const room = await roomsRepository.save(
-      roomsRepository.create({
+    const room = await roomRepo.save(
+      roomRepo.create({
         roomTypeId: roomType.id,
         roomNumber: 'RQ-' + uniqueSuffix + '-' + nextSequence(),
-        name: 'Room Query ' + status + ' ' + fixtureSequence,
+        name,
         description: null,
-        status: status as Room['status'],
+        status,
       }),
     );
     createdRoomIds.push(room.id);
     return room;
+  }
+
+  async function createPopularityBooking(
+    room: Room,
+    customer: Customer,
+    index: number,
+    status: BookingStatus = BookingStatus.CONFIRMED,
+  ): Promise<Booking> {
+    const booking = await bookingRepo.save(
+      bookingRepo.create({
+        bookingCode: 'RQ-' + uniqueSuffix + '-pop-' + index,
+        customerId: customer.id,
+        roomId: room.id,
+        createdByUserId: null,
+        checkInDate: '2035-04-01',
+        checkOutDate: '2035-04-03',
+        guestCount: 1,
+        contactName: customer.fullName,
+        contactPhone: customer.phone,
+        contactEmail: customer.email,
+        totalAmount: '100.00',
+        status,
+        paymentStatus:
+          status === BookingStatus.CANCELLED
+            ? BookingPaymentStatus.UNPAID
+            : BookingPaymentStatus.PAID,
+        acceptedPaymentId: null,
+        requestIntentActorType: null,
+        requestIntentActorId: null,
+        requestIntentKey: null,
+        requestIntentHash: null,
+        paymentExpiresAt: null,
+        customerNote: null,
+        cancelledAt:
+          status === BookingStatus.CANCELLED
+            ? new Date('2035-03-01T00:00:00.000Z')
+            : null,
+        cancellationReason:
+          status === BookingStatus.CANCELLED ? 'Cancelled fixture.' : null,
+      }),
+    );
+    createdBookingIds.push(booking.id);
+    return booking;
   }
 
   function nextSequence(): number {

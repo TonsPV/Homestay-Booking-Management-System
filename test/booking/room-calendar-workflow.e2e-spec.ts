@@ -1,6 +1,13 @@
 import { type INestApplication } from '@nestjs/common';
 import { Test, type TestingModule } from '@nestjs/testing';
-import { DataSource, type Repository } from 'typeorm';
+import { DataSource, In, type Repository } from 'typeorm';
+import { TypeOrmTransactionalAuditLog } from '../../src/module/audit/persistence/typeorm-transactional-audit-log';
+import {
+  AuditAction,
+  AuditActorType,
+  AuditEntityType,
+} from '../../src/module/audit/domain/audit-log';
+import { AuditLog } from '../../src/module/audit/schema/audit-log.entity';
 import request from 'supertest';
 import type { App } from 'supertest/types';
 
@@ -93,6 +100,12 @@ describe('Room calendar workflow (e2e)', () => {
     });
 
     harness.registerCleanup(async () => {
+      if (roomIds.length > 0) {
+        await dataSource
+          .getRepository(AuditLog)
+          .delete({ entityType: AuditEntityType.ROOM, entityId: In(roomIds) });
+        await calendars.delete({ roomId: In(roomIds) });
+      }
       if (calendarIds.length > 0)
         await calendars.delete([...new Set(calendarIds)]);
       if (bookingIds.length > 0)
@@ -298,6 +311,85 @@ describe('Room calendar workflow (e2e)', () => {
       const blockedEntries = await calendars.findBy({ roomId: bookingRoom.id });
       calendarIds.push(...blockedEntries.map((entry) => entry.id));
     }
+  });
+
+  it('audits block/unblock with the caller and rolls back calendar and audit together', async () => {
+    const room = await createRoom();
+    const range = { from: '2030-02-01', to: '2030-02-03' };
+    const logs = dataSource.getRepository(AuditLog);
+    const where = { entityType: AuditEntityType.ROOM, entityId: room.id };
+    const audit = app.get(TypeOrmTransactionalAuditLog);
+    const original = audit.record.bind(audit);
+    const block = () =>
+      request(app.getHttpServer())
+        .post(`/api/v1/management/rooms/${room.id}/blocks`)
+        .set('Authorization', 'Bearer ' + staffToken)
+        .send({ ...range, reason: ' Maintenance ' });
+    const unblock = () =>
+      request(app.getHttpServer())
+        .delete(`/api/v1/management/rooms/${room.id}/blocks`)
+        .set('Authorization', 'Bearer ' + adminToken)
+        .query(range);
+    const failAudit = () =>
+      jest.spyOn(audit, 'record').mockImplementation(async (context, input) => {
+        await original(context, input);
+        throw new Error('fixture calendar audit failure after insert');
+      });
+    let spy = failAudit();
+    try {
+      await block().expect(500);
+      expect(await calendars.countBy({ roomId: room.id })).toBe(0);
+      expect(await logs.countBy(where)).toBe(0);
+    } finally {
+      spy.mockRestore();
+    }
+    const blocked = await block().expect(201);
+    const blockLog = await logs.findOneByOrFail({
+      ...where,
+      action: AuditAction.ROOM_CALENDAR_BLOCKED,
+    });
+    expect(blockLog).toMatchObject({
+      actorType: AuditActorType.USER,
+      actorId: userIds[1],
+      requestId: (blocked.body as { requestId: string }).requestId,
+    });
+    expect(blockLog.metadata).toEqual({
+      schemaVersion: 1,
+      ...range,
+      reason: 'Maintenance',
+      addedCount: 2,
+    });
+    await block().expect(409);
+    expect(await logs.countBy(where)).toBe(1);
+    spy = failAudit();
+    try {
+      await unblock().expect(500);
+      expect(await calendars.countBy({ roomId: room.id })).toBe(2);
+      expect(await logs.countBy(where)).toBe(1);
+    } finally {
+      spy.mockRestore();
+    }
+    const unblocked = await unblock().expect(200);
+    expect(
+      (unblocked.body as Envelope<{ removedCount: number }>).data.removedCount,
+    ).toBe(2);
+    const unblockLog = await logs.findOneByOrFail({
+      ...where,
+      action: AuditAction.ROOM_CALENDAR_UNBLOCKED,
+    });
+    expect(unblockLog).toMatchObject({
+      actorType: AuditActorType.USER,
+      actorId: userIds[0],
+      requestId: (unblocked.body as { requestId: string }).requestId,
+    });
+    expect(unblockLog.metadata).toEqual({
+      schemaVersion: 1,
+      ...range,
+      removedCount: 2,
+    });
+    await unblock().expect(200);
+    expect(await logs.countBy(where)).toBe(2);
+    expect(await calendars.countBy({ roomId: room.id })).toBe(0);
   });
 
   async function createRoom(): Promise<Room> {

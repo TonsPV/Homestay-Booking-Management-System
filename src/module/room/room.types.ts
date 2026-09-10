@@ -1,7 +1,7 @@
 import type { PaginationMeta } from '../../common/pagination/pagination.types';
 import type { RoomCalendarStatus } from '../booking/domain/room-calendar-status';
 import type { RoomStatus } from './domain/room-status';
-import type { BedConfiguration } from '../room-type/bed-configuration';
+import type { BedConfig } from '../room-type/bed-configuration';
 
 export enum RoomTodayAvailabilityStatus {
   AVAILABLE = 'AVAILABLE',
@@ -28,7 +28,7 @@ export interface RoomResponse {
     name: string;
     description: string | null;
     bedType: string | null;
-    beds: BedConfiguration[];
+    beds: BedConfig[];
     maxGuests: number;
     basePrice: string;
     amenities: {

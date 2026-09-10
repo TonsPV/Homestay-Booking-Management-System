@@ -50,7 +50,7 @@ interface BookingPayload {
   cancellationReason: string | null;
 }
 
-interface ManagementBookingCapabilityPayload {
+interface BookingCapabilityPayload {
   credentialCapabilities: {
     canSetInitialPassword: boolean;
     reasonCode: string;
@@ -198,8 +198,7 @@ describe('Booking lifecycle/expiration workflow (e2e)', () => {
       .get(`/api/v1/management/bookings/${onlineUnpaid.id}`)
       .set('Authorization', 'Bearer ' + staffToken)
       .expect(200);
-    const detailBody =
-      detail.body as Envelope<ManagementBookingCapabilityPayload>;
+    const detailBody = detail.body as Envelope<BookingCapabilityPayload>;
     expect(detailBody.data).toMatchObject({
       credentialCapabilities: {
         canSetInitialPassword: false,
@@ -543,7 +542,7 @@ describe('Booking lifecycle/expiration workflow (e2e)', () => {
     calendarIds.push(calendar.id);
 
     const bookingService = app.get(BookingService);
-    const expiredCount = await bookingService.expirePendingPayments(new Date());
+    const expiredCount = await bookingService.expireUnpaidBookings(new Date());
     expect(expiredCount).toBeGreaterThanOrEqual(1);
     expect(await bookings.findOneByOrFail({ id: expired.id })).toMatchObject({
       status: BookingStatus.CANCELLED,
@@ -551,9 +550,9 @@ describe('Booking lifecycle/expiration workflow (e2e)', () => {
       cancellationReason: 'Thanh toán đã hết hạn.',
     });
     expect(await calendars.countBy({ bookingId: expired.id })).toBe(0);
-    await expect(
-      bookingService.expirePendingPayments(new Date()),
-    ).resolves.toBe(0);
+    await expect(bookingService.expireUnpaidBookings(new Date())).resolves.toBe(
+      0,
+    );
   });
 
   async function createRoom(label: string): Promise<Room> {

@@ -1,4 +1,4 @@
-import type { TransactionContext } from '../../../common/application/transaction';
+import type { TransactionContext } from '../../../common/database/transaction';
 import type { Customer } from '../../customer/schema/customer.entity';
 import type { Room } from '../../room/schema/room.entity';
 import type { Booking } from '../schema/booking.entity';
@@ -8,7 +8,7 @@ import {
   BookingStatus,
 } from '../domain/booking-state';
 
-export interface CreateBookingRecord {
+export interface CreateBookingInput {
   bookingCode: string;
   customerId: string;
   roomId: string;
@@ -78,11 +78,11 @@ export abstract class BookingCreationStore {
 
   abstract createBooking(
     context: TransactionContext,
-    input: CreateBookingRecord,
+    input: CreateBookingInput,
   ): Promise<Booking>;
 }
 
-export interface CreatePasswordlessCustomerRecord {
+export interface NewPasswordlessCustomer {
   fullName: string;
   email: string | null;
   phone: string;
@@ -92,7 +92,7 @@ export abstract class BookingCustomerStore {
   abstract findById(
     context: TransactionContext,
     customerId: string,
-    lockForBookingAdmission: boolean,
+    lockForAdmission: boolean,
   ): Promise<Customer | null>;
 
   abstract findByPhoneVariants(
@@ -107,7 +107,7 @@ export abstract class BookingCustomerStore {
 
   abstract createPasswordless(
     context: TransactionContext,
-    input: CreatePasswordlessCustomerRecord,
+    input: NewPasswordlessCustomer,
   ): Promise<Customer>;
 }
 

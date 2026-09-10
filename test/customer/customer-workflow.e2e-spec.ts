@@ -1,6 +1,13 @@
 import { type INestApplication } from '@nestjs/common';
 import { Test, type TestingModule } from '@nestjs/testing';
-import { DataSource, type Repository } from 'typeorm';
+import { DataSource, In, type Repository } from 'typeorm';
+import { AuditLogService } from '../../src/module/audit/audit-log.service';
+import {
+  AuditAction,
+  AuditActorType,
+  AuditEntityType,
+} from '../../src/module/audit/domain/audit-log';
+import { AuditLog } from '../../src/module/audit/schema/audit-log.entity';
 import request from 'supertest';
 import type { App } from 'supertest/types';
 
@@ -49,8 +56,8 @@ interface CustomerPayload {
 describe('Customer workflow (e2e)', () => {
   let app: INestApplication<App>;
   let e2eHarness: E2eHarness | undefined;
-  let customersRepository: Repository<Customer>;
-  let usersRepository: Repository<User>;
+  let customerRepo: Repository<Customer>;
+  let userRepo: Repository<User>;
   let passwordHasher: PasswordHasherService;
   let accessTokenService: AccessTokenService;
   let admin: User;
@@ -75,8 +82,8 @@ describe('Customer workflow (e2e)', () => {
     await app.init();
 
     const dataSource = app.get(DataSource);
-    customersRepository = dataSource.getRepository(Customer);
-    usersRepository = dataSource.getRepository(User);
+    customerRepo = dataSource.getRepository(Customer);
+    userRepo = dataSource.getRepository(User);
     passwordHasher = app.get(PasswordHasherService);
     accessTokenService = app.get(AccessTokenService);
     admin = await createDirectUser('ADMIN');
@@ -86,11 +93,15 @@ describe('Customer workflow (e2e)', () => {
 
     e2eHarness.registerCleanup(async () => {
       if (createdCustomerIds.length > 0) {
-        await customersRepository.delete([...new Set(createdCustomerIds)]);
+        await dataSource.getRepository(AuditLog).delete({
+          entityType: AuditEntityType.CUSTOMER,
+          entityId: In(createdCustomerIds),
+        });
+        await customerRepo.delete([...new Set(createdCustomerIds)]);
       }
 
       if (createdUserIds.length > 0) {
-        await usersRepository.delete([...new Set(createdUserIds)]);
+        await userRepo.delete([...new Set(createdUserIds)]);
       }
     });
   });
@@ -180,7 +191,7 @@ describe('Customer workflow (e2e)', () => {
         .data,
     ).toEqual({ passwordConfigured: true });
 
-    const changed = await customersRepository.findOneByOrFail({
+    const changed = await customerRepo.findOneByOrFail({
       id: customer.id,
     });
     expect(changed.tokenVersion).toBe(customer.tokenVersion + 1);
@@ -313,7 +324,7 @@ describe('Customer workflow (e2e)', () => {
       .set('Authorization', 'Bearer ' + adminToken)
       .send({ status: 'LOCKED' })
       .expect(200);
-    const locked = await customersRepository.findOneByOrFail({
+    const locked = await customerRepo.findOneByOrFail({
       id: customer.id,
     });
     expect(locked.tokenVersion).toBe(customer.tokenVersion + 1);
@@ -331,7 +342,7 @@ describe('Customer workflow (e2e)', () => {
       .set('Authorization', 'Bearer ' + adminToken)
       .send({ status: 'ACTIVE' })
       .expect(200);
-    const active = await customersRepository.findOneByOrFail({
+    const active = await customerRepo.findOneByOrFail({
       id: customer.id,
     });
     expect(active.tokenVersion).toBe(customer.tokenVersion + 2);
@@ -344,7 +355,7 @@ describe('Customer workflow (e2e)', () => {
       .set('Authorization', 'Bearer ' + adminToken)
       .send({ status: 'ACTIVE' })
       .expect(200);
-    const idempotent = await customersRepository.findOneByOrFail({
+    const idempotent = await customerRepo.findOneByOrFail({
       id: customer.id,
     });
     expect(idempotent.tokenVersion).toBe(active.tokenVersion);
@@ -377,7 +388,7 @@ describe('Customer workflow (e2e)', () => {
     expect(profileResponses.map((response) => response.status).sort()).toEqual([
       200, 200,
     ]);
-    const finalProfile = await customersRepository.findOneByOrFail({
+    const finalProfile = await customerRepo.findOneByOrFail({
       id: profileCustomer.id,
     });
     expect(['Concurrent Profile A', 'Concurrent Profile B']).toContain(
@@ -410,7 +421,7 @@ describe('Customer workflow (e2e)', () => {
       [200, 200],
       [200, 403],
     ]).toContainEqual(mutationStatuses);
-    const finalCustomer = await customersRepository.findOneByOrFail({
+    const finalCustomer = await customerRepo.findOneByOrFail({
       id: mutationCustomer.id,
     });
     expect(finalCustomer.status).toBe('LOCKED');
@@ -419,9 +430,73 @@ describe('Customer workflow (e2e)', () => {
     );
   });
 
+  it.each(['ADMIN', 'STAFF'] as const)(
+    'audits initial credential for %s and rolls back both writes on audit failure',
+    async (role) => {
+      const customer = await createCustomer({
+        passwordHash: null,
+        tokenVersion: 4,
+      });
+      const auditService = app.get(AuditLogService);
+      const auditRepo = app.get(DataSource).getRepository(AuditLog);
+      const originalRecord = auditService.record.bind(auditService);
+      const spy = jest
+        .spyOn(auditService, 'record')
+        .mockImplementation(async (manager, input) => {
+          await originalRecord(manager, input);
+          throw new Error('fixture audit failure after insert');
+        });
+      const submit = () =>
+        request(app.getHttpServer())
+          .patch(`/api/v1/management/customers/${customer.id}/initial-password`)
+          .set(
+            'Authorization',
+            'Bearer ' + (role === 'ADMIN' ? adminToken : staffToken),
+          )
+          .send({ password: PASSWORD });
+      const persisted = () =>
+        customerRepo
+          .createQueryBuilder('customer')
+          .addSelect('customer.passwordHash')
+          .where('customer.id = :id', { id: customer.id })
+          .getOneOrFail();
+      const where = {
+        action: AuditAction.CUSTOMER_INITIAL_PASSWORD_SET,
+        entityId: customer.id,
+      };
+      try {
+        await submit().expect(500);
+        expect(await persisted()).toMatchObject({
+          passwordHash: null,
+          tokenVersion: 4,
+        });
+        expect(await auditRepo.countBy(where)).toBe(0);
+      } finally {
+        spy.mockRestore();
+      }
+      const response = await submit().expect(200);
+      const log = await auditRepo.findOneByOrFail(where);
+      expect(log).toMatchObject({
+        actorType: AuditActorType.USER,
+        actorId: role === 'ADMIN' ? admin.id : staff.id,
+        entityType: AuditEntityType.CUSTOMER,
+        requestId: (response.body as ResponseEnvelope<unknown>).requestId,
+      });
+      expect(log.metadata).toEqual({
+        schemaVersion: 1,
+        passwordConfiguredBefore: false,
+        passwordConfiguredAfter: true,
+      });
+      expect(log.createdAt).toBeInstanceOf(Date);
+      expect((await persisted()).tokenVersion).toBe(5);
+      await submit().expect(409);
+      expect(await auditRepo.countBy(where)).toBe(1);
+    },
+  );
+
   async function createDirectUser(role: 'ADMIN' | 'STAFF'): Promise<User> {
-    const user = await usersRepository.save(
-      usersRepository.create({
+    const user = await userRepo.save(
+      userRepo.create({
         fullName: 'Customer E2E ' + role,
         email: nextEmail('user-' + role),
         phone: null,
@@ -438,8 +513,8 @@ describe('Customer workflow (e2e)', () => {
   async function createCustomer(
     overrides: Partial<Customer> = {},
   ): Promise<Customer> {
-    const customer = await customersRepository.save(
-      customersRepository.create({
+    const customer = await customerRepo.save(
+      customerRepo.create({
         fullName: 'Customer E2E Fixture ' + nextSequence(),
         email: nextEmail('customer'),
         phone: '+84' + nextLocalPhone().slice(1),

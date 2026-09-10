@@ -7,7 +7,7 @@ export interface RateLimitOptions {
 
 export const RATE_LIMIT_KEY = 'rate-limit';
 
-export function assertValidRateLimitOptions(
+export function assertRateLimitOptions(
   options: unknown,
 ): asserts options is RateLimitOptions {
   if (options === null || typeof options !== 'object') {
@@ -37,7 +37,7 @@ export function assertValidRateLimitOptions(
 }
 
 export const RateLimit = (options: RateLimitOptions) => {
-  assertValidRateLimitOptions(options);
+  assertRateLimitOptions(options);
 
   return SetMetadata(RATE_LIMIT_KEY, options);
 };

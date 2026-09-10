@@ -1,7 +1,7 @@
 import type {
   AccountStatus,
   UserRole,
-} from '../../../common/domain/account.enums';
+} from '../../../common/account/account.enums';
 
 export interface UserAuthorizationState {
   id: string;

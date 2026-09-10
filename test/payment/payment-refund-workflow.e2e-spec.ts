@@ -6,6 +6,7 @@ import type { App } from 'supertest/types';
 
 import { AppModule } from '../../src/app.module';
 import { configureApp } from '../../src/bootstrap/configure-app';
+import { TypeOrmTransactionRunner } from '../../src/common/database/typeorm-transaction.runner';
 import migrationDataSource from '../../src/database/data-source';
 import { AuditLog } from '../../src/module/audit/schema/audit-log.entity';
 import {
@@ -24,6 +25,7 @@ import { Customer } from '../../src/module/customer/schema/customer.entity';
 import { AccessTokenService } from '../../src/module/auth/access-token.service';
 import { Payment } from '../../src/module/payment/schema/payment.entity';
 import { PaymentRefund } from '../../src/module/payment/schema/payment-refund.entity';
+import { TypeOrmPaymentRefundStore } from '../../src/module/payment/persistence/typeorm-payment-refund.store';
 import {
   PaymentMethod,
   PaymentReviewReason,
@@ -315,6 +317,312 @@ describe('Payment refund/reconciliation workflow (e2e)', () => {
       });
     } finally {
       refundSpy.mockRestore();
+      querySpy.mockRestore();
+    }
+  });
+
+  it('preserves completion evidence when a refund query failure races completion', async () => {
+    const { booking, payment } = await createPaidPayment(PaymentMethod.VNPAY);
+    const refund = await createRefundRecord(payment.id, {
+      idempotencyKey: `refund-race-${suffix}`,
+      requestId: createFixtureRefundRequestId('R'),
+      previousPaymentStatus: PaymentStatus.SUCCESS,
+      reason: 'Refund race fixture.',
+    });
+    await payments.update(payment.id, { status: PaymentStatus.REFUND_PENDING });
+
+    const refundStore = app.get(TypeOrmPaymentRefundStore);
+    const transactionRunner = app.get(TypeOrmTransactionRunner);
+    const originalFindPayment = refundStore.findPayment.bind(refundStore);
+    let signalInitialRead!: () => void;
+    const initialRead = new Promise<void>((resolve) => {
+      signalInitialRead = resolve;
+    });
+    let signalCompletion!: () => void;
+    const completionCommitted = new Promise<void>((resolve) => {
+      signalCompletion = resolve;
+    });
+    let paused = false;
+    const findPaymentSpy = jest
+      .spyOn(refundStore, 'findPayment')
+      .mockImplementation(async (context, paymentId) => {
+        const snapshot = await originalFindPayment(context, paymentId);
+
+        if (paymentId === payment.id && !paused) {
+          paused = true;
+          signalInitialRead();
+          await completionCommitted;
+        }
+
+        return snapshot;
+      });
+
+    try {
+      const failureWriter = transactionRunner.run((context) =>
+        refundStore.recordRefundQueryFailure(
+          context,
+          payment.id,
+          new Date('2038-01-01T00:00:00.000Z'),
+        ),
+      );
+      await initialRead;
+
+      await dataSource.transaction(async (manager) => {
+        await manager.getRepository(PaymentRefund).update(refund.id, {
+          refundedAt: new Date('2038-01-01T00:01:00.000Z'),
+          responseCode: '00',
+          transactionStatus: '00',
+          gatewayTransactionId: `race-complete-${suffix}`,
+          message: 'Refund completed before diagnostic writer resumed.',
+        });
+        await manager.getRepository(Payment).update(payment.id, {
+          status: PaymentStatus.REFUNDED,
+        });
+        await manager.getRepository(Booking).update(booking.id, {
+          status: BookingStatus.CANCELLED,
+          paymentStatus: BookingPaymentStatus.REFUNDED,
+        });
+      });
+      signalCompletion();
+      await failureWriter;
+
+      const persistedRefund = await paymentRefunds.findOneByOrFail({
+        id: refund.id,
+      });
+      const persistedPayment = await payments.findOneByOrFail({
+        id: payment.id,
+      });
+      const persistedBooking = await bookings.findOneByOrFail({
+        id: booking.id,
+      });
+
+      expect(persistedPayment.status).toBe(PaymentStatus.REFUNDED);
+      expect(persistedBooking).toMatchObject({
+        status: BookingStatus.CANCELLED,
+        paymentStatus: BookingPaymentStatus.REFUNDED,
+      });
+      expect(persistedRefund).toMatchObject({
+        refundedAt: new Date('2038-01-01T00:01:00.000Z'),
+        responseCode: '00',
+        transactionStatus: '00',
+        gatewayTransactionId: `race-complete-${suffix}`,
+        message: 'Refund completed before diagnostic writer resumed.',
+      });
+    } finally {
+      findPaymentSpy.mockRestore();
+    }
+  });
+
+  it('lets completion proceed after the diagnostic writer releases its lock', async () => {
+    const { booking, payment } = await createPaidPayment(PaymentMethod.VNPAY);
+    const refund = await createRefundRecord(payment.id, {
+      idempotencyKey: `refund-lock-order-${suffix}`,
+      requestId: createFixtureRefundRequestId('L'),
+      previousPaymentStatus: PaymentStatus.SUCCESS,
+      reason: 'Refund lock-order fixture.',
+    });
+    await payments.update(payment.id, { status: PaymentStatus.REFUND_PENDING });
+
+    const refundStore = app.get(TypeOrmPaymentRefundStore);
+    const transactionRunner = app.get(TypeOrmTransactionRunner);
+    const originalLockBooking = refundStore.lockBooking.bind(refundStore);
+    let signalBookingLocked!: () => void;
+    const bookingLocked = new Promise<void>((resolve) => {
+      signalBookingLocked = resolve;
+    });
+    let releaseFailureWriter!: () => void;
+    const failureWriterReleased = new Promise<void>((resolve) => {
+      releaseFailureWriter = resolve;
+    });
+    let paused = false;
+    const lockBookingSpy = jest
+      .spyOn(refundStore, 'lockBooking')
+      .mockImplementation(async (context, bookingId) => {
+        const lockedBooking = await originalLockBooking(context, bookingId);
+
+        if (bookingId === booking.id && !paused) {
+          paused = true;
+          signalBookingLocked();
+          await failureWriterReleased;
+        }
+
+        return lockedBooking;
+      });
+    const gateway = app.get(VnPayGatewayService);
+    const querySpy = jest
+      .spyOn(gateway, 'queryTransaction')
+      .mockResolvedValueOnce(
+        operationResult({
+          transactionId: `lock-order-complete-${suffix}`,
+          message: 'Refund completed after diagnostic lock.',
+        }),
+      );
+    let failureWriter: Promise<void> | undefined;
+
+    try {
+      failureWriter = transactionRunner.run((context) =>
+        refundStore.recordRefundQueryFailure(
+          context,
+          payment.id,
+          new Date('2038-01-03T00:00:00.000Z'),
+        ),
+      );
+      await waitForSignal(bookingLocked, 'refund diagnostic booking lock');
+
+      const completion = request(app.getHttpServer())
+        .post(`/api/v1/management/payments/${payment.id}/reconcile-refund`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(200);
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      releaseFailureWriter();
+      await failureWriter;
+      await completion;
+
+      expect(await payments.findOneByOrFail({ id: payment.id })).toMatchObject({
+        status: PaymentStatus.REFUNDED,
+      });
+      expect(await bookings.findOneByOrFail({ id: booking.id })).toMatchObject({
+        status: BookingStatus.CANCELLED,
+        paymentStatus: BookingPaymentStatus.REFUNDED,
+      });
+      const persistedRefund = await paymentRefunds.findOneByOrFail({
+        id: refund.id,
+      });
+      expect(persistedRefund.refundedAt).toBeInstanceOf(Date);
+      expect(persistedRefund).toMatchObject({
+        gatewayTransactionId: `lock-order-complete-${suffix}`,
+        responseCode: '00',
+        transactionStatus: '00',
+      });
+      expect(querySpy).toHaveBeenCalledTimes(1);
+    } finally {
+      releaseFailureWriter();
+      if (failureWriter !== undefined) {
+        await failureWriter.catch(() => undefined);
+      }
+      lockBookingSpy.mockRestore();
+      querySpy.mockRestore();
+    }
+  });
+
+  it('records only diagnostic fields when VNPay reconciliation times out', async () => {
+    const { payment } = await createPaidPayment(PaymentMethod.VNPAY);
+    await createRefundRecord(payment.id, {
+      idempotencyKey: `refund-query-timeout-${suffix}`,
+      requestId: createFixtureRefundRequestId('Q'),
+      previousPaymentStatus: PaymentStatus.SUCCESS,
+      reason: 'Refund query timeout fixture.',
+    });
+    await payments.update(payment.id, { status: PaymentStatus.REFUND_PENDING });
+
+    const gateway = app.get(VnPayGatewayService);
+    const querySpy = jest
+      .spyOn(gateway, 'queryTransaction')
+      .mockRejectedValueOnce(new Error('fixture query timeout'));
+
+    try {
+      await request(app.getHttpServer())
+        .post(`/api/v1/management/payments/${payment.id}/reconcile-refund`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(503);
+
+      expect(await payments.findOneByOrFail({ id: payment.id })).toMatchObject({
+        status: PaymentStatus.REFUND_PENDING,
+      });
+      const persistedRefund = await paymentRefunds.findOneByOrFail({
+        paymentId: payment.id,
+      });
+      expect(persistedRefund.lastQueriedAt).toBeInstanceOf(Date);
+      expect(persistedRefund).toMatchObject({
+        message: 'Khong the ket noi VNPay de doi soat.',
+        gatewayTransactionId: null,
+        responseCode: null,
+        transactionStatus: null,
+        refundedAt: null,
+      });
+      expect(querySpy).toHaveBeenCalledTimes(1);
+    } finally {
+      querySpy.mockRestore();
+    }
+  });
+
+  it('no-ops query-failure diagnostics when a pending payment has no refund row', async () => {
+    const { booking, payment } = await createPaidPayment(PaymentMethod.VNPAY);
+    await payments.update(payment.id, { status: PaymentStatus.REFUND_PENDING });
+
+    const refundStore = app.get(TypeOrmPaymentRefundStore);
+    const transactionRunner = app.get(TypeOrmTransactionRunner);
+
+    await expect(
+      transactionRunner.run((context) =>
+        refundStore.recordRefundQueryFailure(
+          context,
+          payment.id,
+          new Date('2038-01-02T00:00:00.000Z'),
+        ),
+      ),
+    ).resolves.toBeUndefined();
+
+    expect(await paymentRefunds.countBy({ paymentId: payment.id })).toBe(0);
+    expect(await payments.findOneByOrFail({ id: payment.id })).toMatchObject({
+      status: PaymentStatus.REFUND_PENDING,
+      bookingId: booking.id,
+    });
+  });
+
+  it('rolls back a failed diagnostic transaction and releases its locks', async () => {
+    const { payment } = await createPaidPayment(PaymentMethod.VNPAY);
+    await createRefundRecord(payment.id, {
+      idempotencyKey: `refund-query-rollback-${suffix}`,
+      requestId: createFixtureRefundRequestId('B'),
+      previousPaymentStatus: PaymentStatus.SUCCESS,
+      reason: 'Refund query rollback fixture.',
+    });
+    await payments.update(payment.id, { status: PaymentStatus.REFUND_PENDING });
+
+    const refundStore = app.get(TypeOrmPaymentRefundStore);
+    const transactionRunner = app.get(TypeOrmTransactionRunner);
+    const originalLockPayment = refundStore.lockPayment.bind(refundStore);
+    const lockPaymentSpy = jest
+      .spyOn(refundStore, 'lockPayment')
+      .mockImplementation(async (context, paymentId) => {
+        await originalLockPayment(context, paymentId);
+        throw new Error('fixture diagnostic transaction failure');
+      });
+
+    try {
+      await expect(
+        transactionRunner.run((context) =>
+          refundStore.recordRefundQueryFailure(
+            context,
+            payment.id,
+            new Date('2038-01-04T00:00:00.000Z'),
+          ),
+        ),
+      ).rejects.toThrow('fixture diagnostic transaction failure');
+    } finally {
+      lockPaymentSpy.mockRestore();
+    }
+
+    const gateway = app.get(VnPayGatewayService);
+    const querySpy = jest
+      .spyOn(gateway, 'queryTransaction')
+      .mockResolvedValueOnce(
+        operationResult({
+          transactionId: `rollback-recovery-${suffix}`,
+          message: 'Refund completed after rollback.',
+        }),
+      );
+
+    try {
+      await request(app.getHttpServer())
+        .post(`/api/v1/management/payments/${payment.id}/reconcile-refund`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(200);
+      expect(await payments.findOneByOrFail({ id: payment.id })).toMatchObject({
+        status: PaymentStatus.REFUNDED,
+      });
+    } finally {
       querySpy.mockRestore();
     }
   });
@@ -1135,3 +1443,25 @@ describe('Payment refund/reconciliation workflow (e2e)', () => {
     };
   }
 });
+
+async function waitForSignal(
+  signal: Promise<void>,
+  label: string,
+): Promise<void> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      signal,
+      new Promise<never>((_, reject) => {
+        timeout = setTimeout(
+          () => reject(new Error(`Timed out waiting for ${label}.`)),
+          5000,
+        );
+      }),
+    ]);
+  } finally {
+    if (timeout !== undefined) {
+      clearTimeout(timeout);
+    }
+  }
+}

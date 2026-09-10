@@ -148,6 +148,7 @@ describe('OpenAPI response contract', () => {
           get: {
             responses: {
               '200': {
+                description: 'success',
                 content: {
                   'application/json': { schema: { type: 'object' } },
                 },
