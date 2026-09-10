@@ -1,3 +1,12 @@
+import type {
+  CustomerResponse,
+  UserResponse,
+  LoginResponse,
+  RegistrationResult,
+  MeResponse,
+  AccessTokenPayload,
+} from './auth.types';
+
 import {
   BadRequestException,
   ConflictException,
@@ -9,7 +18,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import type { Repository } from 'typeorm';
 
 import { getMysqlDuplicateKey } from '../../common/database';
-import type { AccessTokenPayload } from './auth.types';
+
 import {
   getPhoneLookupVariants,
   isEmail,
@@ -23,15 +32,8 @@ import {
 import { AccessTokenService } from './access-token.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterCustomerDto } from './dto/register-customer.dto';
-import {
-  Customer,
-  type CustomerStatus,
-} from '../customer/schema/customer.entity';
-import {
-  User,
-  type UserRole,
-  type UserStatus,
-} from '../user/schema/user.entity';
+import { Customer } from '../customer/schema/customer.entity';
+import { User } from '../user/schema/user.entity';
 import { PasswordHasherService } from './password-hasher.service';
 
 interface RegistrationInput {
@@ -45,50 +47,6 @@ interface LoginInput {
   identifier: string;
   password: string;
 }
-
-export interface CustomerResponse {
-  id: string;
-  fullName: string;
-  email: string | null;
-  phone: string;
-  status: CustomerStatus;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
-export interface UserResponse {
-  id: string;
-  fullName: string;
-  email: string;
-  phone: string | null;
-  role: UserRole;
-  status: UserStatus;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
-export interface LoginResponse {
-  accessToken: string;
-  tokenType: 'Bearer';
-  expiresIn: number;
-  actorType: 'customer' | 'user';
-  customer?: CustomerResponse;
-  user?: UserResponse;
-}
-
-export interface RegistrationResult {
-  accepted: true;
-}
-
-export type MeResponse =
-  | {
-      actorType: 'customer';
-      customer: CustomerResponse;
-    }
-  | {
-      actorType: 'user';
-      user: UserResponse;
-    };
 
 @Injectable()
 export class AuthService {

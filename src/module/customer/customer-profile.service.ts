@@ -1,3 +1,4 @@
+import type { ProfileResponse } from './customer.types';
 import {
   BadRequestException,
   ConflictException,
@@ -19,17 +20,7 @@ import {
   requiredPhone,
 } from '../../common/validation';
 import { UpdateCustomerProfileDto } from './dto/update-customer-profile.dto';
-import { Customer, type CustomerStatus } from './schema/customer.entity';
-
-export interface ProfileResponse {
-  id: string;
-  fullName: string;
-  email: string | null;
-  phone: string;
-  status: CustomerStatus;
-  createdAt: Date;
-  updatedAt: Date;
-}
+import { Customer } from './schema/customer.entity';
 
 @Injectable()
 export class CustomerProfileService {

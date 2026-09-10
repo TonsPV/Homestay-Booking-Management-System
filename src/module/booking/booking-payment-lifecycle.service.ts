@@ -4,7 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import {
   type TransactionContext,
   TransactionRunner,
-} from '../../common/application/transaction';
+} from '../../common/database/transaction';
 import { ErrorCode } from '../../common/error-codes';
 import { AppHttpException } from '../../common/http/app-http-exception';
 import {
@@ -18,7 +18,7 @@ import {
   PaymentStatus,
 } from '../payment/domain/payment-state';
 import { detectDuplicateChargeRefund } from '../payment/domain/duplicate-charge.detector';
-import { buildRefundAuditMetadata } from '../payment/infrastructure/mapper/payment-refund.mapper';
+import { buildRefundAuditMetadata } from '../payment/mappers/payment-refund.mapper';
 import { PaymentAcceptanceStore } from '../payment/ports/payment-acceptance.store';
 import { PaymentRefundStore } from '../payment/ports/payment-refund.store';
 import { Payment } from '../payment/schema/payment.entity';

@@ -10,7 +10,7 @@ import { ConfigService } from '@nestjs/config';
 import {
   type TransactionContext,
   TransactionRunner,
-} from '../../common/application/transaction';
+} from '../../common/database/transaction';
 import {
   isValidIdempotencyKey,
   requireActorId,

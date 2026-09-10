@@ -9,7 +9,7 @@ import {
 import {
   type TransactionContext,
   TransactionRunner,
-} from '../../common/application/transaction';
+} from '../../common/database/transaction';
 import { ErrorCode } from '../../common/error-codes';
 import { AppHttpException } from '../../common/http/app-http-exception';
 import { optionalNullableTrimmedString } from '../../common/validation';

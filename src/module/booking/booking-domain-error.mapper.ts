@@ -1,3 +1,9 @@
+import {
+  TRANSITION_ERROR_CODES,
+  type BookingTransitionReasonCode,
+  type TransitionCapabilityResponse,
+} from './booking.types';
+
 import { BadRequestException, HttpStatus } from '@nestjs/common';
 
 import { ErrorCode } from '../../common/error-codes';
@@ -12,39 +18,6 @@ import {
   InvalidBookingStayDateError,
 } from './domain/booking.errors';
 import type { BookingTransitionCapability } from './domain/booking-transition.policy';
-import type { BookingStatus } from './domain/booking-state';
-
-const TRANSITION_ERROR_CODES = {
-  [BookingTransitionDenialReason.REFUND_PENDING]:
-    ErrorCode.BOOKING_REFUND_PENDING,
-  [BookingTransitionDenialReason.TRANSITION_NOT_ALLOWED]:
-    ErrorCode.BOOKING_TRANSITION_NOT_ALLOWED,
-  [BookingTransitionDenialReason.CONFIRMATION_REQUIRES_PAYMENT]:
-    ErrorCode.BOOKING_CONFIRMATION_REQUIRES_PAYMENT,
-  [BookingTransitionDenialReason.CHECKIN_REQUIRES_PAYMENT]:
-    ErrorCode.BOOKING_CHECKIN_REQUIRES_PAYMENT,
-  [BookingTransitionDenialReason.CHECKIN_OUTSIDE_STAY_WINDOW]:
-    ErrorCode.BOOKING_CHECKIN_OUTSIDE_STAY_WINDOW,
-  [BookingTransitionDenialReason.ROOM_MISSING_FOR_BOOKING]:
-    ErrorCode.BOOKING_ROOM_MISSING_FOR_BOOKING,
-  [BookingTransitionDenialReason.ROOM_NOT_READY]:
-    ErrorCode.BOOKING_ROOM_NOT_READY,
-  [BookingTransitionDenialReason.CANCELLATION_ALREADY_PAID]:
-    ErrorCode.BOOKING_CANCELLATION_ALREADY_PAID,
-} as const satisfies Record<BookingTransitionDenialReason, ErrorCode>;
-
-export const BOOKING_TRANSITION_REASON_CODES = Object.values(
-  TRANSITION_ERROR_CODES,
-);
-
-export type BookingTransitionReasonCode =
-  (typeof TRANSITION_ERROR_CODES)[BookingTransitionDenialReason];
-
-export interface TransitionCapabilityResponse {
-  targetStatus: BookingStatus;
-  allowed: boolean;
-  reasonCode: BookingTransitionReasonCode | null;
-}
 
 export interface BookingStayFieldNames {
   checkIn: string;

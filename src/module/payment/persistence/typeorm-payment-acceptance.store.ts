@@ -1,17 +1,17 @@
 import { Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 
-import type { TransactionContext } from '../../../../common/application/transaction';
-import { getMysqlDuplicateKey } from '../../../../common/database';
-import { TypeOrmTransactionRunner } from '../../../../common/infrastructure/persistence/typeorm-transaction.runner';
-import { Booking } from '../../../booking/schema/booking.entity';
+import type { TransactionContext } from '../../../common/database/transaction';
+import { getMysqlDuplicateKey } from '../../../common/database';
+import { TypeOrmTransactionRunner } from '../../../common/database/typeorm-transaction.runner';
+import { Booking } from '../../booking/schema/booking.entity';
 import {
   PaymentAcceptanceStore,
   PaymentIdempotencyConflictError,
   type CreatePaymentInput,
-} from '../../ports/payment-acceptance.store';
-import { Payment } from '../../schema/payment.entity';
-import { PaymentMethod, PaymentStatus } from '../../domain/payment-state';
+} from '../ports/payment-acceptance.store';
+import { Payment } from '../schema/payment.entity';
+import { PaymentMethod, PaymentStatus } from '../domain/payment-state';
 
 @Injectable()
 export class TypeOrmPaymentAcceptanceStore extends PaymentAcceptanceStore {

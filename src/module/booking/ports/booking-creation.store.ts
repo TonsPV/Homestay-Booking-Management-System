@@ -1,4 +1,4 @@
-import type { TransactionContext } from '../../../common/application/transaction';
+import type { TransactionContext } from '../../../common/database/transaction';
 import type { Customer } from '../../customer/schema/customer.entity';
 import type { Room } from '../../room/schema/room.entity';
 import type { Booking } from '../schema/booking.entity';

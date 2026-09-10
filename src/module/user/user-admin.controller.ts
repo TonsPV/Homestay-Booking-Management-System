@@ -36,7 +36,7 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { ListUsersQueryDto } from './dto/list-users-query.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UserAdminService } from './user-admin.service';
-import type { AdminUserResponse } from './user-admin.service';
+import type { AdminUserResponse } from './user.types';
 
 @Controller('v1/users')
 @UseGuards(JwtAuthGuard, RolesGuard)

@@ -7,8 +7,8 @@ import type {
   SelectQueryBuilder,
 } from 'typeorm';
 
-import { TypeOrmTransactionRunner } from '../../../../src/common/infrastructure/persistence/typeorm-transaction.runner';
-import type { TransactionContext } from '../../../../src/common/application/transaction';
+import { TypeOrmTransactionRunner } from '../../../../src/common/database/typeorm-transaction.runner';
+import type { TransactionContext } from '../../../../src/common/database/transaction';
 import { ErrorCode } from '../../../../src/common/error-codes';
 import type { AuditLogInput } from '../../../../src/module/audit/audit-log.service';
 import {
@@ -22,11 +22,11 @@ import {
   BookingStatus,
 } from '../../../../src/module/booking/domain/booking-state';
 import { RoomCalendar } from '../../../../src/module/booking/schema/room-calendar.entity';
-import { TypeOrmRoomCalendarStore } from '../../../../src/module/booking/infrastructure/persistence/typeorm-room-calendar.store';
+import { TypeOrmRoomCalendarStore } from '../../../../src/module/booking/persistence/typeorm-room-calendar.store';
 import {
   TypeOrmBookingLifecycleStore,
   TypeOrmBookingPaymentStateStore,
-} from '../../../../src/module/booking/infrastructure/persistence/typeorm-booking-lifecycle.store';
+} from '../../../../src/module/booking/persistence/typeorm-booking-lifecycle.store';
 import {
   PaymentService,
   type PaymentResponse,
@@ -45,8 +45,8 @@ import {
   PaymentStatus,
 } from '../../../../src/module/payment/domain/payment-state';
 import type { VnPayGatewayService } from '../../../../src/module/payment/vnpay-gateway.service';
-import { TypeOrmPaymentAcceptanceStore } from '../../../../src/module/payment/infrastructure/persistence/typeorm-payment-acceptance.store';
-import { TypeOrmPaymentRefundStore } from '../../../../src/module/payment/infrastructure/persistence/typeorm-payment-refund.store';
+import { TypeOrmPaymentAcceptanceStore } from '../../../../src/module/payment/persistence/typeorm-payment-acceptance.store';
+import { TypeOrmPaymentRefundStore } from '../../../../src/module/payment/persistence/typeorm-payment-refund.store';
 
 describe('PaymentService characterization', () => {
   let dataSource: { transaction: jest.Mock; getRepository: jest.Mock };

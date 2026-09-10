@@ -1,14 +1,14 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
-import { PersistenceTransactionModule } from '../../common/infrastructure/persistence/persistence-transaction.module';
+import { PersistenceTransactionModule } from '../../common/database/persistence-transaction.module';
 import { AuditModule } from '../audit/audit.module';
 import { AuthModule } from '../auth/auth.module';
 import { BookingModule } from '../booking/booking.module';
 import { Booking } from '../booking/schema/booking.entity';
 import { User } from '../user/schema/user.entity';
 import { PaymentManagementController } from './payment-management.controller';
-import { PaymentPersistenceModule } from './infrastructure/persistence/payment-persistence.module';
+import { PaymentPersistenceModule } from './persistence/payment-persistence.module';
 import { PaymentCollectionService } from './payment-collection.service';
 import { PaymentExpirationService } from './payment-expiration.service';
 import { PaymentManualService } from './payment-manual.service';

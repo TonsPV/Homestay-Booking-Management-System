@@ -1,7 +1,7 @@
 import { type INestApplication } from '@nestjs/common';
 import { Test, type TestingModule } from '@nestjs/testing';
 import { DataSource, In, type Repository } from 'typeorm';
-import { TypeOrmTransactionalAuditLog } from '../../src/module/audit/infrastructure/persistence/typeorm-transactional-audit-log';
+import { TypeOrmTransactionalAuditLog } from '../../src/module/audit/persistence/typeorm-transactional-audit-log';
 import {
   AuditAction,
   AuditActorType,

@@ -28,7 +28,7 @@ import { CurrentAuth } from '../auth/decorators/current-auth.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { CustomerAdminService } from './customer-admin.service';
-import type { AdminCustomerResponse } from './customer-admin.service';
+import type { AdminCustomerResponse } from './customer.types';
 import { AdminCustomerDto } from './dto/admin-customer-response.dto';
 import { ListCustomersQueryDto } from './dto/list-customers-query.dto';
 

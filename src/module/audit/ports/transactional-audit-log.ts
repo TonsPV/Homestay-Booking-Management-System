@@ -1,4 +1,4 @@
-import type { TransactionContext } from '../../../common/application/transaction';
+import type { TransactionContext } from '../../../common/database/transaction';
 import type { AuditLogInput } from '../audit-log.types';
 
 export abstract class TransactionalAuditLog {

@@ -1,4 +1,4 @@
-import type { UserRole } from '../../../common/domain/account.enums';
+import type { UserRole } from '../../../common/account/account.enums';
 import {
   CheckedInRoomMustRemainOccupiedError,
   RoomHiddenStatusPermissionError,

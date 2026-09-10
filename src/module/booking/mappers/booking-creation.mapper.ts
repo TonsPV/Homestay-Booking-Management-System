@@ -5,22 +5,22 @@ import {
   requiredPhone,
   requireId,
   requirePositiveInt,
-} from '../../../../common/validation';
-import type { Customer } from '../../../customer/schema/customer.entity';
-import type { Room } from '../../../room/schema/room.entity';
-import type { CreateBookingDto } from '../../dto/create-booking.dto';
-import type { CreateBookingInput } from '../../ports/booking-creation.store';
-import type { Booking } from '../../schema/booking.entity';
+} from '../../../common/validation';
+import type { Customer } from '../../customer/schema/customer.entity';
+import type { Room } from '../../room/schema/room.entity';
+import type { CreateBookingDto } from '../dto/create-booking.dto';
+import type { CreateBookingInput } from '../ports/booking-creation.store';
+import type { Booking } from '../schema/booking.entity';
 import {
   BookingPaymentStatus,
   BookingRequestIntentActorType,
   BookingStatus,
-} from '../../domain/booking-state';
+} from '../domain/booking-state';
 import {
   calculateBookingTotalAmount,
   normalizeBookingStayRange,
-} from '../../domain/booking-creation.policy';
-import { BookingStayPolicy } from '../../domain/booking-stay.policy';
+} from '../domain/booking-creation.policy';
+import { BookingStayPolicy } from '../domain/booking-stay.policy';
 
 export interface BookingCreationInput {
   roomId: string;

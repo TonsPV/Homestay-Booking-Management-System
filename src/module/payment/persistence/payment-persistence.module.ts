@@ -1,8 +1,8 @@
 import { Module } from '@nestjs/common';
 
-import { PersistenceTransactionModule } from '../../../../common/infrastructure/persistence/persistence-transaction.module';
-import { PaymentAcceptanceStore } from '../../ports/payment-acceptance.store';
-import { PaymentRefundStore } from '../../ports/payment-refund.store';
+import { PersistenceTransactionModule } from '../../../common/database/persistence-transaction.module';
+import { PaymentAcceptanceStore } from '../ports/payment-acceptance.store';
+import { PaymentRefundStore } from '../ports/payment-refund.store';
 import { TypeOrmPaymentAcceptanceStore } from './typeorm-payment-acceptance.store';
 import { TypeOrmPaymentRefundStore } from './typeorm-payment-refund.store';
 

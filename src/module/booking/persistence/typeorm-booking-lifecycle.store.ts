@@ -1,22 +1,19 @@
 import { Injectable } from '@nestjs/common';
 
-import type { TransactionContext } from '../../../../common/application/transaction';
-import { TypeOrmTransactionRunner } from '../../../../common/infrastructure/persistence/typeorm-transaction.runner';
-import { Payment } from '../../../payment/schema/payment.entity';
+import type { TransactionContext } from '../../../common/database/transaction';
+import { TypeOrmTransactionRunner } from '../../../common/database/typeorm-transaction.runner';
+import { Payment } from '../../payment/schema/payment.entity';
 import {
   PaymentMethod,
   PaymentStatus,
-} from '../../../payment/domain/payment-state';
-import { Room } from '../../../room/schema/room.entity';
+} from '../../payment/domain/payment-state';
+import { Room } from '../../room/schema/room.entity';
 import {
   BookingLifecycleStore,
   BookingPaymentStateStore,
-} from '../../ports/booking-lifecycle.store';
-import { Booking } from '../../schema/booking.entity';
-import {
-  BookingPaymentStatus,
-  BookingStatus,
-} from '../../domain/booking-state';
+} from '../ports/booking-lifecycle.store';
+import { Booking } from '../schema/booking.entity';
+import { BookingPaymentStatus, BookingStatus } from '../domain/booking-state';
 
 @Injectable()
 export class TypeOrmBookingLifecycleStore extends BookingLifecycleStore {

@@ -1,7 +1,7 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Allow } from 'class-validator';
 
-import { AccountStatusEnum } from '../../../common/domain/account.enums';
+import { AccountStatusEnum } from '../../../common/account/account.enums';
 import { PaginationQueryDto } from '../../../common/pagination/pagination-query.dto';
 
 export class ListCustomersQueryDto extends PaginationQueryDto {

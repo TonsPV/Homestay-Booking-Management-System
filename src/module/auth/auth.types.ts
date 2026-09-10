@@ -1,5 +1,12 @@
-import type { ActorType, UserRole } from '../../common/domain/account.enums';
+import type {
+  AccountStatus as CustomerStatus,
+  AccountStatus as UserStatus,
+  ActorType,
+  UserRole,
+} from '../../common/account/account.enums';
+
 import type { AppRequest } from '../../common/http/request.types';
+import type { AuthenticatedPrincipal } from './authenticated-principal';
 
 export interface AccessTokenPayload {
   sub: string;
@@ -20,7 +27,10 @@ export interface AccessTokenSubject {
   tokenVersion?: number;
 }
 
-export interface AuthenticatedRequest extends AppRequest<AccessTokenPayload> {
+export interface AuthenticatedRequest extends AppRequest<
+  AccessTokenPayload,
+  AuthenticatedPrincipal
+> {
   auth: AccessTokenPayload;
 }
 
@@ -33,3 +43,47 @@ export interface CompleteJwt {
   payload: Record<string, unknown>;
   signature: string;
 }
+
+export interface CustomerResponse {
+  id: string;
+  fullName: string;
+  email: string | null;
+  phone: string;
+  status: CustomerStatus;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface UserResponse {
+  id: string;
+  fullName: string;
+  email: string;
+  phone: string | null;
+  role: UserRole;
+  status: UserStatus;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface LoginResponse {
+  accessToken: string;
+  tokenType: 'Bearer';
+  expiresIn: number;
+  actorType: 'customer' | 'user';
+  customer?: CustomerResponse;
+  user?: UserResponse;
+}
+
+export interface RegistrationResult {
+  accepted: true;
+}
+
+export type MeResponse =
+  | {
+      actorType: 'customer';
+      customer: CustomerResponse;
+    }
+  | {
+      actorType: 'user';
+      user: UserResponse;
+    };

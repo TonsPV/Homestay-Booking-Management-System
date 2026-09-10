@@ -2,7 +2,7 @@ import { HttpStatus } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
 
 import { ErrorCode } from '../../../../src/common/error-codes';
-import type { TransactionContext } from '../../../../src/common/application/transaction';
+import type { TransactionContext } from '../../../../src/common/database/transaction';
 import {
   AuditAction,
   AuditActorType,

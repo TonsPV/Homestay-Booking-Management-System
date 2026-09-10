@@ -11,11 +11,9 @@ import {
 import {
   AccountStatusEnum,
   UserRoleEnum,
-} from '../../../common/domain/account.enums';
-import type {
-  AccountStatus,
-  UserRole as CommonUserRole,
-} from '../../../common/domain/account.enums';
+  type AccountStatus,
+  type UserRole as CommonUserRole,
+} from '../../../common/account/account.enums';
 
 export type UserRole = CommonUserRole;
 export type UserStatus = AccountStatus;

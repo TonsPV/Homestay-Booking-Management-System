@@ -4,7 +4,8 @@ import { ApiResponse, type ApiResponsePayload } from '../../common/http';
 import { ApiOkEnvelope } from '../../openapi/api-response.decorators';
 import { ListRoomTypesQueryDto } from './dto/list-room-types-query.dto';
 import { RoomTypeDto } from './dto/room-type-response.dto';
-import { RoomTypeService, type RoomTypeResponse } from './room-type.service';
+import { RoomTypeService } from './room-type.service';
+import { type RoomTypeResponse } from './room-type.types';
 
 @Controller('v1/room-types')
 export class RoomTypeController {

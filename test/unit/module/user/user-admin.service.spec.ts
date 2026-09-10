@@ -5,7 +5,7 @@ import {
 } from '@nestjs/common';
 import type { Repository } from 'typeorm';
 
-import { UserRoleEnum } from '../../../../src/common/domain/account.enums';
+import { UserRoleEnum } from '../../../../src/common/account/account.enums';
 import type { AuditActorContext } from '../../../../src/module/audit/audit-log.service';
 import {
   AuditAction,

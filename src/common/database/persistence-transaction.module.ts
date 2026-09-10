@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 
-import { TransactionRunner } from '../../application/transaction';
+import { TransactionRunner } from './transaction';
 import { TypeOrmTransactionRunner } from './typeorm-transaction.runner';
 
 @Module({

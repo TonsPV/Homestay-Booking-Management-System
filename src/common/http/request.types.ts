@@ -1,10 +1,11 @@
 import type { Request } from 'express';
 
-import type { AuthenticatedPrincipal } from '../../module/auth/authenticated-principal';
-
-export interface AppRequest<TAuth = unknown> extends Request {
+export interface AppRequest<
+  TAuth = unknown,
+  TPrincipal = Request['user'],
+> extends Omit<Request, 'user'> {
   auth?: TAuth;
   /** Canonical Passport principal set by JwtAuthGuard. */
-  user?: AuthenticatedPrincipal;
+  user?: TPrincipal;
   requestId?: string;
 }

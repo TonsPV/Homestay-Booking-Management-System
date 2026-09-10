@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
-import { PersistenceTransactionModule } from '../../common/infrastructure/persistence/persistence-transaction.module';
+import { PersistenceTransactionModule } from '../../common/database/persistence-transaction.module';
 import { AuthModule } from '../auth/auth.module';
 import { AuditModule } from '../audit/audit.module';
 import { BOOKING_STAY_POLICY_PROVIDER } from '../booking/booking-stay.provider';
@@ -19,7 +19,7 @@ import { RoomMutationService } from './room-mutation.service';
 import { RoomQueryService } from './room-query.service';
 import { RoomService } from './room.service';
 import { RoomStatusTransitionPolicy } from './domain/room-status-transition.policy';
-import { TypeOrmRoomCalendarManagementStore } from './infrastructure/persistence/typeorm-room-calendar-management.store';
+import { TypeOrmRoomCalendarManagementStore } from './persistence/typeorm-room-calendar-management.store';
 import { RoomCalendarManagementStore } from './ports/room-calendar-management.store';
 import { RoomImage } from './schema/room-image.entity';
 import { Room } from './schema/room.entity';

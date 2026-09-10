@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 
-import type { TransactionContext } from '../../../../src/common/application/transaction';
+import type { TransactionContext } from '../../../../src/common/database/transaction';
 import { AuditActorType } from '../../../../src/module/audit/domain/audit-log';
 import { RoomCalendarStatus } from '../../../../src/module/booking/domain/room-calendar-status';
 import { RoomCalendar } from '../../../../src/module/booking/schema/room-calendar.entity';

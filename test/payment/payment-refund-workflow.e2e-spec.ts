@@ -6,7 +6,7 @@ import type { App } from 'supertest/types';
 
 import { AppModule } from '../../src/app.module';
 import { configureApp } from '../../src/bootstrap/configure-app';
-import { TypeOrmTransactionRunner } from '../../src/common/infrastructure/persistence/typeorm-transaction.runner';
+import { TypeOrmTransactionRunner } from '../../src/common/database/typeorm-transaction.runner';
 import migrationDataSource from '../../src/database/data-source';
 import { AuditLog } from '../../src/module/audit/schema/audit-log.entity';
 import {
@@ -25,7 +25,7 @@ import { Customer } from '../../src/module/customer/schema/customer.entity';
 import { AccessTokenService } from '../../src/module/auth/access-token.service';
 import { Payment } from '../../src/module/payment/schema/payment.entity';
 import { PaymentRefund } from '../../src/module/payment/schema/payment-refund.entity';
-import { TypeOrmPaymentRefundStore } from '../../src/module/payment/infrastructure/persistence/typeorm-payment-refund.store';
+import { TypeOrmPaymentRefundStore } from '../../src/module/payment/persistence/typeorm-payment-refund.store';
 import {
   PaymentMethod,
   PaymentReviewReason,

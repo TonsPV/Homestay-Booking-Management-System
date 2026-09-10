@@ -1,11 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 
-import type { TransactionContext } from '../../../../common/application/transaction';
-import { getMysqlDuplicateKey } from '../../../../common/database';
-import { TypeOrmTransactionRunner } from '../../../../common/infrastructure/persistence/typeorm-transaction.runner';
-import { Customer } from '../../../customer/schema/customer.entity';
-import { Room } from '../../../room/schema/room.entity';
+import type { TransactionContext } from '../../../common/database/transaction';
+import { getMysqlDuplicateKey } from '../../../common/database';
+import { TypeOrmTransactionRunner } from '../../../common/database/typeorm-transaction.runner';
+import { Customer } from '../../customer/schema/customer.entity';
+import { Room } from '../../room/schema/room.entity';
 import {
   BookingCreationStore,
   BookingCreationConflictError,
@@ -15,12 +15,9 @@ import {
   type BookingRequestIntentLookup,
   type CreateBookingInput,
   type NewPasswordlessCustomer,
-} from '../../ports/booking-creation.store';
-import { Booking } from '../../schema/booking.entity';
-import {
-  BookingPaymentStatus,
-  BookingStatus,
-} from '../../domain/booking-state';
+} from '../ports/booking-creation.store';
+import { Booking } from '../schema/booking.entity';
+import { BookingPaymentStatus, BookingStatus } from '../domain/booking-state';
 
 @Injectable()
 export class TypeOrmBookingCreationStore extends BookingCreationStore {

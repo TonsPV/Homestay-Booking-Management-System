@@ -1,8 +1,13 @@
 import { Body, Controller, Param, Patch, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 
-import { ApiResponse, type ApiResponsePayload } from '../../common/http';
-import { ReqContext, type RequestContext } from '../../common/http';
+import {
+  ApiResponse,
+  type ApiResponsePayload,
+  ReqContext,
+  type RequestContext,
+} from '../../common/http';
+
 import { CurrentAuth } from '../auth/decorators/current-auth.decorator';
 import type { AccessTokenPayload } from '../auth/auth.types';
 import { AuditActorType } from '../audit/domain/audit-log';
@@ -14,10 +19,8 @@ import {
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { RolesGuard } from '../auth/guards/roles.guard';
-import {
-  CustomerCredentialService,
-  type CredentialResult,
-} from './customer-credential.service';
+import { CustomerCredentialService } from './customer-credential.service';
+import { type CredentialResult } from './customer.types';
 import { CustomerCredentialResultDto } from './dto/customer-credential-response.dto';
 import { SetInitialCustomerPasswordDto } from './dto/set-initial-customer-password.dto';
 

@@ -5,13 +5,12 @@ import {
   Logger,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { createHash } from 'node:crypto';
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 
 import {
   type TransactionContext,
   TransactionRunner,
-} from '../../common/application/transaction';
+} from '../../common/database/transaction';
 import { ErrorCode } from '../../common/error-codes';
 import { AppHttpException } from '../../common/http/app-http-exception';
 import {
@@ -48,7 +47,7 @@ import {
   type BookingCreationInput,
   type BookingRequestIntent,
   normalizeBookingCreationInput,
-} from './infrastructure/mapper/booking-creation.mapper';
+} from './mappers/booking-creation.mapper';
 import {
   BookingCreationStore,
   BookingCreationConflictError,

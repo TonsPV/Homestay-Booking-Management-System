@@ -13,7 +13,7 @@ import {
 import {
   type TransactionContext,
   TransactionRunner,
-} from '../../common/application/transaction';
+} from '../../common/database/transaction';
 import { ErrorCode } from '../../common/error-codes';
 import { AppHttpException } from '../../common/http/app-http-exception';
 import {
@@ -45,7 +45,7 @@ import {
   buildRefundAuditMetadata,
   buildVnPayRefundInput,
   mapRefundGatewayResult,
-} from './infrastructure/mapper/payment-refund.mapper';
+} from './mappers/payment-refund.mapper';
 import { PaymentQueryService } from './payment-query.service';
 import {
   PaymentRefundIdempotencyConflictError,

@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 
-import { TransactionRunner } from '../../common/application/transaction';
+import { TransactionRunner } from '../../common/database/transaction';
 import { TransactionalAuditLog } from '../audit/ports/transactional-audit-log';
 import type { AuditActorContext } from '../audit/audit-log.types';
 import { AuditAction, AuditEntityType } from '../audit/domain/audit-log';

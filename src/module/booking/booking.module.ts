@@ -1,12 +1,12 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
-import { PersistenceTransactionModule } from '../../common/infrastructure/persistence/persistence-transaction.module';
+import { PersistenceTransactionModule } from '../../common/database/persistence-transaction.module';
 import { AuditModule } from '../audit/audit.module';
 import { AuthModule } from '../auth/auth.module';
 import { CustomerModule } from '../customer/customer.module';
 import { Customer } from '../customer/schema/customer.entity';
-import { PaymentPersistenceModule } from '../payment/infrastructure/persistence/payment-persistence.module';
+import { PaymentPersistenceModule } from '../payment/persistence/payment-persistence.module';
 import { Payment } from '../payment/schema/payment.entity';
 import { Room } from '../room/schema/room.entity';
 import { User } from '../user/schema/user.entity';
@@ -24,12 +24,12 @@ import {
   TypeOrmBookingCreationStore,
   TypeOrmBookingCustomerStore,
   TypeOrmBookingRoomStore,
-} from './infrastructure/persistence/typeorm-booking-creation.store';
+} from './persistence/typeorm-booking-creation.store';
 import {
   TypeOrmBookingLifecycleStore,
   TypeOrmBookingPaymentStateStore,
-} from './infrastructure/persistence/typeorm-booking-lifecycle.store';
-import { TypeOrmRoomCalendarStore } from './infrastructure/persistence/typeorm-room-calendar.store';
+} from './persistence/typeorm-booking-lifecycle.store';
+import { TypeOrmRoomCalendarStore } from './persistence/typeorm-room-calendar.store';
 import {
   BookingCreationStore,
   BookingCustomerStore,

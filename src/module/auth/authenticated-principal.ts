@@ -1,4 +1,4 @@
-import type { ActorType, UserRole } from '../../common/domain/account.enums';
+import type { ActorType, UserRole } from '../../common/account/account.enums';
 
 /**
  * Canonical, framework-agnostic authenticated principal resolved from a

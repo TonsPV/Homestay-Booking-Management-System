@@ -2,8 +2,8 @@ import { Logger, UnauthorizedException } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
 import { type DataSource, type EntityManager, type Repository } from 'typeorm';
 
-import { TypeOrmTransactionRunner } from '../../../../src/common/infrastructure/persistence/typeorm-transaction.runner';
-import type { TransactionContext } from '../../../../src/common/application/transaction';
+import { TypeOrmTransactionRunner } from '../../../../src/common/database/typeorm-transaction.runner';
+import type { TransactionContext } from '../../../../src/common/database/transaction';
 import { TransactionalAuditLog } from '../../../../src/module/audit/ports/transactional-audit-log';
 import {
   AuditAction,
@@ -33,14 +33,14 @@ import {
   TypeOrmBookingCreationStore,
   TypeOrmBookingCustomerStore,
   TypeOrmBookingRoomStore,
-} from '../../../../src/module/booking/infrastructure/persistence/typeorm-booking-creation.store';
+} from '../../../../src/module/booking/persistence/typeorm-booking-creation.store';
 import {
   TypeOrmBookingLifecycleStore,
   TypeOrmBookingPaymentStateStore,
-} from '../../../../src/module/booking/infrastructure/persistence/typeorm-booking-lifecycle.store';
-import { TypeOrmRoomCalendarStore } from '../../../../src/module/booking/infrastructure/persistence/typeorm-room-calendar.store';
-import { TypeOrmPaymentAcceptanceStore } from '../../../../src/module/payment/infrastructure/persistence/typeorm-payment-acceptance.store';
-import { TypeOrmPaymentRefundStore } from '../../../../src/module/payment/infrastructure/persistence/typeorm-payment-refund.store';
+} from '../../../../src/module/booking/persistence/typeorm-booking-lifecycle.store';
+import { TypeOrmRoomCalendarStore } from '../../../../src/module/booking/persistence/typeorm-room-calendar.store';
+import { TypeOrmPaymentAcceptanceStore } from '../../../../src/module/payment/persistence/typeorm-payment-acceptance.store';
+import { TypeOrmPaymentRefundStore } from '../../../../src/module/payment/persistence/typeorm-payment-refund.store';
 import { RoomCalendarReservationConflictError } from '../../../../src/module/booking/ports/room-calendar.store';
 
 describe('BookingService characterization', () => {

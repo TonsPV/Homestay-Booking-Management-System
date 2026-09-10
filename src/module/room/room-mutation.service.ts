@@ -5,11 +5,10 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import type { EntityManager } from 'typeorm';
-import { IsNull, Repository } from 'typeorm';
+import { type EntityManager, IsNull, Repository } from 'typeorm';
 
 import { getMysqlDuplicateKey } from '../../common/database';
-import type { UserRole } from '../../common/domain/account.enums';
+import type { UserRole } from '../../common/account/account.enums';
 import {
   optionalEnumValue,
   optionalId,
@@ -32,8 +31,11 @@ import type { UpdateRoomStatusDto } from './dto/update-room-status.dto';
 import type { UpdateRoomDto } from './dto/update-room.dto';
 import { RoomImageStorageService } from './room-image-storage.service';
 import { RoomQueryService } from './room-query.service';
-import { RoomStatusTransitionPolicy } from './domain/room-status-transition.policy';
-import type { RoomStatusTransitionContext } from './domain/room-status-transition.policy';
+import {
+  RoomStatusTransitionPolicy,
+  type RoomStatusTransitionContext,
+} from './domain/room-status-transition.policy';
+
 import { throwMappedRoomDomainError } from './room-domain-error.mapper';
 import { Room } from './schema/room.entity';
 import { RoomStatus } from './domain/room-status';

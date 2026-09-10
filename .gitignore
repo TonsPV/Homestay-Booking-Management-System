@@ -77,7 +77,8 @@ AGENTS.md
 AGENTS.local.md
 CLAUDE.md
 CLAUDE.local.md
-docs/
+# Tài liệu hiện hành được quản lý trong Git; bản lưu trữ cũ giữ tại máy.
+/docs/.archive/
 
 # Aider local files
 .aider*

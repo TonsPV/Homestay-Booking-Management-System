@@ -1,3 +1,5 @@
+import type { AdminUserResponse, AdminUserListResponse } from './user.types';
+
 import {
   BadRequestException,
   ConflictException,
@@ -8,14 +10,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import type { EntityManager, Repository } from 'typeorm';
 
 import { getMysqlDuplicateKey } from '../../common/database';
-import type {
-  AccountStatus,
-  UserRole,
-} from '../../common/domain/account.enums';
-import {
-  createPaginationMeta,
-  type PaginationMeta,
-} from '../../common/pagination/pagination.types';
+import type { UserRole } from '../../common/account/account.enums';
+import { createPaginationMeta } from '../../common/pagination/pagination.types';
 import {
   getPhoneLookupVariants,
   optionalEmail,
@@ -40,22 +36,6 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { ListUsersQueryDto } from './dto/list-users-query.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { User } from './schema/user.entity';
-
-export interface AdminUserResponse {
-  id: string;
-  fullName: string;
-  email: string;
-  phone: string | null;
-  role: UserRole;
-  status: AccountStatus;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
-export interface AdminUserListResponse {
-  items: AdminUserResponse[];
-  meta: PaginationMeta;
-}
 
 @Injectable()
 export class UserAdminService {

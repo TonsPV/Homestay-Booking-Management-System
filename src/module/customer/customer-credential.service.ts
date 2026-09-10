@@ -1,3 +1,4 @@
+import type { CredentialResult } from './customer.types';
 import {
   BadRequestException,
   ForbiddenException,
@@ -21,10 +22,6 @@ import { CustomerCredentialPolicy } from './customer-credential.policy';
 import { ChangeCustomerPasswordDto } from './dto/change-customer-password.dto';
 import { SetInitialCustomerPasswordDto } from './dto/set-initial-customer-password.dto';
 import { Customer } from './schema/customer.entity';
-
-export interface CredentialResult {
-  passwordConfigured: true;
-}
 
 @Injectable()
 export class CustomerCredentialService {

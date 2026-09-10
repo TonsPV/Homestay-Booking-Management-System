@@ -1,13 +1,18 @@
+import type {
+  RoomTypeResponse,
+  AdminRoomTypeResponse,
+} from '../room-type.types';
+
 import {
   optionalNullableTrimmedString,
   optionalTrimmedString,
   requireTrimmedString,
-} from '../../../../common/validation';
-import type { PaginationMeta } from '../../../../common/pagination/pagination.types';
-import type { Amenity } from '../../../amenity/schema/amenity.entity';
-import { sortBedConfigs, type BedConfig } from '../../bed-configuration';
-import type { CreateRoomTypeDto } from '../../dto/create-room-type.dto';
-import type { UpdateRoomTypeDto } from '../../dto/update-room-type.dto';
+} from '../../../common/validation';
+
+import type { Amenity } from '../../amenity/schema/amenity.entity';
+import { sortBedConfigs, type BedConfig } from '../bed-configuration';
+import type { CreateRoomTypeDto } from '../dto/create-room-type.dto';
+import type { UpdateRoomTypeDto } from '../dto/update-room-type.dto';
 import {
   assertRoomTypeUpdateHasChanges,
   assertSingleBedInputMode,
@@ -16,36 +21,8 @@ import {
   optionalRoomTypeCapacity,
   requireRoomTypeBasePrice,
   requireRoomTypeCapacity,
-} from '../../domain/room-type.policy';
-import type { RoomType } from '../../schema/room-type.entity';
-
-export interface RoomTypeAmenityResponse {
-  id: string;
-  name: string;
-  description: string | null;
-}
-
-export interface RoomTypeResponse {
-  id: string;
-  name: string;
-  description: string | null;
-  bedType: string | null;
-  beds: BedConfig[];
-  maxGuests: number;
-  basePrice: string;
-  amenities: RoomTypeAmenityResponse[];
-  createdAt: Date;
-  updatedAt: Date;
-}
-
-export interface AdminRoomTypeResponse extends RoomTypeResponse {
-  deletedAt: Date | null;
-}
-
-export interface RoomTypeListResult<TItem> {
-  items: TItem[];
-  meta: PaginationMeta;
-}
+} from '../domain/room-type.policy';
+import type { RoomType } from '../schema/room-type.entity';
 
 export interface NormalizedCreateRoomType {
   name: string;

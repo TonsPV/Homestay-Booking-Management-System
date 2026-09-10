@@ -1,6 +1,9 @@
 import { BadRequestException, UnauthorizedException } from '@nestjs/common';
 
-import { AccountStatusEnum, type AccountStatus } from '../domain/account.enums';
+import {
+  AccountStatusEnum,
+  type AccountStatus,
+} from '../account/account.enums';
 
 const POSITIVE_ID_PATTERN = /^[1-9][0-9]*$/;
 const ISO_DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;

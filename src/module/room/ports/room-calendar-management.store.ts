@@ -1,4 +1,4 @@
-import type { TransactionContext } from '../../../common/application/transaction';
+import type { TransactionContext } from '../../../common/database/transaction';
 import type { RoomCalendar } from '../../booking/schema/room-calendar.entity';
 
 export class RoomCalendarBlockConflictError extends Error {

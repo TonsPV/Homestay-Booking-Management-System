@@ -14,9 +14,9 @@ import { CurrentAuth } from '../auth/decorators/current-auth.decorator';
 import { ActorsGuard } from '../auth/guards/actors.guard';
 import { AuthCustomerDto } from '../auth/dto/auth-response.dto';
 import { CustomerProfileService } from './customer-profile.service';
-import type { ProfileResponse } from './customer-profile.service';
+import type { ProfileResponse, CredentialResult } from './customer.types';
 import { CustomerCredentialService } from './customer-credential.service';
-import type { CredentialResult } from './customer-credential.service';
+
 import { ChangeCustomerPasswordDto } from './dto/change-customer-password.dto';
 import { CustomerCredentialResultDto } from './dto/customer-credential-response.dto';
 import { UpdateCustomerProfileDto } from './dto/update-customer-profile.dto';

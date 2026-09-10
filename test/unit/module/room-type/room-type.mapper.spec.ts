@@ -6,7 +6,7 @@ import {
   normalizeUpdateRoomType,
   sortNumericIds,
   toAdminRoomTypeResponse,
-} from '../../../../src/module/room-type/infrastructure/mapper/room-type.mapper';
+} from '../../../../src/module/room-type/mappers/room-type.mapper';
 import type { RoomTypeBed } from '../../../../src/module/room-type/schema/room-type-bed.entity';
 import type { RoomType } from '../../../../src/module/room-type/schema/room-type.entity';
 

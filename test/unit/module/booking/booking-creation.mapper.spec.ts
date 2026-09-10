@@ -11,7 +11,7 @@ import {
   buildBookingCreateInput,
   buildRoomCalendarReservationDates,
   normalizeBookingCreationInput,
-} from '../../../../src/module/booking/infrastructure/mapper/booking-creation.mapper';
+} from '../../../../src/module/booking/mappers/booking-creation.mapper';
 import type { Booking } from '../../../../src/module/booking/schema/booking.entity';
 import type { Customer } from '../../../../src/module/customer/schema/customer.entity';
 import type { Room } from '../../../../src/module/room/schema/room.entity';

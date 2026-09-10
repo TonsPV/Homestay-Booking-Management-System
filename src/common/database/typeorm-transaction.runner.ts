@@ -1,10 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { DataSource, type EntityManager } from 'typeorm';
 
-import {
-  type TransactionContext,
-  TransactionRunner,
-} from '../../application/transaction';
+import { type TransactionContext, TransactionRunner } from './transaction';
 
 @Injectable()
 export class TypeOrmTransactionRunner extends TransactionRunner {

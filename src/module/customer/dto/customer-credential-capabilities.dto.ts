@@ -3,7 +3,7 @@ import { ApiProperty } from '@nestjs/swagger';
 import {
   CREDENTIAL_REASON_CODES,
   type CredentialReasonCode,
-} from '../customer-credential.policy';
+} from '../customer.types';
 
 export class CustomerCredentialCapabilitiesDto {
   @ApiProperty({ example: true })

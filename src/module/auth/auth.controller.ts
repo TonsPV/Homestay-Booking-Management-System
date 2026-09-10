@@ -25,7 +25,12 @@ import {
   ApiRegistrationConflictError,
 } from '../../openapi/api-response.decorators';
 import { AuthService } from './auth.service';
-import type { AccessTokenPayload } from './auth.types';
+import type {
+  AccessTokenPayload,
+  LoginResponse,
+  MeResponse,
+  RegistrationResult,
+} from './auth.types';
 import { CurrentAuth } from './decorators/current-auth.decorator';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { LoginDto } from './dto/login.dto';
@@ -36,11 +41,6 @@ import {
   AuthMeUserResponseDto,
   AuthRegistrationAcceptedDto,
 } from './dto/auth-response.dto';
-import type {
-  LoginResponse,
-  MeResponse,
-  RegistrationResult,
-} from './auth.service';
 
 @Controller('v1/auth')
 @UseGuards(RateLimitGuard)

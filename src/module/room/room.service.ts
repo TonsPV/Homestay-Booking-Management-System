@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import type { UserRole } from '../../common/domain/account.enums';
+import type { UserRole } from '../../common/account/account.enums';
 import type { AuditActorContext } from '../audit/audit-log.service';
 import type { CreateRoomDto } from './dto/create-room.dto';
 import type { ListAvailableRoomsQueryDto } from './dto/list-available-rooms-query.dto';

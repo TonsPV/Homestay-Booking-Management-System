@@ -1,9 +1,9 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
-import { PersistenceTransactionModule } from '../../common/infrastructure/persistence/persistence-transaction.module';
+import { PersistenceTransactionModule } from '../../common/database/persistence-transaction.module';
 import { AuditLogService } from './audit-log.service';
-import { TypeOrmTransactionalAuditLog } from './infrastructure/persistence/typeorm-transactional-audit-log';
+import { TypeOrmTransactionalAuditLog } from './persistence/typeorm-transactional-audit-log';
 import { TransactionalAuditLog } from './ports/transactional-audit-log';
 import { AuditLog } from './schema/audit-log.entity';
 

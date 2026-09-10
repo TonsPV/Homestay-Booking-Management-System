@@ -8,7 +8,7 @@ import {
 import { Reflector } from '@nestjs/core';
 
 import { ACTORS_KEY } from '../decorators/actors.decorator';
-import type { ActorType } from '../../../common/domain/account.enums';
+import type { ActorType } from '../../../common/account/account.enums';
 import type { AuthenticatedRequest } from '../auth.types';
 
 @Injectable()

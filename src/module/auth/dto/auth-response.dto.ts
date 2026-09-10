@@ -5,7 +5,7 @@ import {
   ActorTypeEnum,
   type ActorType,
   UserRoleEnum,
-} from '../../../common/domain/account.enums';
+} from '../../../common/account/account.enums';
 import type { CustomerStatus } from '../../customer/schema/customer.entity';
 import type { UserRole, UserStatus } from '../../user/schema/user.entity';
 

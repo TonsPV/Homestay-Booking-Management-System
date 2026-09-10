@@ -1,4 +1,4 @@
-import type { AccountStatus } from '../../../common/domain/account.enums';
+import type { AccountStatus } from '../../../common/account/account.enums';
 
 export interface CustomerAuthorizationState {
   id: string;

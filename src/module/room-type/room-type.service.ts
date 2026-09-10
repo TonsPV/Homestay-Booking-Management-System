@@ -41,20 +41,16 @@ import {
   toAdminRoomTypeResponse,
   toPublicRoomTypeResponse,
   toRoomTypeEntityInput,
+} from './mappers/room-type.mapper';
+import {
   type AdminRoomTypeResponse,
   type RoomTypeListResult,
   type RoomTypeResponse,
-} from './infrastructure/mapper/room-type.mapper';
+} from './room-type.types';
 import { RoomType } from './schema/room-type.entity';
 import { RoomTypeBed } from './schema/room-type-bed.entity';
 import { Amenity } from '../amenity/schema/amenity.entity';
 import { Room } from '../room/schema/room.entity';
-
-export type {
-  AdminRoomTypeResponse,
-  RoomTypeAmenityResponse,
-  RoomTypeResponse,
-} from './infrastructure/mapper/room-type.mapper';
 
 @Injectable()
 export class RoomTypeService {

@@ -2,10 +2,8 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import type { Repository } from 'typeorm';
 
-import {
-  CustomerCredentialPolicy,
-  type CredentialCapabilities,
-} from './customer-credential.policy';
+import { CustomerCredentialPolicy } from './customer-credential.policy';
+import { type CredentialCapabilities } from './customer.types';
 import { Customer } from './schema/customer.entity';
 
 @Injectable()

@@ -1,3 +1,8 @@
+import type {
+  AdminCustomerResponse,
+  AdminCustomerListResponse,
+} from './customer.types';
+
 import {
   BadRequestException,
   Injectable,
@@ -6,11 +11,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import type { EntityManager, Repository } from 'typeorm';
 
-import type { AccountStatus } from '../../common/domain/account.enums';
-import {
-  createPaginationMeta,
-  type PaginationMeta,
-} from '../../common/pagination/pagination.types';
+import { createPaginationMeta } from '../../common/pagination/pagination.types';
 import {
   AuditLogService,
   type AuditActorContext,
@@ -22,31 +23,13 @@ import {
   parsePagination,
   requireAccountStatus,
 } from '../../common/validation';
-import {
-  CustomerCredentialPolicy,
-  type CredentialCapabilities,
-} from './customer-credential.policy';
+import { CustomerCredentialPolicy } from './customer-credential.policy';
+
 import { CustomerCredentialLookupService } from './customer-credential-lookup.service';
 import { ListCustomersQueryDto } from './dto/list-customers-query.dto';
 import { Customer } from './schema/customer.entity';
 
-export interface AdminCustomerResponse {
-  id: string;
-  fullName: string;
-  email: string | null;
-  phone: string;
-  status: AccountStatus;
-  createdAt: Date;
-  updatedAt: Date;
-  credentialCapabilities: CredentialCapabilities;
-}
-
 type AdminProfile = Omit<AdminCustomerResponse, 'credentialCapabilities'>;
-
-export interface AdminCustomerListResponse {
-  items: AdminCustomerResponse[];
-  meta: PaginationMeta;
-}
 
 @Injectable()
 export class CustomerAdminService {

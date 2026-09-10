@@ -1,12 +1,12 @@
 import { ConflictException } from '@nestjs/common';
 
-import type { Booking } from '../../../booking/schema/booking.entity';
-import { detectDuplicateChargeRefund } from '../../domain/duplicate-charge.detector';
-import type { Payment } from '../../schema/payment.entity';
+import type { Booking } from '../../booking/schema/booking.entity';
+import { detectDuplicateChargeRefund } from '../domain/duplicate-charge.detector';
+import type { Payment } from '../schema/payment.entity';
 import type {
   VnPayOperationInput,
   VnPayTransactionResult,
-} from '../../vnpay-gateway.service';
+} from '../vnpay-gateway.service';
 
 interface BuildVnPayRefundInput {
   payment: Payment;

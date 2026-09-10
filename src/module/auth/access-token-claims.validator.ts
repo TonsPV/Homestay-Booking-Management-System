@@ -1,7 +1,6 @@
-import { UnauthorizedException } from '@nestjs/common';
-import { Injectable } from '@nestjs/common';
+import { UnauthorizedException, Injectable } from '@nestjs/common';
 
-import type { UserRole } from '../../common/domain/account.enums';
+import type { UserRole } from '../../common/account/account.enums';
 import type { AccessTokenPayload } from './auth.types';
 
 /**
