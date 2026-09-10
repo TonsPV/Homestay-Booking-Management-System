@@ -70,6 +70,26 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Reject compiled artifacts beside TypeScript scripts
+        shell: bash
+        run: |
+          node <<'NODE'
+          const { execFileSync } = require('node:child_process');
+          const { existsSync } = require('node:fs');
+          const files = execFileSync('git', ['ls-files', '-z', 'scripts'], {
+            encoding: 'utf8',
+          }).split('\0').filter(Boolean);
+          const sources = new Set(files.filter((file) => file.endsWith('.ts') && !file.endsWith('.d.ts')));
+          const artifacts = files.filter((file) =>
+            /\.(?:d\.ts|js(?:\.map)?)$/.test(file) &&
+            sources.has(file.replace(/\.(?:d\.ts|js(?:\.map)?)$/, '.ts')) &&
+            existsSync(file)
+          );
+          if (artifacts.length > 0) {
+            console.error('Remove committed build artifacts:\n' + artifacts.join('\n'));
+            process.exit(1);
+          }
+          NODE
       - name: Create test environment file
         shell: bash
         run: |

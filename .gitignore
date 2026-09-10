@@ -4,6 +4,12 @@
 /build
 /.data
 
+# Build artifacts beside TypeScript scripts; keep the handwritten smoke script.
+/scripts/*.d.ts
+/scripts/*.js.map
+/scripts/*.js
+!/scripts/smoke-production-start.js
+
 # Logs
 logs
 *.log
