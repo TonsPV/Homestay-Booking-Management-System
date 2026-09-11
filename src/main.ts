@@ -17,7 +17,10 @@ async function bootstrap(): Promise<void> {
 
   // Ưu tiên PORT của cloud provider (Render), sau đó mới tới APP_PORT của local env
   const port = Number(
-    process.env.PORT ?? configService.get<string>('PORT') ?? configService.get<string>('APP_PORT') ?? 3000
+    process.env.PORT ??
+      configService.get<string>('PORT') ??
+      configService.get<string>('APP_PORT') ??
+      3000,
   );
 
   // Bắt buộc phải có '0.0.0.0' để container mở cổng ra môi trường bên ngoài
