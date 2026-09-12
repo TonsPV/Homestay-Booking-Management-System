@@ -61,6 +61,10 @@ export class RoomQueryService {
     );
     const search = optionalSearch(query.search);
     const roomTypeId = optionalId(query.roomTypeId, 'Room type');
+    const amenityIds = this.optionalIdList(
+      query.amenityIds,
+      'Danh sach tien nghi khong hop le.',
+    );
     const roomsQuery = this.createPublicQuery()
       .orderBy('room.roomNumber', 'ASC')
       .addOrderBy('image.isCover', 'DESC')
@@ -79,6 +83,8 @@ export class RoomQueryService {
     if (roomTypeId !== undefined) {
       roomsQuery.andWhere('room.roomTypeId = :roomTypeId', { roomTypeId });
     }
+
+    this.applyAmenityFilter(roomsQuery, amenityIds);
 
     return this.fetchListResult(roomsQuery, page, limit, (room) =>
       this.toPublicResponse(room),
@@ -246,24 +252,7 @@ export class RoomQueryService {
       roomsQuery.andWhere('roomType.basePrice <= :maxPrice', { maxPrice });
     }
 
-    if (amenityIds.length > 0) {
-      roomsQuery.andWhere(
-        `room.room_type_id IN (
-          SELECT roomTypeAmenity.room_type_id
-          FROM room_type_amenities roomTypeAmenity
-          INNER JOIN amenities amenityFilter
-            ON amenityFilter.id = roomTypeAmenity.amenity_id
-            AND amenityFilter.deleted_at IS NULL
-          WHERE roomTypeAmenity.amenity_id IN (:...amenityIds)
-          GROUP BY roomTypeAmenity.room_type_id
-          HAVING COUNT(DISTINCT roomTypeAmenity.amenity_id) = :amenityCount
-        )`,
-        {
-          amenityIds,
-          amenityCount: amenityIds.length,
-        },
-      );
-    }
+    this.applyAmenityFilter(roomsQuery, amenityIds);
 
     return this.fetchListResult(roomsQuery, page, limit, (room) =>
       this.toPublicResponse(room),
@@ -561,6 +550,32 @@ export class RoomQueryService {
           AND roomCalendar.stay_date < :checkOut
       )`,
       { checkIn, checkOut },
+    );
+  }
+
+  private applyAmenityFilter(
+    query: SelectQueryBuilder<Room>,
+    amenityIds: string[],
+  ): SelectQueryBuilder<Room> {
+    if (amenityIds.length === 0) {
+      return query;
+    }
+
+    return query.andWhere(
+      `room.room_type_id IN (
+        SELECT roomTypeAmenity.room_type_id
+        FROM room_type_amenities roomTypeAmenity
+        INNER JOIN amenities amenityFilter
+          ON amenityFilter.id = roomTypeAmenity.amenity_id
+          AND amenityFilter.deleted_at IS NULL
+        WHERE roomTypeAmenity.amenity_id IN (:...amenityIds)
+        GROUP BY roomTypeAmenity.room_type_id
+        HAVING COUNT(DISTINCT roomTypeAmenity.amenity_id) = :amenityCount
+      )`,
+      {
+        amenityIds,
+        amenityCount: amenityIds.length,
+      },
     );
   }
 

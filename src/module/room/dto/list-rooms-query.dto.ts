@@ -15,4 +15,14 @@ export class ListRoomsQueryDto extends PaginationQueryDto {
   })
   @Allow()
   roomTypeId?: unknown;
+
+  @ApiPropertyOptional({
+    description:
+      'Repeat this query parameter to require all selected amenities.',
+    example: ['1', '2'],
+    items: { pattern: '^[1-9][0-9]*$', type: 'string' },
+    type: [String],
+  })
+  @Allow()
+  amenityIds?: unknown;
 }

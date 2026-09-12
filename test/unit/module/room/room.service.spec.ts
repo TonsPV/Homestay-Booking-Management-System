@@ -152,6 +152,31 @@ describe('RoomService', () => {
     expect(result.items[0]).not.toHaveProperty('updatedAt');
   });
 
+  it('filters the public directory by every selected active amenity', async () => {
+    const queryBuilder = createRoomQueryBuilder({
+      manyAndCount: [[roomFixture()], 1],
+    });
+    roomRepo.createQueryBuilder.mockReturnValue(queryBuilder);
+
+    await service.list({
+      amenityIds: ['1', '2', '1'],
+      limit: 10,
+      page: 1,
+    });
+
+    expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+      expect.stringContaining('HAVING COUNT(DISTINCT'),
+      { amenityIds: ['1', '2'], amenityCount: 2 },
+    );
+  });
+
+  it('rejects invalid public directory amenity filters before querying', async () => {
+    await expect(
+      service.list({ amenityIds: ['0'], limit: 10, page: 1 }),
+    ).rejects.toThrow('Danh sach tien nghi');
+    expect(roomRepo.createQueryBuilder).not.toHaveBeenCalled();
+  });
+
   it('keeps price descending as the primary search order', async () => {
     const queryBuilder = createRoomQueryBuilder({
       manyAndCount: [[roomFixture()], 1],

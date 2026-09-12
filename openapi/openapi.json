@@ -4156,6 +4156,22 @@
               "example": "5",
               "type": "string"
             }
+          },
+          {
+            "name": "amenityIds",
+            "required": false,
+            "in": "query",
+            "description": "Repeat this query parameter to require all selected amenities.",
+            "schema": {
+              "example": [
+                "1",
+                "2"
+              ],
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
           }
         ],
         "responses": {
