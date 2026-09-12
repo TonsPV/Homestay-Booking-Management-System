@@ -210,6 +210,19 @@ describe('PaymentQueryService', () => {
     );
   });
 
+  it('hides a payment outside the staff manual-payment scope', async () => {
+    paymentQuery.getOne.mockResolvedValueOnce(
+      paymentFixture({ method: PaymentMethod.VNPAY }),
+    );
+
+    await expect(
+      service.getManagementPayment('500', [
+        PaymentMethod.CASH,
+        PaymentMethod.BANK_TRANSFER,
+      ]),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
   it('counts refunds pending for more than seven days', async () => {
     paymentQuery.getCount.mockResolvedValue(3);
     const now = new Date('2030-01-08T00:00:00.000Z');

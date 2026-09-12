@@ -54,7 +54,7 @@ import { UserModule } from './module/user/user.module';
         autoLoadEntities: true,
 
         // Không dùng synchronize; schema được quản lý bằng migration.
-        synchronize: true,
+        synchronize: false,
         migrations: [__dirname + '/database/migrations/*{.js,.ts}'],
         migrationsTableName: 'typeorm_migrations',
         migrationsRun: true,

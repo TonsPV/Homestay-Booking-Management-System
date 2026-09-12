@@ -219,6 +219,18 @@ describe('Payment query/manual workflow (e2e)', () => {
     const payment = (response.body as Envelope<PaymentPayload>).data;
     paymentIds.push(payment.id);
 
+    const directManagementPayment = await request(app.getHttpServer())
+      .get(`/api/v1/management/payments/${payment.id}`)
+      .set('Authorization', 'Bearer ' + staffToken)
+      .expect(200);
+    expect(
+      (directManagementPayment.body as Envelope<PaymentPayload>).data,
+    ).toMatchObject({
+      id: payment.id,
+      bookingId: booking.id,
+      method: PaymentMethod.BANK_TRANSFER,
+    });
+
     const customerList = await request(app.getHttpServer())
       .get(`/api/v1/bookings/${booking.id}/payments`)
       .set('Authorization', 'Bearer ' + customerAToken)
@@ -287,6 +299,10 @@ describe('Payment query/manual workflow (e2e)', () => {
       }),
     );
     paymentIds.push(pending.id);
+    await request(app.getHttpServer())
+      .get(`/api/v1/management/payments/${pending.id}`)
+      .set('Authorization', 'Bearer ' + staffToken)
+      .expect(404);
     await request(app.getHttpServer())
       .post(`/api/v1/management/bookings/${pendingBooking.id}/payments`)
       .set('Authorization', 'Bearer ' + staffToken)

@@ -30,6 +30,7 @@ import { CreatePaymentRefundsAndBackfill1784795000000 } from '../../../src/datab
 import { HardenAcceptedPaymentOwnership1784796000000 } from '../../../src/database/migrations/1784796000000-HardenAcceptedPaymentOwnership';
 import { RemoveLegacyPaymentRefundColumns1784797000000 } from '../../../src/database/migrations/1784797000000-RemoveLegacyPaymentRefundColumns';
 import { AddCredentialCalendarAuditActions1784798000000 } from '../../../src/database/migrations/1784798000000-AddCredentialCalendarAuditActions';
+import { CreateCustomerAuthIdentities1784800000000 } from '../../../src/database/migrations/1784800000000-CreateCustomerAuthIdentities';
 
 const MIGRATION_CLASSES = [
   InitialSchemaBaseline1784770000000,
@@ -61,6 +62,7 @@ const MIGRATION_CLASSES = [
   HardenAcceptedPaymentOwnership1784796000000,
   RemoveLegacyPaymentRefundColumns1784797000000,
   AddCredentialCalendarAuditActions1784798000000,
+  CreateCustomerAuthIdentities1784800000000,
 ] as const;
 
 describe('database migration contract', () => {

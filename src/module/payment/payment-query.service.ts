@@ -98,8 +98,23 @@ export class PaymentQueryService {
     };
   }
 
-  async getManagementPayment(id: string): Promise<PaymentResponse> {
-    return this.toManagementResponse(await this.requirePayment(id));
+  async getManagementPayment(
+    id: string,
+    allowedMethods?: readonly PaymentMethod[],
+  ): Promise<PaymentResponse> {
+    const payment = await this.requirePayment(id);
+
+    /* Staff may only inspect the same manual-payment feed they can list.
+     * Treat an out-of-scope payment as absent so the detail route never
+     * leaks online-payment or refund data through a guessed identifier. */
+    if (
+      allowedMethods !== undefined &&
+      !allowedMethods.includes(payment.method)
+    ) {
+      throw new NotFoundException('Khong tim thay payment.');
+    }
+
+    return this.toManagementResponse(payment);
   }
 
   countStaleRefunds(now = new Date()): Promise<number> {

@@ -122,9 +122,10 @@ describe('User workflow (e2e)', () => {
       })
       .expect(400);
 
+    const staffEmail = nextEmail('staff-access');
     const response = await createStaff({
       fullName: '  User E2E Staff  ',
-      email: nextEmail('staff-access'),
+      email: staffEmail,
       phone: nextLocalPhone(),
     });
     const body = response.body as ResponseEnvelope<UserPayload>;
@@ -137,6 +138,18 @@ describe('User workflow (e2e)', () => {
     expect(body.data).not.toHaveProperty('passwordHash');
     expect(body.data).not.toHaveProperty('tokenVersion');
     expect(body.data).not.toHaveProperty('deletedAt');
+
+    const loginResponse = await request(app.getHttpServer())
+      .post('/api/v1/auth/users/login')
+      .send({ identifier: staffEmail, password: PASSWORD })
+      .expect(200);
+
+    expect(loginResponse.body).toMatchObject({
+      data: {
+        actorType: 'user',
+        user: { id: body.data.id, role: 'STAFF' },
+      },
+    });
   });
 
   it('lists, filters, normalizes, and updates a STAFF account while revoking password-reset tokens', async () => {

@@ -172,6 +172,160 @@
         ]
       }
     },
+    "/api/v1/auth/customers/google/login": {
+      "post": {
+        "operationId": "Auth_loginCustomerWithGoogle",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GoogleCustomerLoginDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 200
+                        },
+                        "data": {
+                          "$ref": "#/components/schemas/AuthLoginResponseDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request data is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The login credentials are invalid. Missing, locked, passwordless, and password-mismatch states use the same response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A customer account cannot be created with the supplied email or phone number.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "The request rate limit was exceeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/api/v1/auth/login": {
+      "post": {
+        "operationId": "Auth_login",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 200
+                        },
+                        "data": {
+                          "$ref": "#/components/schemas/AuthLoginResponseDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The login credentials are invalid. Missing, locked, passwordless, and password-mismatch states use the same response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "The request rate limit was exceeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
     "/api/v1/auth/customers/login": {
       "post": {
         "operationId": "Auth_loginCustomer",
@@ -2872,6 +3026,77 @@
                         },
                         "meta": {
                           "$ref": "#/components/schemas/PaymentManagementMetaDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The authenticated actor does not have access.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "PaymentManagement"
+        ]
+      }
+    },
+    "/api/v1/management/payments/{id}": {
+      "get": {
+        "operationId": "PaymentManagement_getOne",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 200
+                        },
+                        "data": {
+                          "$ref": "#/components/schemas/PaymentDto"
                         }
                       }
                     }
@@ -6662,6 +6887,9 @@
           "CUSTOMER_PHONE_IN_USE",
           "CUSTOMER_CURRENT_PASSWORD_INVALID",
           "CUSTOMER_PASSWORD_REUSE_NOT_ALLOWED",
+          "AUTH_GOOGLE_PHONE_REQUIRED",
+          "AUTH_GOOGLE_ACCOUNT_CONFLICT",
+          "AUTH_GOOGLE_INVALID_TOKEN",
           "AMENITY_NAME_ALREADY_EXISTS",
           "AMENITY_IN_USE",
           "ROOM_TYPE_IN_USE",
@@ -6757,6 +6985,9 @@
                       "CUSTOMER_PHONE_IN_USE",
                       "CUSTOMER_CURRENT_PASSWORD_INVALID",
                       "CUSTOMER_PASSWORD_REUSE_NOT_ALLOWED",
+                      "AUTH_GOOGLE_PHONE_REQUIRED",
+                      "AUTH_GOOGLE_ACCOUNT_CONFLICT",
+                      "AUTH_GOOGLE_INVALID_TOKEN",
                       "AMENITY_NAME_ALREADY_EXISTS",
                       "AMENITY_IN_USE",
                       "ROOM_TYPE_IN_USE",
@@ -7122,6 +7353,24 @@
           "tokenType",
           "expiresIn",
           "actorType"
+        ]
+      },
+      "GoogleCustomerLoginDto": {
+        "type": "object",
+        "properties": {
+          "credential": {
+            "type": "string",
+            "description": "Google Identity Services ID token returned by the browser.",
+            "writeOnly": true
+          },
+          "phone": {
+            "type": "string",
+            "description": "Vietnamese phone number required when this Google identity is new.",
+            "example": "0901234567"
+          }
+        },
+        "required": [
+          "credential"
         ]
       },
       "LoginDto": {

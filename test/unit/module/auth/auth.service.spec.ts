@@ -279,6 +279,92 @@ describe('AuthService', () => {
     });
   });
 
+  it('uses one unified login flow and routes an active customer by the returned actor', async () => {
+    customerRepo.createQueryBuilder.mockReturnValue(
+      createQueryBuilder(customerFixture({ tokenVersion: 5 })),
+    );
+    userRepo.createQueryBuilder.mockReturnValue(createQueryBuilder(null));
+    passwordHasher.verifyOrDummy
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(false);
+    tokenService.sign.mockReturnValue('customer-token');
+
+    await expect(
+      service.login({
+        identifier: 'customer@example.com',
+        password: 'StrongPassword123!',
+      }),
+    ).resolves.toMatchObject({
+      accessToken: 'customer-token',
+      actorType: 'customer',
+      customer: { id: 'customer-1' },
+    });
+
+    expect(customerRepo.createQueryBuilder).toHaveBeenCalledWith('customer');
+    expect(userRepo.createQueryBuilder).toHaveBeenCalledWith('user');
+    expect(passwordHasher.verifyOrDummy).toHaveBeenNthCalledWith(
+      1,
+      'StrongPassword123!',
+      'password-hash',
+    );
+    expect(passwordHasher.verifyOrDummy).toHaveBeenNthCalledWith(
+      2,
+      'StrongPassword123!',
+      null,
+    );
+  });
+
+  it('uses the user role when matching credentials exist in both account tables', async () => {
+    customerRepo.createQueryBuilder.mockReturnValue(
+      createQueryBuilder(customerFixture()),
+    );
+    userRepo.createQueryBuilder.mockReturnValue(
+      createQueryBuilder(userFixture({ role: 'STAFF', tokenVersion: 7 })),
+    );
+    passwordHasher.verifyOrDummy.mockResolvedValue(true);
+    tokenService.sign.mockReturnValue('staff-token');
+
+    await expect(
+      service.login({
+        identifier: 'shared@example.com',
+        password: 'StrongPassword123!',
+      }),
+    ).resolves.toMatchObject({
+      accessToken: 'staff-token',
+      actorType: 'user',
+      user: { id: 'user-1', role: 'STAFF' },
+    });
+
+    expect(tokenService.sign).toHaveBeenCalledWith({
+      actorType: 'user',
+      userId: 'user-1',
+      role: 'STAFF',
+      tokenVersion: 7,
+    });
+  });
+
+  it('returns the same generic failure when neither account can authenticate', async () => {
+    customerRepo.createQueryBuilder.mockReturnValue(createQueryBuilder(null));
+    userRepo.createQueryBuilder.mockReturnValue(createQueryBuilder(null));
+    passwordHasher.verifyOrDummy.mockResolvedValue(false);
+
+    await expect(
+      service.login({
+        identifier: 'missing@example.com',
+        password: 'StrongPassword123!',
+      }),
+    ).rejects.toMatchObject({
+      status: 401,
+      response: {
+        statusCode: 401,
+        message: 'Thong tin dang nhap khong hop le.',
+      },
+    });
+
+    expect(passwordHasher.verifyOrDummy).toHaveBeenCalledTimes(2);
+    expect(tokenService.sign).not.toHaveBeenCalled();
+  });
+
   it.each([
     {
       name: 'missing account',

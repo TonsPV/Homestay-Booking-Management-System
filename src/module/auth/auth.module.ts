@@ -21,10 +21,12 @@ import { CustomerAuthorizationService } from './customer-authorization.service';
 import { PasswordHasherService } from './password-hasher.service';
 import { UserAuthorizationService } from './user-authorization.service';
 import { UserAuthorizationReader } from './authorization/user-authorization-reader';
+import { CustomerAuthIdentity } from './schema/customer-auth-identity.entity';
+import { GoogleIdentityVerifier } from './google-identity.verifier';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Customer, User]),
+    TypeOrmModule.forFeature([Customer, User, CustomerAuthIdentity]),
     PassportModule,
     JwtModule.registerAsync({
       inject: [ConfigService],
@@ -43,6 +45,7 @@ import { UserAuthorizationReader } from './authorization/user-authorization-read
   controllers: [AuthController],
   providers: [
     AuthService,
+    GoogleIdentityVerifier,
     AccessTokenService,
     AccessTokenClaimsValidator,
     AccessTokenPrincipalService,

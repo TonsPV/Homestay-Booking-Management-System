@@ -113,6 +113,15 @@ export function validateEnvironment(
     '.data/uploads/room-images',
   );
   const corsOrigins = readCorsOrigins(config);
+  const googleAuthEnabled = readBoolean(config, 'GOOGLE_AUTH_ENABLED', false);
+  const googleClientId = readString(config, 'GOOGLE_CLIENT_ID', '');
+
+  if (googleAuthEnabled && googleClientId.length < 10) {
+    throw new Error(
+      'GOOGLE_CLIENT_ID is required when GOOGLE_AUTH_ENABLED is true.',
+    );
+  }
+
   const vnpayEnabled = readBoolean(config, 'VNPAY_ENABLED', false);
   const vnpayPaymentUrl = readString(
     config,
@@ -185,6 +194,8 @@ export function validateEnvironment(
     HTTP_URLENCODED_BODY_LIMIT: httpUrlencodedBodyLimit,
     ROOM_IMAGE_UPLOAD_DIR: roomImageDir,
     CORS_ORIGINS: corsOrigins,
+    GOOGLE_AUTH_ENABLED: googleAuthEnabled,
+    GOOGLE_CLIENT_ID: googleClientId,
     VNPAY_ENABLED: vnpayEnabled,
     VNPAY_PAYMENT_URL: vnpayPaymentUrl,
     VNPAY_RETURN_URL: vnpayReturnUrl,

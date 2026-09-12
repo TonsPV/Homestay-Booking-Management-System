@@ -10,14 +10,19 @@ import type {
 import {
   BadRequestException,
   ConflictException,
+  HttpStatus,
   Injectable,
   Logger,
+  Optional,
+  ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import type { Repository } from 'typeorm';
 
 import { getMysqlDuplicateKey } from '../../common/database';
+import { AppHttpException } from '../../common/http/app-http-exception';
+import { ErrorCode } from '../../common/error-codes';
 
 import {
   getPhoneLookupVariants,
@@ -35,6 +40,9 @@ import { RegisterCustomerDto } from './dto/register-customer.dto';
 import { Customer } from '../customer/schema/customer.entity';
 import { User } from '../user/schema/user.entity';
 import { PasswordHasherService } from './password-hasher.service';
+import { CustomerAuthIdentity } from './schema/customer-auth-identity.entity';
+import { GoogleCustomerLoginDto } from './dto/google-customer-login.dto';
+import { GoogleIdentityVerifier } from './google-identity.verifier';
 
 interface RegistrationInput {
   fullName: string;
@@ -59,6 +67,11 @@ export class AuthService {
     private readonly userRepo: Repository<User>,
     private readonly passwordHasher: PasswordHasherService,
     private readonly tokenService: AccessTokenService,
+    @Optional()
+    @InjectRepository(CustomerAuthIdentity)
+    private readonly googleIdentityRepo?: Repository<CustomerAuthIdentity>,
+    @Optional()
+    private readonly googleVerifier?: GoogleIdentityVerifier,
   ) {}
 
   async registerCustomer(
@@ -132,17 +145,7 @@ export class AuthService {
       throw this.invalidLoginException();
     }
 
-    return {
-      accessToken: this.tokenService.sign({
-        actorType: 'customer',
-        customerId: customer.id,
-        tokenVersion: customer.tokenVersion,
-      }),
-      tokenType: 'Bearer',
-      expiresIn: this.tokenService.getExpiresInSeconds(),
-      actorType: 'customer',
-      customer: this.toCustomerResponse(customer),
-    };
+    return this.createCustomerLoginResponse(customer);
   }
 
   async loginUser(body: LoginDto): Promise<LoginResponse> {
@@ -160,6 +163,256 @@ export class AuthService {
       throw this.invalidLoginException();
     }
 
+    return this.createUserLoginResponse(user);
+  }
+
+  async login(body: LoginDto): Promise<LoginResponse> {
+    const input = this.normalizeLoginInput(body);
+    const identifier = this.normalizeIdentifier(input.identifier);
+    const [customer, user] = await Promise.all([
+      this.findCustomerByIdentifier(identifier),
+      this.findUserByIdentifier(identifier),
+    ]);
+    const [customerPasswordMatches, userPasswordMatches] = await Promise.all([
+      this.passwordHasher.verifyOrDummy(
+        input.password,
+        customer?.passwordHash ?? null,
+      ),
+      this.passwordHasher.verifyOrDummy(
+        input.password,
+        user?.passwordHash ?? null,
+      ),
+    ]);
+
+    // A user account takes deterministic precedence if a legacy data set has
+    // the same active credentials in both account tables.
+    if (user !== null && user.status === 'ACTIVE' && userPasswordMatches) {
+      return this.createUserLoginResponse(user);
+    }
+
+    if (
+      customer !== null &&
+      customer.status === 'ACTIVE' &&
+      customer.passwordHash !== null &&
+      customerPasswordMatches
+    ) {
+      return this.createCustomerLoginResponse(customer);
+    }
+
+    this.logAuthFailure('unified', 'credentials_invalid');
+    throw this.invalidLoginException();
+  }
+
+  /**
+   * Signs a customer in with a Google Identity Services ID token. Google is
+   * only an identity provider here; the API always issues its own access
+   * token and never stores the provider credential.
+   *
+   * A new Google identity needs a phone number because the Customer schema
+   * requires one. The browser can retry this endpoint with the same short
+   * lived ID token after collecting that number; the token stays in memory on
+   * the client and is never put in a URL or persisted by the API.
+   */
+  async loginCustomerWithGoogle(
+    body: GoogleCustomerLoginDto,
+  ): Promise<LoginResponse> {
+    const identityRepo = this.googleIdentityRepo;
+    const verifier = this.googleVerifier;
+
+    if (
+      identityRepo === undefined ||
+      verifier === undefined ||
+      !verifier.isEnabled()
+    ) {
+      throw new ServiceUnavailableException(
+        'Dang nhap Google chua duoc cau hinh.',
+      );
+    }
+
+    const credential = requireTrimmedString(
+      body.credential,
+      'Google credential la bat buoc.',
+      4096,
+    );
+    const googleIdentity = await verifier.verify(credential);
+    const existingIdentity = await identityRepo.findOneBy({
+      provider: 'google',
+      providerSubject: googleIdentity.subject,
+    });
+
+    if (existingIdentity !== null) {
+      return this.loginExistingGoogleCustomer(existingIdentity.customerId);
+    }
+
+    const existingCustomer = await this.findCustomerByEmailIncludingDeleted(
+      googleIdentity.email,
+    );
+
+    if (existingCustomer !== null) {
+      throw this.googleAccountConflict();
+    }
+
+    if (body.phone === undefined || body.phone.trim().length === 0) {
+      throw this.googlePhoneRequired();
+    }
+
+    const phone = requiredPhone(body.phone);
+
+    try {
+      return await this.customerRepo.manager.transaction(async (manager) => {
+        const transactionIdentityRepo =
+          manager.getRepository(CustomerAuthIdentity);
+        const transactionCustomerRepo = manager.getRepository(Customer);
+        const lockedIdentity = await transactionIdentityRepo
+          .createQueryBuilder('identity')
+          .where('identity.provider = :provider', { provider: 'google' })
+          .andWhere('identity.providerSubject = :providerSubject', {
+            providerSubject: googleIdentity.subject,
+          })
+          .setLock('pessimistic_write')
+          .getOne();
+
+        if (lockedIdentity !== null) {
+          const customer = await transactionCustomerRepo.findOneBy({
+            id: lockedIdentity.customerId,
+          });
+
+          if (customer === null || customer.status !== 'ACTIVE') {
+            throw this.invalidGoogleAccount();
+          }
+
+          return this.createCustomerLoginResponse(customer);
+        }
+
+        const customerByEmail = await transactionCustomerRepo
+          .createQueryBuilder('customer')
+          .withDeleted()
+          .where('LOWER(customer.email) = :email', {
+            email: googleIdentity.email,
+          })
+          .setLock('pessimistic_write')
+          .getOne();
+
+        if (customerByEmail !== null) {
+          throw this.googleAccountConflict();
+        }
+
+        const customerByPhone = await transactionCustomerRepo
+          .createQueryBuilder('customer')
+          .withDeleted()
+          .where('customer.phone IN (:...phones)', {
+            phones: getPhoneLookupVariants(phone),
+          })
+          .setLock('pessimistic_write')
+          .getOne();
+
+        if (customerByPhone !== null) {
+          throw this.googleAccountConflict();
+        }
+
+        const customer = await transactionCustomerRepo.save(
+          transactionCustomerRepo.create({
+            fullName: googleIdentity.fullName,
+            email: googleIdentity.email,
+            phone,
+            passwordHash: null,
+            status: 'ACTIVE',
+          }),
+        );
+
+        await transactionIdentityRepo.save(
+          transactionIdentityRepo.create({
+            customerId: customer.id,
+            provider: 'google',
+            providerSubject: googleIdentity.subject,
+          }),
+        );
+
+        return this.createCustomerLoginResponse(customer);
+      });
+    } catch (error) {
+      const duplicateKey = getMysqlDuplicateKey(error);
+
+      if (duplicateKey?.includes('provider_subject')) {
+        const racedIdentity = await identityRepo.findOneBy({
+          provider: 'google',
+          providerSubject: googleIdentity.subject,
+        });
+
+        if (racedIdentity !== null) {
+          return this.loginExistingGoogleCustomer(racedIdentity.customerId);
+        }
+      }
+
+      if (duplicateKey?.includes('email') || duplicateKey?.includes('phone')) {
+        throw this.googleAccountConflict();
+      }
+
+      throw error;
+    }
+  }
+
+  private async loginExistingGoogleCustomer(
+    customerId: string,
+  ): Promise<LoginResponse> {
+    const customer = await this.customerRepo.findOneBy({ id: customerId });
+
+    if (customer === null || customer.status !== 'ACTIVE') {
+      throw this.invalidGoogleAccount();
+    }
+
+    return this.createCustomerLoginResponse(customer);
+  }
+
+  private findCustomerByEmailIncludingDeleted(
+    email: string,
+  ): Promise<Customer | null> {
+    return this.customerRepo
+      .createQueryBuilder('customer')
+      .withDeleted()
+      .where('LOWER(customer.email) = :email', { email })
+      .getOne();
+  }
+
+  private googlePhoneRequired(): AppHttpException {
+    return new AppHttpException(
+      HttpStatus.BAD_REQUEST,
+      ErrorCode.AUTH_GOOGLE_PHONE_REQUIRED,
+      'So dien thoai la bat buoc de tao tai khoan bang Google.',
+    );
+  }
+
+  private googleAccountConflict(): AppHttpException {
+    return new AppHttpException(
+      HttpStatus.CONFLICT,
+      ErrorCode.AUTH_GOOGLE_ACCOUNT_CONFLICT,
+      'Email nay da duoc dang ky. Vui long dang nhap bang mat khau hien tai.',
+    );
+  }
+
+  private invalidGoogleAccount(): AppHttpException {
+    return new AppHttpException(
+      HttpStatus.UNAUTHORIZED,
+      ErrorCode.AUTH_GOOGLE_INVALID_TOKEN,
+      'Google credential khong hop le.',
+    );
+  }
+
+  private createCustomerLoginResponse(customer: Customer): LoginResponse {
+    return {
+      accessToken: this.tokenService.sign({
+        actorType: 'customer',
+        customerId: customer.id,
+        tokenVersion: customer.tokenVersion,
+      }),
+      tokenType: 'Bearer',
+      expiresIn: this.tokenService.getExpiresInSeconds(),
+      actorType: 'customer',
+      customer: this.toCustomerResponse(customer),
+    };
+  }
+
+  private createUserLoginResponse(user: User): LoginResponse {
     return {
       accessToken: this.tokenService.sign({
         actorType: 'user',
@@ -310,7 +563,10 @@ export class AuthService {
     return normalizePhone(identifier) ?? identifier;
   }
 
-  private logAuthFailure(actorType: 'customer' | 'user', reason: string): void {
+  private logAuthFailure(
+    actorType: 'customer' | 'user' | 'unified',
+    reason: string,
+  ): void {
     this.logger.warn(
       `Authentication rejected. actorType=${actorType} reason=${reason}`,
     );

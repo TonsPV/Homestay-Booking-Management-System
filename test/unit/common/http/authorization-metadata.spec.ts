@@ -10,6 +10,7 @@ import {
   Roles,
   ROLES_KEY,
 } from '../../../../src/module/auth/decorators/roles.decorator';
+import { BookingManagementController } from '../../../../src/module/booking/booking-management.controller';
 
 describe('HTTP authorization metadata decorators', () => {
   it('publish actor, role and rate-limit metadata on a route handler', () => {
@@ -38,5 +39,17 @@ describe('HTTP authorization metadata decorators', () => {
       limit: 5,
       windowMs: 60_000,
     });
+  });
+
+  it('restricts counter booking creation to STAFF without narrowing other management routes', () => {
+    const createRoute = Object.getOwnPropertyDescriptor(
+      BookingManagementController.prototype,
+      'create',
+    )?.value as object;
+
+    expect(Reflect.getMetadata(ROLES_KEY, createRoute)).toEqual(['STAFF']);
+    expect(Reflect.getMetadata(ROLES_KEY, BookingManagementController)).toEqual(
+      ['ADMIN', 'STAFF'],
+    );
   });
 });

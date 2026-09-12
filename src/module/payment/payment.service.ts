@@ -60,6 +60,13 @@ export class PaymentService {
     return this.query.listAllManagement(query, allowedMethods);
   }
 
+  async getManagementPayment(
+    paymentId: string,
+    allowedMethods?: readonly PaymentMethod[],
+  ): Promise<PaymentResponse> {
+    return this.query.getManagementPayment(paymentId, allowedMethods);
+  }
+
   async recordManualPayment(
     userId: string | undefined,
     bookingId: string,

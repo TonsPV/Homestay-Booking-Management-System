@@ -75,6 +75,24 @@ export class PaymentManagementController {
       );
   }
 
+  @Get('payments/:id')
+  @ApiOkEnvelope(PaymentDto)
+  getOne(
+    @CurrentAuth() auth: AccessTokenPayload,
+    @Param('id') id: string,
+  ): Promise<ApiResponsePayload<PaymentResponse>> {
+    return this.paymentService
+      .getManagementPayment(
+        id,
+        auth.role === 'STAFF'
+          ? [PaymentMethod.CASH, PaymentMethod.BANK_TRANSFER]
+          : undefined,
+      )
+      .then((payment) =>
+        ApiResponse.ok(payment, 'Lay chi tiet payment quan ly thanh cong.'),
+      );
+  }
+
   @Get('bookings/:bookingId/payments')
   @ApiOkEnvelope(PaymentDto, { isArray: true, paginated: true })
   list(

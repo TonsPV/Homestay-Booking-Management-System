@@ -89,6 +89,7 @@ describe('Booking create/query workflow (e2e)', () => {
   let users: Repository<User>;
   let hasher: PasswordHasherService;
   let accessTokens: AccessTokenService;
+  let adminToken: string;
   let staffToken: string;
   let customerAToken: string;
   let customerBToken: string;
@@ -121,9 +122,11 @@ describe('Booking create/query workflow (e2e)', () => {
     hasher = app.get(PasswordHasherService);
     accessTokens = app.get(AccessTokenService);
 
+    const admin = await createUser('ADMIN');
     const staff = await createUser('STAFF');
     customerA = await createCustomer('A');
     customerB = await createCustomer('B');
+    adminToken = signUser(admin);
     staffToken = signUser(staff);
     customerAToken = signCustomer(customerA);
     customerBToken = signCustomer(customerB);
@@ -415,6 +418,19 @@ describe('Booking create/query workflow (e2e)', () => {
 
   it('creates counter bookings for existing and passwordless Customers and snapshots staff ownership', async () => {
     const room = await createRoom('Counter');
+
+    await request(app.getHttpServer())
+      .post('/api/v1/management/bookings')
+      .set('Authorization', 'Bearer ' + adminToken)
+      .send({
+        customerId: customerB.id,
+        roomId: room.id,
+        checkInDate: '2027-03-01',
+        checkOutDate: '2027-03-03',
+        guestCount: 1,
+      })
+      .expect(403);
+
     const existing = await request(app.getHttpServer())
       .post('/api/v1/management/bookings')
       .set('Authorization', 'Bearer ' + staffToken)

@@ -9,6 +9,7 @@ import { AuditLog } from '../module/audit/schema/audit-log.entity';
 import { Amenity } from '../module/amenity/schema/amenity.entity';
 import { RoomCalendar } from '../module/booking/schema/room-calendar.entity';
 import { Customer } from '../module/customer/schema/customer.entity';
+import { CustomerAuthIdentity } from '../module/auth/schema/customer-auth-identity.entity';
 import { Payment } from '../module/payment/schema/payment.entity';
 import { PaymentRefund } from '../module/payment/schema/payment-refund.entity';
 import { RoomImage } from '../module/room/schema/room-image.entity';
@@ -41,6 +42,7 @@ import { CreatePaymentRefundsAndBackfill1784795000000 } from './migrations/17847
 import { HardenAcceptedPaymentOwnership1784796000000 } from './migrations/1784796000000-HardenAcceptedPaymentOwnership';
 import { RemoveLegacyPaymentRefundColumns1784797000000 } from './migrations/1784797000000-RemoveLegacyPaymentRefundColumns';
 import { AddCredentialCalendarAuditActions1784798000000 } from './migrations/1784798000000-AddCredentialCalendarAuditActions';
+import { CreateCustomerAuthIdentities1784800000000 } from './migrations/1784800000000-CreateCustomerAuthIdentities';
 import { AlignRoomMetadata1784772000000 } from './migrations/1784772000000-AlignRoomMetadata';
 import { AddUserTokenVersion1784773000000 } from './migrations/1784773000000-AddUserTokenVersion';
 import { AlignEntityMetadata1784771000000 } from './migrations/1784771000000-AlignEntityMetadata';
@@ -77,6 +79,7 @@ const AppDataSource = new DataSource({
     Booking,
     Amenity,
     Customer,
+    CustomerAuthIdentity,
     Payment,
     PaymentRefund,
     Room,
@@ -116,6 +119,7 @@ const AppDataSource = new DataSource({
     HardenAcceptedPaymentOwnership1784796000000,
     RemoveLegacyPaymentRefundColumns1784797000000,
     AddCredentialCalendarAuditActions1784798000000,
+    CreateCustomerAuthIdentities1784800000000,
   ],
   migrationsTableName: 'typeorm_migrations',
   synchronize: false,

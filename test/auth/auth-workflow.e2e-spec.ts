@@ -239,6 +239,38 @@ describe('Auth workflow (e2e)', () => {
     });
   });
 
+  it('resolves customer and staff roles through the one canonical login endpoint', async () => {
+    const customer = await createCustomer();
+    const user = await createUser({ role: 'STAFF' });
+
+    const customerResponse = await request(app.getHttpServer())
+      .post('/api/v1/auth/login')
+      .send({ identifier: customer.email, password: PASSWORD })
+      .expect(200);
+    const customerLogin = customerResponse.body as ResponseEnvelope<LoginData>;
+    expect(customerLogin.data.actorType).toBe('customer');
+    expect(
+      accessTokenService.verify(customerLogin.data.accessToken),
+    ).toMatchObject({
+      actor_type: 'customer',
+      customer_id: customer.id,
+    });
+
+    const userResponse = await request(app.getHttpServer())
+      .post('/api/v1/auth/login')
+      .send({ identifier: user.email, password: PASSWORD })
+      .expect(200);
+    const userLogin = userResponse.body as ResponseEnvelope<LoginData>;
+    expect(userLogin.data.actorType).toBe('user');
+    expect(accessTokenService.verify(userLogin.data.accessToken)).toMatchObject(
+      {
+        actor_type: 'user',
+        user_id: user.id,
+        role: 'STAFF',
+      },
+    );
+  });
+
   it('refreshes the user role from the database and rejects revoked, malformed, and locked tokens', async () => {
     const user = await createUser({ role: 'STAFF' });
     const loginResponse = await request(app.getHttpServer())

@@ -45,6 +45,7 @@ import { UpdateBookingStatusDto } from './dto/update-booking-status.dto';
 export class BookingManagementController {
   constructor(private readonly bookingService: BookingService) {}
 
+  @Roles('STAFF')
   @Post()
   @HttpCode(HttpStatus.CREATED)
   @ApiCreatedEnvelope(ManagementBookingDto)
