@@ -45,7 +45,7 @@ export class RateLimitGuard implements CanActivate {
     const response = http.getResponse<Response>();
     const now = Date.now();
     const key = [
-      request.ip ?? request.socket.remoteAddress ?? 'unknown',
+      this.getActorOrIpKey(request),
       request.method,
       context.getClass().name,
       context.getHandler().name,
@@ -77,6 +77,32 @@ export class RateLimitGuard implements CanActivate {
 
     current.count += 1;
     return true;
+  }
+
+  private getActorOrIpKey(request: Request): string {
+    const auth = request as Request & {
+      auth?: {
+        actor_type?: unknown;
+        customer_id?: unknown;
+        user_id?: unknown;
+      };
+    };
+
+    if (
+      auth.auth?.actor_type === 'customer' &&
+      typeof auth.auth.customer_id === 'string'
+    ) {
+      return `customer:${auth.auth.customer_id}`;
+    }
+
+    if (
+      auth.auth?.actor_type === 'user' &&
+      typeof auth.auth.user_id === 'string'
+    ) {
+      return `user:${auth.auth.user_id}`;
+    }
+
+    return request.ip ?? request.socket.remoteAddress ?? 'unknown';
   }
 
   private sweepExpiredBuckets(now: number, windowMs: number): void {

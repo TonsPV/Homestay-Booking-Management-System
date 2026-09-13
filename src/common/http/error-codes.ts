@@ -60,6 +60,7 @@ export const ERROR_CODE_HTTP_STATUS = {
   [ErrorCode.PAYMENT_REFUND_NOT_ALLOWED]: HttpStatus.CONFLICT,
   [ErrorCode.PAYMENT_REFUND_OUTCOME_UNKNOWN]: HttpStatus.SERVICE_UNAVAILABLE,
   [ErrorCode.PAYMENT_IDEMPOTENCY_KEY_CONFLICT]: HttpStatus.CONFLICT,
+  [ErrorCode.CHAT_MESSAGE_IDEMPOTENCY_CONFLICT]: HttpStatus.CONFLICT,
 } as const satisfies Record<ErrorCodeType, HttpStatus>;
 
 const FALLBACK_HTTP_STATUSES: Partial<

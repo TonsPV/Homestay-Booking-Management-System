@@ -180,6 +180,16 @@ export function ApiReadinessError(): MethodDecorator {
   );
 }
 
+export function ApiFeatureUnavailableError(): ClassDecorator & MethodDecorator {
+  return applyDecorators(
+    ApiExtraModels(ErrorEnvelopeDto),
+    ApiServiceUnavailableResponse({
+      description: 'This feature is currently disabled.',
+      type: ErrorEnvelopeDto,
+    }),
+  );
+}
+
 export function ApiFoundEnvelope(
   model: Type<unknown>,
   options: EnvelopeOptions = {},

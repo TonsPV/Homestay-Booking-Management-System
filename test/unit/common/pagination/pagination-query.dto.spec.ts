@@ -61,7 +61,17 @@ describe('PaginationQueryDto', () => {
     const paginationParameters = Object.values(document.paths)
       .flatMap((pathItem) => Object.values(pathItem))
       .filter(isOperation)
-      .flatMap((operation) => operation.parameters ?? [])
+      .flatMap((operation) => {
+        const parameters = operation.parameters ?? [];
+        const hasPage = parameters.some(
+          (parameter) => parameter.name === 'page',
+        );
+        const hasLimit = parameters.some(
+          (parameter) => parameter.name === 'limit',
+        );
+
+        return hasPage && hasLimit ? parameters : [];
+      })
       .filter(
         (parameter) => parameter.name === 'page' || parameter.name === 'limit',
       );

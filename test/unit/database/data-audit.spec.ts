@@ -46,6 +46,9 @@ describe('data audit', () => {
       'expired-booking',
       'expired-payment',
       'stale-refund',
+      'chat-conversation-summary',
+      'chat-read-state-bound',
+      'chat-message-sender',
     ]);
     expect(new Set(names).size).toBe(names.length);
   });

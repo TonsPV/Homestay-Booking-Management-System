@@ -115,6 +115,7 @@ export function validateEnvironment(
   const corsOrigins = readCorsOrigins(config);
   const googleAuthEnabled = readBoolean(config, 'GOOGLE_AUTH_ENABLED', false);
   const googleClientId = readString(config, 'GOOGLE_CLIENT_ID', '');
+  const chatEnabled = readBoolean(config, 'CHAT_ENABLED', false);
 
   if (googleAuthEnabled && googleClientId.length < 10) {
     throw new Error(
@@ -196,6 +197,7 @@ export function validateEnvironment(
     CORS_ORIGINS: corsOrigins,
     GOOGLE_AUTH_ENABLED: googleAuthEnabled,
     GOOGLE_CLIENT_ID: googleClientId,
+    CHAT_ENABLED: chatEnabled,
     VNPAY_ENABLED: vnpayEnabled,
     VNPAY_PAYMENT_URL: vnpayPaymentUrl,
     VNPAY_RETURN_URL: vnpayReturnUrl,

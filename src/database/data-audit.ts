@@ -268,6 +268,80 @@ export const DATA_AUDIT_CHECKS: readonly DataAuditCheck[] = [
         AND pr.requested_at < DATE_SUB(UTC_TIMESTAMP(6), INTERVAL 7 DAY)
     `,
   },
+  {
+    name: 'chat-conversation-summary',
+    description:
+      'Chat conversation sequence and cached last-message fields match committed messages.',
+    sql: `
+      SELECT COUNT(*) AS violationCount
+      FROM chat_conversations cc
+      LEFT JOIN (
+        SELECT
+          conversation_id,
+          COUNT(*) AS message_count,
+          MAX(sequence) AS max_sequence
+        FROM chat_messages
+        GROUP BY conversation_id
+      ) cm ON cm.conversation_id = cc.id
+      LEFT JOIN chat_messages lm
+        ON lm.conversation_id = cc.id
+       AND lm.sequence = cc.last_sequence
+      WHERE cc.last_sequence <> COALESCE(cm.max_sequence, 0)
+        OR COALESCE(cm.message_count, 0) <> cc.last_sequence
+        OR (
+          cc.last_sequence = 0
+          AND (
+            cc.last_message_content IS NOT NULL
+            OR cc.last_message_actor_type IS NOT NULL
+            OR cc.last_message_actor_id IS NOT NULL
+            OR cc.last_message_at IS NOT NULL
+          )
+        )
+        OR (
+          cc.last_sequence > 0
+          AND (
+            lm.id IS NULL
+            OR cc.last_message_content <> lm.content
+            OR cc.last_message_actor_type <> lm.sender_actor_type
+            OR cc.last_message_actor_id <> lm.sender_actor_id
+            OR cc.last_message_at <> lm.created_at
+          )
+        )
+    `,
+  },
+  {
+    name: 'chat-read-state-bound',
+    description:
+      'A chat read marker never advances past the last committed message.',
+    sql: `
+      SELECT COUNT(*) AS violationCount
+      FROM chat_read_states rs
+      INNER JOIN chat_conversations cc ON cc.id = rs.conversation_id
+      WHERE rs.last_read_sequence > cc.last_sequence
+    `,
+  },
+  {
+    name: 'chat-message-sender',
+    description:
+      'Chat messages come from the booking customer or an existing support user.',
+    sql: `
+      SELECT COUNT(*) AS violationCount
+      FROM chat_messages cm
+      INNER JOIN chat_conversations cc ON cc.id = cm.conversation_id
+      INNER JOIN bookings b ON b.id = cc.booking_id
+      LEFT JOIN customers c ON c.id = cm.sender_actor_id
+      LEFT JOIN users u ON u.id = cm.sender_actor_id
+      WHERE (
+        cm.sender_actor_type = 'customer'
+        AND (cm.sender_actor_id <> b.customer_id OR c.id IS NULL)
+      )
+      OR (
+        cm.sender_actor_type = 'user'
+        AND (u.id IS NULL OR u.role NOT IN ('STAFF', 'ADMIN'))
+      )
+      OR cm.sender_actor_type NOT IN ('customer', 'user')
+    `,
+  },
 ];
 
 export async function runDataAudit(

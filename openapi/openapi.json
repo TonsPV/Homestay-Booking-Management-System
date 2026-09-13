@@ -2683,6 +2683,703 @@
         ]
       }
     },
+    "/api/v1/chat/conversations": {
+      "get": {
+        "operationId": "Chat_listConversations",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "default": 1,
+              "example": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "example": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "search",
+            "required": false,
+            "in": "query",
+            "description": "Search by booking code.",
+            "schema": {
+              "maxLength": 160,
+              "example": "BK-20260913",
+              "type": "string"
+            }
+          },
+          {
+            "name": "unread",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": true,
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "needsReply",
+            "required": false,
+            "in": "query",
+            "description": "Only available to STAFF and ADMIN.",
+            "schema": {
+              "example": true,
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 200
+                        },
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/ChatConversationDto"
+                          }
+                        },
+                        "meta": {
+                          "$ref": "#/components/schemas/PaginationMetaDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The authenticated actor does not have access.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "The request rate limit was exceeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "This feature is currently disabled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/api/v1/chat/summary": {
+      "get": {
+        "operationId": "Chat_getSummary",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 200
+                        },
+                        "data": {
+                          "$ref": "#/components/schemas/ChatSummaryDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The authenticated actor does not have access.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "The request rate limit was exceeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "This feature is currently disabled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/api/v1/chat/bookings/{bookingId}": {
+      "get": {
+        "operationId": "Chat_getBookingContext",
+        "parameters": [
+          {
+            "name": "bookingId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 200
+                        },
+                        "data": {
+                          "$ref": "#/components/schemas/ChatBookingContextDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The authenticated actor does not have access.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "The request rate limit was exceeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "This feature is currently disabled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/api/v1/chat/bookings/{bookingId}/messages": {
+      "get": {
+        "operationId": "Chat_listMessages",
+        "parameters": [
+          {
+            "name": "bookingId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "beforeSequence",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "example": 40,
+              "type": "number"
+            }
+          },
+          {
+            "name": "afterSequence",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 0,
+              "example": 40,
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 200
+                        },
+                        "data": {
+                          "$ref": "#/components/schemas/ChatMessageListDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The authenticated actor does not have access.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "The request rate limit was exceeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "This feature is currently disabled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Chat"
+        ]
+      },
+      "post": {
+        "operationId": "Chat_sendMessage",
+        "parameters": [
+          {
+            "name": "bookingId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateChatMessageDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 200
+                        },
+                        "data": {
+                          "$ref": "#/components/schemas/ChatMessageDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request data is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The authenticated actor does not have access.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The requested resource does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The request conflicts with the current resource state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "The request rate limit was exceeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "This feature is currently disabled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/api/v1/chat/bookings/{bookingId}/read": {
+      "put": {
+        "operationId": "Chat_markRead",
+        "parameters": [
+          {
+            "name": "bookingId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MarkChatReadDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SuccessEnvelopeDto"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "statusCode": {
+                          "type": "number",
+                          "example": 200
+                        },
+                        "data": {
+                          "$ref": "#/components/schemas/ChatReadStateDto"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request data is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The authenticated actor does not have access.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The requested resource does not exist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The request conflicts with the current resource state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "The request rate limit was exceeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "This feature is currently disabled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
     "/api/v1/bookings/{bookingId}/payments": {
       "post": {
         "operationId": "Payment_createVnPayPayment",
@@ -6936,7 +7633,8 @@
           "PAYMENT_REFUND_REJECTED",
           "PAYMENT_REFUND_NOT_ALLOWED",
           "PAYMENT_REFUND_OUTCOME_UNKNOWN",
-          "PAYMENT_IDEMPOTENCY_KEY_CONFLICT"
+          "PAYMENT_IDEMPOTENCY_KEY_CONFLICT",
+          "CHAT_MESSAGE_IDEMPOTENCY_CONFLICT"
         ]
       },
       "ErrorEnvelopeDto": {
@@ -7034,7 +7732,8 @@
                       "PAYMENT_REFUND_REJECTED",
                       "PAYMENT_REFUND_NOT_ALLOWED",
                       "PAYMENT_REFUND_OUTCOME_UNKNOWN",
-                      "PAYMENT_IDEMPOTENCY_KEY_CONFLICT"
+                      "PAYMENT_IDEMPOTENCY_KEY_CONFLICT",
+                      "CHAT_MESSAGE_IDEMPOTENCY_CONFLICT"
                     ]
                   },
                   "message": {
@@ -8282,6 +8981,300 @@
         },
         "required": [
           "password"
+        ]
+      },
+      "ChatBookingSummaryDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "42"
+          },
+          "bookingCode": {
+            "type": "string",
+            "example": "BK-20260913-ABC123"
+          },
+          "status": {
+            "type": "string",
+            "example": "CONFIRMED"
+          },
+          "checkInDate": {
+            "type": "string",
+            "example": "2026-09-20",
+            "format": "date"
+          },
+          "checkOutDate": {
+            "type": "string",
+            "example": "2026-09-22",
+            "format": "date"
+          },
+          "roomNumber": {
+            "type": "string",
+            "example": "B201"
+          },
+          "roomName": {
+            "type": "string",
+            "example": "Deluxe B201"
+          }
+        },
+        "required": [
+          "id",
+          "bookingCode",
+          "status",
+          "checkInDate",
+          "checkOutDate",
+          "roomNumber",
+          "roomName"
+        ]
+      },
+      "ChatLastMessageDto": {
+        "type": "object",
+        "properties": {
+          "sequence": {
+            "type": "number",
+            "example": 14
+          },
+          "content": {
+            "type": "string",
+            "example": "Nhan vien se lien he lai trong it phut."
+          },
+          "senderActorType": {
+            "type": "string",
+            "enum": [
+              "customer",
+              "user"
+            ]
+          },
+          "senderActorId": {
+            "type": "string",
+            "example": "5"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sequence",
+          "content",
+          "senderActorType",
+          "senderActorId",
+          "createdAt"
+        ]
+      },
+      "ChatConversationDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "16"
+          },
+          "booking": {
+            "$ref": "#/components/schemas/ChatBookingSummaryDto"
+          },
+          "lastSequence": {
+            "type": "number",
+            "example": 14
+          },
+          "lastMessage": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ChatLastMessageDto"
+              }
+            ]
+          },
+          "unreadCount": {
+            "type": "number",
+            "example": 2,
+            "minimum": 0
+          },
+          "needsReply": {
+            "type": "boolean",
+            "example": false
+          }
+        },
+        "required": [
+          "id",
+          "booking",
+          "lastSequence",
+          "lastMessage",
+          "unreadCount",
+          "needsReply"
+        ]
+      },
+      "ChatSummaryDto": {
+        "type": "object",
+        "properties": {
+          "unreadMessageCount": {
+            "type": "number",
+            "example": 3,
+            "minimum": 0
+          },
+          "needsReplyConversationCount": {
+            "type": "number",
+            "example": 1,
+            "minimum": 0,
+            "description": "Only non-zero for STAFF and ADMIN."
+          }
+        },
+        "required": [
+          "unreadMessageCount",
+          "needsReplyConversationCount"
+        ]
+      },
+      "ChatBookingContextDto": {
+        "type": "object",
+        "properties": {
+          "booking": {
+            "$ref": "#/components/schemas/ChatBookingSummaryDto"
+          },
+          "conversationId": {
+            "type": "string",
+            "example": "16",
+            "nullable": true
+          },
+          "lastSequence": {
+            "type": "number",
+            "example": 14,
+            "minimum": 0
+          },
+          "unreadCount": {
+            "type": "number",
+            "example": 2,
+            "minimum": 0
+          }
+        },
+        "required": [
+          "booking",
+          "conversationId",
+          "lastSequence",
+          "unreadCount"
+        ]
+      },
+      "ChatMessageDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "100"
+          },
+          "sequence": {
+            "type": "number",
+            "example": 14
+          },
+          "content": {
+            "type": "string",
+            "example": "Nhan vien se lien he lai trong it phut."
+          },
+          "senderActorType": {
+            "type": "string",
+            "enum": [
+              "customer",
+              "user"
+            ]
+          },
+          "senderActorId": {
+            "type": "string",
+            "example": "5"
+          },
+          "senderName": {
+            "type": "string",
+            "example": "Le Thi B",
+            "nullable": true
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "sequence",
+          "content",
+          "senderActorType",
+          "senderActorId",
+          "senderName",
+          "createdAt"
+        ]
+      },
+      "ChatMessageListDto": {
+        "type": "object",
+        "properties": {
+          "conversationId": {
+            "type": "string",
+            "example": "16",
+            "nullable": true
+          },
+          "lastSequence": {
+            "type": "number",
+            "example": 14,
+            "minimum": 0
+          },
+          "messages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChatMessageDto"
+            }
+          },
+          "hasMoreBefore": {
+            "type": "boolean",
+            "example": false
+          }
+        },
+        "required": [
+          "conversationId",
+          "lastSequence",
+          "messages",
+          "hasMoreBefore"
+        ]
+      },
+      "CreateChatMessageDto": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "string",
+            "example": "Cho toi hoi thoi gian nhan phong nhe.",
+            "minLength": 1,
+            "maxLength": 2000
+          },
+          "clientMessageId": {
+            "type": "string",
+            "example": "018f41f6-7d22-70ce-9dd4-6c0ec4d33256",
+            "maxLength": 100,
+            "description": "A stable client-generated id. Retrying the same message must reuse this value."
+          }
+        },
+        "required": [
+          "content",
+          "clientMessageId"
+        ]
+      },
+      "ChatReadStateDto": {
+        "type": "object",
+        "properties": {
+          "lastReadSequence": {
+            "type": "number",
+            "example": 14,
+            "minimum": 0
+          }
+        },
+        "required": [
+          "lastReadSequence"
+        ]
+      },
+      "MarkChatReadDto": {
+        "type": "object",
+        "properties": {
+          "lastReadSequence": {
+            "type": "number",
+            "example": 12,
+            "minimum": 0
+          }
+        },
+        "required": [
+          "lastReadSequence"
         ]
       },
       "PaymentMethod": {

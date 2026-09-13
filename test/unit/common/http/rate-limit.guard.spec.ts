@@ -71,10 +71,40 @@ describe('RateLimitGuard', () => {
 
     expect(second.guard.canActivate(second.context)).toBe(true);
   });
+
+  it('keys authenticated limits by actor instead of a shared client IP', () => {
+    const options = { limit: 1, windowMs: 60_000 };
+    const firstCustomer = createFixture(options, {
+      actor_type: 'customer',
+      customer_id: '11',
+    });
+    const sameCustomer = createFixture(
+      options,
+      { actor_type: 'customer', customer_id: '11' },
+      firstCustomer.guard,
+    );
+    const otherCustomer = createFixture(
+      options,
+      { actor_type: 'customer', customer_id: '12' },
+      firstCustomer.guard,
+    );
+
+    expect(firstCustomer.guard.canActivate(firstCustomer.context)).toBe(true);
+    expect(() => sameCustomer.guard.canActivate(sameCustomer.context)).toThrow(
+      HttpException,
+    );
+    expect(otherCustomer.guard.canActivate(otherCustomer.context)).toBe(true);
+  });
 });
 
 function createFixture(
   options: { limit: number; windowMs: number } | undefined,
+  auth?: {
+    actor_type: 'customer' | 'user';
+    customer_id?: string;
+    user_id?: string;
+  },
+  existingGuard?: RateLimitGuard,
 ): {
   guard: RateLimitGuard;
   context: ExecutionContext;
@@ -99,13 +129,14 @@ function createFixture(
         ip: '127.0.0.1',
         method: 'POST',
         socket: {},
+        ...(auth === undefined ? {} : { auth }),
       }),
       getResponse: () => ({ setHeader }),
     }),
   } as unknown as ExecutionContext;
 
   return {
-    guard: new RateLimitGuard(reflector),
+    guard: existingGuard ?? new RateLimitGuard(reflector),
     context,
     setHeader,
   };

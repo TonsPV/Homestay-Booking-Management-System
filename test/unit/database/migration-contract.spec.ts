@@ -31,6 +31,8 @@ import { HardenAcceptedPaymentOwnership1784796000000 } from '../../../src/databa
 import { RemoveLegacyPaymentRefundColumns1784797000000 } from '../../../src/database/migrations/1784797000000-RemoveLegacyPaymentRefundColumns';
 import { AddCredentialCalendarAuditActions1784798000000 } from '../../../src/database/migrations/1784798000000-AddCredentialCalendarAuditActions';
 import { CreateCustomerAuthIdentities1784800000000 } from '../../../src/database/migrations/1784800000000-CreateCustomerAuthIdentities';
+import { CreateBookingChat1784801000000 } from '../../../src/database/migrations/1784801000000-CreateBookingChat';
+import { AddChatInboxQueryIndexes1784801100000 } from '../../../src/database/migrations/1784801100000-AddChatInboxQueryIndexes';
 
 const MIGRATION_CLASSES = [
   InitialSchemaBaseline1784770000000,
@@ -63,6 +65,8 @@ const MIGRATION_CLASSES = [
   RemoveLegacyPaymentRefundColumns1784797000000,
   AddCredentialCalendarAuditActions1784798000000,
   CreateCustomerAuthIdentities1784800000000,
+  CreateBookingChat1784801000000,
+  AddChatInboxQueryIndexes1784801100000,
 ] as const;
 
 describe('database migration contract', () => {
@@ -154,6 +158,51 @@ describe('database migration contract', () => {
     expect(upSql[0]).toContain('CHECK (quantity > 0)');
     expect(upSql[0]).not.toMatch(/DROP\s+COLUMN\s+bed_type/i);
     expect(downSql).toEqual(['DROP TABLE room_type_beds']);
+  });
+
+  it('creates booking chat with per-actor read state and idempotent message keys', async () => {
+    const migration = new CreateBookingChat1784801000000();
+    const query = jest.fn().mockResolvedValue([]);
+
+    await migration.up({ query } as unknown as QueryRunner);
+
+    const sql = query.mock.calls
+      .map(([statement]) => String(statement))
+      .join('\n');
+    expect(sql).toContain('CREATE TABLE chat_conversations');
+    expect(sql).toContain('UNIQUE KEY uq_chat_conversations_booking');
+    expect(sql).toContain('CREATE TABLE chat_messages');
+    expect(sql).toContain('uq_chat_messages_conversation_sequence');
+    expect(sql).toContain('uq_chat_messages_sender_client_message');
+    expect(sql).toContain('CREATE TABLE chat_read_states');
+    expect(sql).toContain('uq_chat_read_states_conversation_actor');
+    expect(sql).toContain('ON DELETE RESTRICT ON UPDATE RESTRICT');
+  });
+
+  it('adds inbox indexes without rewriting persisted chat tables', async () => {
+    const migration = new AddChatInboxQueryIndexes1784801100000();
+    const query = jest.fn().mockResolvedValue([]);
+
+    await migration.up({ query } as unknown as QueryRunner);
+
+    const upSql = query.mock.calls
+      .map(([statement]) => String(statement))
+      .join('\n');
+    expect(upSql).toContain('idx_chat_conversations_last_actor_message_at');
+    expect(upSql).toContain('idx_chat_messages_sender_conversation_sequence');
+    expect(upSql).not.toMatch(/CREATE\s+TABLE/i);
+
+    query.mockClear();
+    await migration.down({ query } as unknown as QueryRunner);
+    const downSql = query.mock.calls
+      .map(([statement]) => String(statement))
+      .join('\n');
+    expect(downSql).toContain(
+      'DROP KEY idx_chat_messages_sender_conversation_sequence',
+    );
+    expect(downSql).toContain(
+      'DROP KEY idx_chat_conversations_last_actor_message_at',
+    );
   });
 
   it('preserves the historical query-index migration rollback contract', async () => {

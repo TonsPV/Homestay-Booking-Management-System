@@ -10,6 +10,9 @@ import { Amenity } from '../module/amenity/schema/amenity.entity';
 import { RoomCalendar } from '../module/booking/schema/room-calendar.entity';
 import { Customer } from '../module/customer/schema/customer.entity';
 import { CustomerAuthIdentity } from '../module/auth/schema/customer-auth-identity.entity';
+import { ChatConversation } from '../module/chat/schema/chat-conversation.entity';
+import { ChatMessage } from '../module/chat/schema/chat-message.entity';
+import { ChatReadState } from '../module/chat/schema/chat-read-state.entity';
 import { Payment } from '../module/payment/schema/payment.entity';
 import { PaymentRefund } from '../module/payment/schema/payment-refund.entity';
 import { RoomImage } from '../module/room/schema/room-image.entity';
@@ -43,6 +46,8 @@ import { HardenAcceptedPaymentOwnership1784796000000 } from './migrations/178479
 import { RemoveLegacyPaymentRefundColumns1784797000000 } from './migrations/1784797000000-RemoveLegacyPaymentRefundColumns';
 import { AddCredentialCalendarAuditActions1784798000000 } from './migrations/1784798000000-AddCredentialCalendarAuditActions';
 import { CreateCustomerAuthIdentities1784800000000 } from './migrations/1784800000000-CreateCustomerAuthIdentities';
+import { CreateBookingChat1784801000000 } from './migrations/1784801000000-CreateBookingChat';
+import { AddChatInboxQueryIndexes1784801100000 } from './migrations/1784801100000-AddChatInboxQueryIndexes';
 import { AlignRoomMetadata1784772000000 } from './migrations/1784772000000-AlignRoomMetadata';
 import { AddUserTokenVersion1784773000000 } from './migrations/1784773000000-AddUserTokenVersion';
 import { AlignEntityMetadata1784771000000 } from './migrations/1784771000000-AlignEntityMetadata';
@@ -80,6 +85,9 @@ const AppDataSource = new DataSource({
     Amenity,
     Customer,
     CustomerAuthIdentity,
+    ChatConversation,
+    ChatMessage,
+    ChatReadState,
     Payment,
     PaymentRefund,
     Room,
@@ -120,6 +128,8 @@ const AppDataSource = new DataSource({
     RemoveLegacyPaymentRefundColumns1784797000000,
     AddCredentialCalendarAuditActions1784798000000,
     CreateCustomerAuthIdentities1784800000000,
+    CreateBookingChat1784801000000,
+    AddChatInboxQueryIndexes1784801100000,
   ],
   migrationsTableName: 'typeorm_migrations',
   synchronize: false,
