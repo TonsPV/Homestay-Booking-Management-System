@@ -1,6 +1,5 @@
 # compiled output
 /dist
-/docs
 /node_modules
 /build
 /.data
@@ -84,8 +83,8 @@ AGENTS.md
 AGENTS.local.md
 CLAUDE.md
 CLAUDE.local.md
-# Tài liệu hiện hành được quản lý trong Git; bản lưu trữ cũ giữ tại máy.
-/docs/.archive/
+# Tài liệu nội bộ chỉ lưu local, không theo dõi trong Git.
+/docs/
 
 # Aider local files
 .aider*
